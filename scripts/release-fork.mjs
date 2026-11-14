@@ -6,6 +6,7 @@
 // - the GitHub release carries the package tarball for dependency installs.
 //
 // Usage: node scripts/release-fork.mjs   (from a clean checkout of main)
+// VPK pins one release; after releasing, run `pnpm run update:vpk-grab` in VPK.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,3 +71,4 @@ run("gh", [
 console.log(`\nReleased ${tag}`);
 console.log(`Script tag: https://cdn.jsdelivr.net/gh/${REPOSITORY}@${tag}/${BUNDLE_RELEASE_PATH}`);
 console.log(`Package:    https://github.com/${REPOSITORY}/releases/download/${tag}/${tarballName}`);
+console.log("\nNext: in the VPK repo, run `pnpm run update:vpk-grab` and ship it, so VPK moves to this release.");
