@@ -104,8 +104,10 @@ example, in `<head>` before the app's own scripts, on development pages only.
   with the design token under each value that came from one.
 - **Redlines** (toolbar toggle): the element's size and its distance to
   neighbours and container edges.
-- **Hold Shift** with Specs on: pins the panel so they can click a property to
-  switch it off and on in the page.
+- **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
+  property off and on, pick another token or keyword, or type a value.
+- **Changes** (toolbar, once something is edited): every style change on the
+  page, by element, with remove, reopen and reset all.
 - **Hold Alt** with Redlines on: anchors on the hovered element; moving to
   another element shows the distances between the two.
 - **Pen**, **Text**: draw and write on the page. **Move** and **Clear** appear
@@ -135,6 +137,12 @@ changed, and it disappears on reload. Make the real change: find where that
 property is set for the element (the grab gives the file) and remove or change
 it there. If the property comes from a shared component, say so and ask before
 changing it for every consumer.
+
+**"I set padding to `--ds-space-200`" or a typed value**, often read off the
+Changes list as `padding 12px → 16px (--ds-space-200)`. Like switching off, it
+is a browser-only override. Write the real change with the token they picked
+(or the utility class mapping to it); for a typed value, use the project token
+that matches it rather than the raw value.
 
 **A measurement.** Redline numbers are CSS pixels between border edges. A
 single-element reading is the gap to the nearest sibling or the container's

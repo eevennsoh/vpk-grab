@@ -8,26 +8,27 @@ It is a fork, and a drop-in one. The package is still named `react-grab` and the
 
 Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too.
 
-| Toolbar control        | What it does                                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Specs**              | A panel of the styles applied to the hovered element: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`. |
-| **Redlines**           | The element's size and its distance to the nearest sibling or container edge on each side.                                                                                                  |
-| **Pen**                | Draw on the page. Hold **Shift** for a straight line.                                                                                                                                       |
-| **Text**               | Click to place a note.                                                                                                                                                                      |
-| **Move** and **Clear** | Appear once something is drawn. Drag an annotation to move it, press **Delete** to remove it, or clear them all.                                                                            |
+| Toolbar control        | What it does                                                                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Specs**              | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`. |
+| **Redlines**           | The element's size and its distance to the nearest sibling or container edge on each side.                                                                                                                                            |
+| **Pen**                | Draw on the page. Hold **Shift** for a straight line.                                                                                                                                                                                 |
+| **Text**               | Click to place a note.                                                                                                                                                                                                                |
+| **Move** and **Clear** | Appear once something is drawn. Drag an annotation to move it, press **Delete** to remove it, or clear them all.                                                                                                                      |
+| **Changes**            | Appears with the first style change. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                                              |
 
 Two keys work on whatever is hovered, without clicking:
 
-| Key            | With        | What it does                                                                                                     |
-| -------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Hold **Shift** | Specs on    | Pins the panel to the element so the pointer can reach it. Click a property to switch it off and on in the page. |
-| Hold **Alt**   | Redlines on | Anchors the redlines to the element. Move to any other element to read the distances between the two.            |
+| Key            | With        | What it does                                                                                                                                                                                                                      |
+| -------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hold **Shift** | Specs on    | Pins the panel to the element so the pointer can reach it. Each row gets a checkbox to switch it off and on, a value to type into, a menu of tokens and keywords, and a reset. The pin button keeps it open; **Esc** releases it. |
+| Hold **Alt**   | Redlines on | Anchors the redlines to the element. Move to any other element to read the distances between the two.                                                                                                                             |
 
-Switching a property off is a temporary inline override in the browser. It never touches source files and is gone on reload.
+Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.1`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.2`.
 
 ### Let your agent do it
 
@@ -43,7 +44,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.1/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.2/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -59,7 +60,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.1/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.2/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -76,7 +77,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.1/react-grab-0.2.0-vpk.1.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.2/react-grab-0.2.0-vpk.2.tgz
 ```
 
 Then load it at the top of the entry file:
