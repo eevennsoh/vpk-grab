@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   test-vite-plus:
-    runs-on: ubuntu-latest
+    # Playwright 1.59 cannot install Chromium on the Ubuntu 26.04 image that
+    # ubuntu-latest now resolves to.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       E2E_ENVIRONMENT: vite-plus-development
@@ -49,7 +51,9 @@ jobs:
         run: pnpm --filter react-grab exec playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} --grep-invert @perf
 
   test-frameworks:
-    runs-on: ubuntu-latest
+    # Playwright 1.59 cannot install Chromium on the Ubuntu 26.04 image that
+    # ubuntu-latest now resolves to.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
