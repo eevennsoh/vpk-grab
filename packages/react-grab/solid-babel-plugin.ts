@@ -45,6 +45,24 @@ export const solidWebBrowserPlugin = () => {
   };
 };
 
+const REACT_STUB_MODULE_ID = "\0react-global-stub";
+
+// bippy 0.7 reads `useSyncExternalStore` off the `react` namespace at module
+// evaluation for its `useFiber` hook, which React Grab never calls. Left
+// external, the IIFE build ends in `})({}, react)` and throws "react is not
+// defined" on any page that loads it from a script tag, so the script-tag
+// build resolves `react` to an empty module instead.
+export const reactGlobalStubPlugin = () => ({
+  name: "react-global-stub",
+  enforce: "pre" as const,
+  resolveId(source: string) {
+    if (source === "react") return REACT_STUB_MODULE_ID;
+  },
+  load(id: string) {
+    if (id === REACT_STUB_MODULE_ID) return "export {};";
+  },
+});
+
 export interface SolidBabelPluginOptions {
   filter?: RegExp;
   plugins?: babel.PluginItem[];

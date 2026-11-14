@@ -1,4 +1,5 @@
 import { clearElementPositionCache } from "./get-element-at-position.js";
+import { collectHoverDependentProperties } from "./collect-hover-dependent-properties.js";
 import { getAccessibleIframeDocument } from "./get-accessible-iframe-document.js";
 import { getComposedParentElement } from "./get-composed-parent-element.js";
 import { getDeepElementAtPoint } from "./get-deep-element-at-point.js";
@@ -161,6 +162,24 @@ const collectHoveredElements = (cursorX: number, cursorY: number): HTMLElement[]
   return hoveredElements;
 };
 
+// A hover that began moments before activation is often still transitioning
+// (Tailwind's `opacity-0 group-hover:opacity-100 transition-opacity`). Pinning
+// then would capture a half-faded value, and a paused transition outranks even
+// an !important inline style, so running transitions are finished first.
+const settleHoverTransitions = (elements: Iterable<HTMLElement>): void => {
+  for (const element of elements) {
+    if (typeof element.getAnimations !== "function") continue;
+    for (const animation of element.getAnimations()) {
+      if (!("transitionProperty" in animation) || animation.playState !== "running") continue;
+      try {
+        animation.finish();
+      } catch {
+        // finish() throws for an animation with no finite end; leave it running.
+      }
+    }
+  }
+};
+
 const collectFocusedElements = (): HTMLElement[] => {
   const focusedElements: HTMLElement[] = [];
   let current: Element | null = document.activeElement;
@@ -211,6 +230,10 @@ const restoreFrozenStates = (
       }
     }
     if (originalPropertyValues.size === 0) storageMap.delete(element);
+    // Pinning an element that had no inline styles creates its style
+    // attribute; taking the pins off leaves it behind empty, which the page's
+    // own `[style]` selectors and attribute observers would still see.
+    if (element.getAttribute("style") === "") element.removeAttribute("style");
   }
   return cleanupErrors;
 };
@@ -243,8 +266,16 @@ export const collectPseudoStates = (
   const hoveredElements = isCursorInViewport
     ? collectHoveredElements(cursorX, cursorY)
     : getDeepHoveredElements();
+  const hoverPropertyNamesByElement = new Map<HTMLElement, Set<string>>();
   for (const element of hoveredElements) {
-    const state = freezeElement(element, HOVER_STYLE_PROPERTIES);
+    hoverPropertyNamesByElement.set(element, new Set(HOVER_STYLE_PROPERTIES));
+  }
+  for (const targetDocument of new Set([document, ...registeredDocuments])) {
+    collectHoverDependentProperties(targetDocument, hoverPropertyNamesByElement);
+  }
+  settleHoverTransitions(hoverPropertyNamesByElement.keys());
+  for (const [element, propertyNames] of hoverPropertyNamesByElement) {
+    const state = freezeElement(element, [...propertyNames]);
     if (state) hoverStates.push(state);
   }
 

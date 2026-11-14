@@ -227,6 +227,78 @@ test.describe("hover-revealed UI stays grabbable", () => {
   });
 });
 
+// Being grabbable is not enough for inspecting: UI revealed by an ancestor's
+// :hover is outside the hovered chain, so the freeze has to pin the revealed
+// styles themselves or the UI vanishes the moment :hover is suppressed.
+test.describe("hover-revealed UI stays visible", () => {
+  test.beforeEach(async ({ reactGrab }) => {
+    await installHoverRevealFixture(reactGrab);
+  });
+
+  const getComputedValue = (reactGrab: ReactGrabPageObject, testId: string, property: string) =>
+    reactGrab.page.evaluate(
+      ({ targetTestId, propertyName }) => {
+        const element = document.querySelector(`[data-testid='${targetTestId}']`);
+        return element ? getComputedStyle(element).getPropertyValue(propertyName) : null;
+      },
+      { targetTestId: testId, propertyName: property },
+    );
+
+  const REVEAL_CASES = [
+    {
+      anchor: "reveal-row",
+      revealed: "reveal-toolbar",
+      property: "opacity",
+      shown: "1",
+      hidden: "0",
+    },
+    {
+      anchor: "tooltip-anchor",
+      revealed: "css-tooltip",
+      property: "visibility",
+      shown: "visible",
+      hidden: "hidden",
+    },
+    {
+      anchor: "dropdown-anchor",
+      revealed: "hover-dropdown",
+      property: "display",
+      shown: "block",
+      hidden: "none",
+    },
+  ];
+
+  for (const revealCase of REVEAL_CASES) {
+    test(`${revealCase.property} reveal survives activation and moving away`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const anchorCenter = await getCenter(reactGrab, revealCase.anchor);
+      await page.mouse.move(anchorCenter.x - 150, anchorCenter.y, { steps: 4 });
+      await page.waitForTimeout(HOVER_SETTLE_MS);
+      await reactGrab.activate();
+
+      await expect
+        .poll(() => getComputedValue(reactGrab, revealCase.revealed, revealCase.property))
+        .toBe(revealCase.shown);
+
+      await page.mouse.move(900, 620);
+      await page.waitForTimeout(HOVER_SETTLE_MS);
+      expect(await getComputedValue(reactGrab, revealCase.revealed, revealCase.property)).toBe(
+        revealCase.shown,
+      );
+
+      await reactGrab.deactivate();
+      await expect
+        .poll(() => getComputedValue(reactGrab, revealCase.revealed, revealCase.property))
+        .toBe(revealCase.hidden);
+      expect(
+        await page.locator(`[data-testid='${revealCase.revealed}']`).getAttribute("style"),
+      ).toBeNull();
+    });
+  }
+});
+
 test.describe("opacity-0 mounted overlays", () => {
   test.beforeEach(async ({ reactGrab }) => {
     await installHoverRevealFixture(reactGrab);

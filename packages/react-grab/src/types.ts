@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { Accessor, JSX } from "solid-js";
 
 export interface Position {
   x: number;
@@ -308,9 +308,8 @@ export interface Options {
    */
   freezeReactUpdates?: boolean;
   /**
-   * Whether to send the anonymous version check to react-grab.com on init.
-   * Set to false to skip the version-check request.
-   * @default true
+   * Accepted so options written for React Grab keep type-checking. Upstream
+   * uses it to skip its version-check request; this fork never sends one.
    */
   telemetry?: boolean;
 }
@@ -497,6 +496,7 @@ export interface ReactGrabRendererProps {
   onSetDefaultAction?: (actionId: string) => void;
   onToggleToolbarMenu?: () => void;
   onToolbarMenuDismiss?: () => void;
+  inspect?: InspectRendererState;
 }
 
 export interface GrabbedBox {
@@ -621,4 +621,102 @@ export interface ReactGrabEntry {
   source?: SourceLocation | null;
   stackContext?: string;
   frames?: ReactGrabStackFrame[];
+}
+
+export type AnnotationTool = "grab" | "pen" | "text" | "edit";
+
+export interface AnnotationPoint extends Position {
+  weight: number;
+}
+
+export interface AnnotationStroke {
+  id: string;
+  points: AnnotationPoint[];
+  isStraight: boolean;
+}
+
+export interface AnnotationText extends Position {
+  id: string;
+  text: string;
+}
+
+export interface InspectSettings {
+  isSpecsEnabled: boolean;
+  isRedlinesEnabled: boolean;
+}
+
+export interface ElementSpecRow {
+  property: string;
+  value: string;
+  isApplied: boolean;
+  swatchColor?: string;
+  tokens?: string[];
+  isDisabled?: boolean;
+}
+
+export interface DisabledSpecRow {
+  sectionTitle: string;
+  rowIndex: number;
+  row: ElementSpecRow;
+}
+
+export interface ElementSpecSection {
+  title: string;
+  rows: ElementSpecRow[];
+}
+
+export interface ElementSpecs {
+  tagName: string;
+  width: number;
+  height: number;
+  sections: ElementSpecSection[];
+}
+
+export type RedlineSide = "top" | "right" | "bottom" | "left";
+
+export interface RedlineMeasurement {
+  side: RedlineSide;
+  distance: number;
+  start: Position;
+  end: Position;
+}
+
+export interface RedlineGuide {
+  start: Position;
+  end: Position;
+}
+
+export interface ElementRedlines {
+  bounds: OverlayBounds;
+  measurements: RedlineMeasurement[];
+  guides: RedlineGuide[];
+  targetBounds: OverlayBounds | null;
+}
+
+export type SpecsPanelCorner = "top-right" | "top-left" | "bottom-right" | "bottom-left";
+
+export interface InspectRendererState {
+  isSpecsEnabled: Accessor<boolean>;
+  isRedlinesEnabled: Accessor<boolean>;
+  annotationTool: Accessor<AnnotationTool>;
+  element: Accessor<Element | null>;
+  measureTarget: Accessor<Element | null>;
+  pointer: Accessor<Position>;
+  viewportVersion: Accessor<number>;
+  strokes: Accessor<AnnotationStroke[]>;
+  draftStroke: Accessor<AnnotationStroke | null>;
+  texts: Accessor<AnnotationText[]>;
+  textDraftPosition: Accessor<Position | null>;
+  hasAnnotations: Accessor<boolean>;
+  selectedAnnotationId: Accessor<string | null>;
+  isSpecsPinned: Accessor<boolean>;
+  onSpecsPanelHoverChange: (isHovered: boolean) => void;
+  onSpecsStylesChange: () => void;
+  onToggleSpecs: () => void;
+  onToggleRedlines: () => void;
+  onSelectAnnotationTool: (tool: AnnotationTool) => void;
+  onClearAnnotations: () => void;
+  onTextDraftChange: (text: string) => void;
+  onTextDraftCommit: (draftPosition: Position) => void;
+  onTextDraftCancel: () => void;
 }

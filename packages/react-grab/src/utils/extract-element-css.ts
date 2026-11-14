@@ -24,7 +24,7 @@ const ensureBaselineIframe = (): HTMLIFrameElement => {
   return baselineIframe;
 };
 
-const getDefaultStylesForTag = (tagName: string): Map<string, string> => {
+export const getDefaultStylesForTag = (tagName: string): Map<string, string> => {
   const cached = defaultStylesByTag.get(tagName);
   if (cached) return cached;
 

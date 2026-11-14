@@ -69,6 +69,7 @@ import { getTagName } from "../utils/get-tag-name.js";
 import { buildElementHierarchy } from "../utils/build-element-hierarchy.js";
 import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
+  ANNOTATION_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
   FEEDBACK_DURATION_MS,
@@ -134,6 +135,8 @@ import type {
   DropdownAnchor,
   DragRect,
   ElementLabelVariant,
+  AnnotationTool,
+  InspectRendererState,
 } from "../types.js";
 import { createPluginRegistry } from "./plugin-registry.js";
 import { createLabelController } from "./label-controller.js";
@@ -147,6 +150,7 @@ import { isMac } from "../utils/is-mac.js";
 import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
+import { createInspectController } from "./create-inspect-controller.js";
 import { copyPlugin } from "./plugins/copy.js";
 import { commentPlugin } from "./plugins/comment.js";
 import { openPlugin } from "./plugins/open.js";
@@ -251,10 +255,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
   setScopeContainer(initialOptions.container ?? null);
 
   // The demo build is a display-only showcase, not an install: no console
-  // banner, no version-check fetch (whose "outdated" nag would hit every
-  // visitor whenever the bundled version drifts from the published one).
+  // banner.
   if (!IS_DEMO) {
-    logIntro(initialOptions.telemetry !== false);
+    logIntro();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- omit init-only options that aren't part of SettableOptions
@@ -369,6 +372,27 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
     const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey);
+    const isAltKeyHeld = createModifierTracker((event) => event.altKey);
+    const inspect = createInspectController({ isShiftKeyHeld, getElementAtPosition });
+    // Pen and Text take over the pointer from element selection while the
+    // overlay stays active (and the page stays frozen) underneath them.
+    const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
+    const getAnnotationToolCursor = (tool: AnnotationTool): string => {
+      switch (tool) {
+        case "grab":
+        case "pen":
+          return "crosshair";
+        case "text":
+          return "text";
+        case "edit":
+          return "default";
+        default: {
+          const unhandledTool: never = tool;
+          return unhandledTool;
+        }
+      }
+    };
+    let didAnnotationToolActivate = false;
     const [toolbarMenuPosition, setToolbarMenuPosition] = createSignal<DropdownAnchor | null>(null);
     const [hierarchyMenuPosition, setHierarchyMenuPosition] = createSignal<DropdownAnchor | null>(
       null,
@@ -389,7 +413,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       isPromptMode() ||
       isSelectionInteractionLocked() ||
       isModalPopoverOpen() ||
-      keyboardSelection.isPendingDismiss();
+      keyboardSelection.isPendingDismiss() ||
+      inspect.pinnedSpecsElement() !== null ||
+      inspect.measureAnchorElement() !== null;
 
     const stopShiftMultiSelecting = () => {
       setIsShiftMultiSelecting(false);
@@ -1120,6 +1146,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void viewportVersion();
       if (
         !isRendererActive() ||
+        isAnnotating() ||
         isDraggingBeyondThreshold() ||
         isSelectionInteractionLocked() ||
         keyboardSelection.isPendingDismiss()
@@ -1147,7 +1174,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // Without Shift the tree only follows an active keyboard-navigation
       // selection — not every frozen element, so it stays hidden during
       // drag-marquee selection or after a non-deactivating mouse copy.
-      if (!isShiftKeyHeld()) return keyboardSelection.selectedElement();
+      // With the specs panel on, Shift pins that panel instead (see
+      // inspectElement), so the two never compete for the same key.
+      if (!isShiftKeyHeld() || inspect.isSpecsEnabled()) {
+        return keyboardSelection.selectedElement();
+      }
       // With Shift the tree reveals the element under the cursor. While frozen
       // there is no live hover (pointer-move skips detection), so use the frozen
       // selection; while hovering, prefer the freshly hovered element over any
@@ -1701,12 +1732,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     createEffect(
       on(
-        () => [isActivated(), isCopying(), isPromptMode()] as const,
-        ([activated, copying, promptMode]) => {
+        () => [isActivated(), isCopying(), isPromptMode(), inspect.annotationTool()] as const,
+        ([activated, copying, promptMode, annotationTool]) => {
           if (copying) {
             setCursorOverride("progress");
           } else if (activated && !promptMode) {
-            setCursorOverride("crosshair");
+            setCursorOverride(getAnnotationToolCursor(annotationTool));
           } else {
             setCursorOverride(null);
           }
@@ -1734,6 +1765,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       keyboardSelection.clear();
       setIsPendingContextMenuSelect(false);
       setPendingToolbarActionId(null);
+      inspect.selectTool("grab");
+      didAnnotationToolActivate = false;
       if (wasDragging) {
         restoreHostBodyStyle("userSelect");
         clearDragPreview();
@@ -1900,7 +1933,34 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const handleToggleActive = () => {
+      if (isAnnotating()) {
+        inspect.selectTool("grab");
+        didAnnotationToolActivate = false;
+        return;
+      }
       handleActivateAction(currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID);
+    };
+
+    const handleSelectAnnotationTool = (tool: AnnotationTool) => {
+      if (!isEnabled() || isCopying()) return;
+      if (inspect.annotationTool() === tool) {
+        // Putting the tool down leaves things as they were found: back to an
+        // inactive page if picking it up was what activated React Grab,
+        // otherwise back to selecting elements.
+        if (didAnnotationToolActivate) {
+          deactivateRenderer();
+        } else {
+          inspect.selectTool("grab");
+        }
+        return;
+      }
+      if (isPromptMode()) handleInputCancel();
+      dismissAllPopups();
+      inspect.selectTool(tool);
+      if (!isActivated()) {
+        didAnnotationToolActivate = true;
+        toggleActivate();
+      }
     };
 
     const defaultToolbarActionLabel = () => {
@@ -2399,6 +2459,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const keyboardClaimer = setupKeyboardEventClaimer();
 
     const blockEnterIfNeeded = (event: KeyboardEvent) => {
+      if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return false;
       let originalKey: string;
       try {
         originalKey = keyboardClaimer.originalKeyDescriptor?.get
@@ -2788,6 +2849,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        // A note being typed owns its keys outright: Enter and Escape end the
+        // note (not the session), and Cmd+C copies its text.
+        if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
+        if (
+          isAnnotating() &&
+          inspect.selectedAnnotationId() !== null &&
+          (event.key === "Delete" || event.key === "Backspace")
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          inspect.removeSelectedAnnotation();
+          return;
+        }
         // Editable controls keep their native arrow/Tab keys (caret movement,
         // focus traversal). This one guard covers every navigation path in this
         // handler — the discard-prompt pass-through, the overlay branch, and the
@@ -2891,6 +2965,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         if (blockEnterIfNeeded(event)) return;
 
         if (isSpaceActivationKey(event) && isDragRepositioning()) {
@@ -3024,7 +3099,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (!event.isPrimary) return;
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
+        if (isAnnotating()) {
+          inspect.handlePointerMove(event);
+          return;
+        }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
+        // The selection stays on the anchor while Alt is held; the pointer
+        // only picks what the anchor is measured against.
+        if (inspect.measureAnchorElement() !== null) {
+          inspect.trackMeasureTarget(event.clientX, event.clientY);
+          return;
+        }
         if (isElementDetectionBlocked()) return;
         if (isTouchPointer && !isHoldingKeys() && !isActivated()) return;
         const isActiveState = isTouchPointer ? isHoldingKeys() : isActivated();
@@ -3063,6 +3148,26 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         actions.setTouchMode(event.pointerType === "touch");
         if (!isDragging() && isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
         if (isModalPopoverOpen()) return;
+
+        // A pinned panel is the only thing taking presses: one that misses it
+        // must not start a drag or a Shift multi-select under the pin. While
+        // measuring, the pointer is over the far end of the measurement, not
+        // the selection, so a press there must not copy either of them.
+        if (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+
+        if (isAnnotating()) {
+          inspect.handlePointerDown(event);
+          try {
+            document.documentElement.setPointerCapture(event.pointerId);
+          } catch {}
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
 
         if (isPromptMode()) {
           const bounds = selectionBounds();
@@ -3116,6 +3221,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: PointerEvent) => {
         if (event.button !== 0) return;
         if (!event.isPrimary) return;
+        if (isAnnotating()) {
+          // A stroke can end over the toolbar, so the release always finishes
+          // it; a release that belongs to the toolbar is then left for the
+          // toolbar, which is still waiting on it to end its own press.
+          inspect.handlePointerUp(event);
+          if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
         if (isModalPopoverOpen()) return;
         const isActive = isRendererActive() || isSelectionInteractionLocked() || isDragging();
@@ -3134,6 +3249,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: MouseEvent) => {
         if (!isRendererActive() || isCopying() || isPromptMode()) return;
         const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
+        if (isAnnotating()) {
+          if (!isFromOverlay) event.preventDefault();
+          return;
+        }
         const position = { x: event.clientX, y: event.clientY };
         const overlayFrozenElement =
           isFromOverlay && store.frozenElements.length > 1
@@ -3183,6 +3302,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "pointercancel",
       ignoreRealInput((event: PointerEvent) => {
         if (!event.isPrimary) return;
+        inspect.cancelPointerGesture();
         cancelActiveDrag();
       }),
       { capture: true },
@@ -3197,6 +3317,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (isRendererActive() || didJustDrag()) {
           event.preventDefault();
           event.stopImmediatePropagation();
+
+          // A click with the pen or text tool places ink or a note, and one
+          // made while measuring was swallowed at the press; neither is the
+          // element pick that ends a toggled session.
+          if (isAnnotating() || inspect.measureAnchorElement() !== null) return;
 
           if (store.wasActivatedByToggle && !isPromptMode() && !event.shiftKey) {
             if (!isHoldingKeys()) {
@@ -3476,6 +3601,97 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       () => didJustCopy() || (isToolbarSelectHovered() && !isFrozenPhase()),
     );
     const hasDragPreviewBounds = createMemo(() => dragPreviewBounds().length > 0);
+
+    const inspectElement = createMemo(() => {
+      if (!isRendererActive() || isAnnotating()) return null;
+      // Shift and Alt each hold whatever was being inspected when they went
+      // down, so held together they hold the same element.
+      const heldElement = inspect.pinnedSpecsElement() ?? inspect.measureAnchorElement();
+      if (heldElement) {
+        void viewportVersion();
+        return isElementConnected(heldElement) ? heldElement : null;
+      }
+      if (isSelectionSuppressed()) return null;
+      const element = effectiveElement();
+      return element && isElementConnected(element) ? element : null;
+    });
+
+    // Reaching for the specs panel would normally move the hover off the
+    // element it describes. Holding Shift pins the panel to that element, so
+    // the pointer can travel to the panel and switch properties off and on.
+    createEffect(
+      on(
+        isShiftKeyHeld,
+        (isShiftHeld) => {
+          if (!isShiftHeld) {
+            inspect.releaseSpecsPin();
+            return;
+          }
+          if (!inspect.isSpecsEnabled() || isPromptMode() || isDragging()) return;
+          const element = inspectElement();
+          if (element) inspect.pinSpecs(element);
+        },
+        { defer: true },
+      ),
+    );
+
+    // Redlines show the spacing around the hovered element. Holding Alt
+    // anchors them to it instead, so the pointer can go to another element
+    // and read the distances between the two.
+    createEffect(
+      on(
+        isAltKeyHeld,
+        (isAltHeld) => {
+          if (!isAltHeld) {
+            const lastPointer = inspect.stopMeasuring();
+            if (lastPointer) handlePointerMove(lastPointer.x, lastPointer.y, isShiftKeyHeld());
+            return;
+          }
+          if (!inspect.isRedlinesEnabled() || isPromptMode() || isDragging()) return;
+          const element = inspectElement();
+          if (element) inspect.startMeasuring(element);
+        },
+        { defer: true },
+      ),
+    );
+
+    createEffect(() => {
+      if (inspectElement() !== null) return;
+      if (inspect.pinnedSpecsElement() !== null) inspect.unpinSpecs();
+      if (inspect.measureAnchorElement() !== null) inspect.stopMeasuring();
+    });
+
+    const inspectRendererState: InspectRendererState = {
+      isSpecsEnabled: inspect.isSpecsEnabled,
+      isRedlinesEnabled: inspect.isRedlinesEnabled,
+      annotationTool: inspect.annotationTool,
+      element: inspectElement,
+      measureTarget: inspect.measureTargetElement,
+      pointer,
+      viewportVersion,
+      strokes: inspect.strokes,
+      draftStroke: inspect.draftStroke,
+      texts: inspect.texts,
+      textDraftPosition: inspect.textDraftPosition,
+      hasAnnotations: inspect.hasAnnotations,
+      selectedAnnotationId: inspect.selectedAnnotationId,
+      isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
+      onSpecsPanelHoverChange: inspect.setSpecsPanelHovered,
+      // Switching a property off moves things: the selection box, the redlines
+      // and the panel's own placement all re-measure on the viewport version.
+      onSpecsStylesChange: actions.incrementViewportVersion,
+      onToggleSpecs: inspect.toggleSpecs,
+      onToggleRedlines: inspect.toggleRedlines,
+      onSelectAnnotationTool: handleSelectAnnotationTool,
+      // With one annotation selected the button removes just that one.
+      onClearAnnotations: () =>
+        inspect.selectedAnnotationId() === null
+          ? inspect.clearAnnotations()
+          : inspect.removeSelectedAnnotation(),
+      onTextDraftChange: inspect.setTextDraftValue,
+      onTextDraftCommit: inspect.commitTextDraft,
+      onTextDraftCancel: inspect.discardTextDraft,
+    };
 
     const selectionVisible = createMemo(() => {
       if (!isThemeEnabled()) return false;
@@ -4140,6 +4356,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onSetDefaultAction={handleSetDefaultAction}
                 onToggleToolbarMenu={handleToggleToolbarMenu}
                 onToolbarMenuDismiss={dismissToolbarMenu}
+                inspect={inspectRendererState}
               />
             );
           }, rendererRoot);

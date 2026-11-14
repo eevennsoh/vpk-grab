@@ -50,6 +50,34 @@ test.describe("Toolbar Selection Hover", () => {
         .poll(() => reactGrab.isSelectionBoxVisible(), { timeout: UI_STATE_TIMEOUT_MS })
         .toBe(true);
     });
+
+    test("should restore selection when the toolbar never hears the pointer leave", async ({
+      reactGrab,
+    }) => {
+      await reactGrab.activate();
+      await hoverToolbar(reactGrab.page);
+      // The browser sends no mouseleave when the pointer's next target cannot
+      // be hit, which is what a pointer leaving in the frame the page freezes
+      // finds. Swallowing the event reproduces that on every run.
+      await reactGrab.page.evaluate((attributeName) => {
+        const shadowRoot = document.querySelector(`[${attributeName}]`)?.shadowRoot;
+        shadowRoot?.addEventListener("mouseleave", (event) => event.stopPropagation(), {
+          capture: true,
+        });
+      }, ATTRIBUTE_NAME);
+
+      const listItem = await reactGrab.page.locator("li").first().boundingBox();
+      if (!listItem) throw new Error("No list item to hover");
+      await reactGrab.page.mouse.move(
+        listItem.x + listItem.width / 2,
+        listItem.y + listItem.height / 2,
+        { steps: 5 },
+      );
+
+      await expect
+        .poll(() => reactGrab.isSelectionBoxVisible(), { timeout: UI_STATE_TIMEOUT_MS })
+        .toBe(true);
+    });
   });
 
   test.describe("Frozen Mode", () => {

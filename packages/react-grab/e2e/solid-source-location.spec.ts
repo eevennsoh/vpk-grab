@@ -6,7 +6,7 @@ import { SOLID_SOURCE_LOCATION_ATTRIBUTE } from "../src/utils/resolve-solid-sour
 const TOOLBAR_ACTION_SELECTOR = "[data-react-grab-toolbar-action]";
 const TOOLBAR_ACTION_SOURCE_PATH =
   "packages/react-grab/src/components/toolbar/toolbar-action-button.tsx";
-const TOOLBAR_ACTION_SOURCE_LINE_NUMBER = 24;
+const TOOLBAR_ACTION_SOURCE_LINE_NUMBER = 26;
 const TOOLBAR_ACTION_SOURCE_COLUMN_NUMBER = 5;
 
 test("exposes exact Solid sources only in development", async ({ reactGrab }, testInfo) => {

@@ -6,6 +6,8 @@ interface ToolbarActionButtonProps {
   label: string;
   isActive?: boolean;
   isToggle?: boolean;
+  hasPressedState?: boolean;
+  keepsPageFocus?: boolean;
   class?: string;
   wrapperClass?: string;
   ref?: (element: HTMLButtonElement) => void;
@@ -27,10 +29,16 @@ export const ToolbarActionButton: Component<ToolbarActionButtonProps> = (props) 
       data-react-grab-toolbar-toggle={props.isToggle ? "" : undefined}
       data-react-grab-toolbar-action={props.actionId}
       aria-label={props.label}
-      aria-pressed={Boolean(props.isActive)}
+      aria-pressed={props.hasPressedState === false ? undefined : Boolean(props.isActive)}
       type="button"
       class={props.class}
       onClick={props.onClick}
+      on:mousedown={(event) => {
+        // A press that moved focus onto the toolbar would close whatever the
+        // page shows only while focused, and would leave the activation
+        // shortcut landing on this button instead of the page.
+        if (props.keepsPageFocus) event.preventDefault();
+      }}
       on:contextmenu={(event) => props.onContextMenu?.(event)}
       onMouseEnter={props.onMouseEnter}
       onMouseLeave={props.onMouseLeave}

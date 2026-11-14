@@ -2,7 +2,12 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import { defineConfig } from "vite-plus";
 import type { PackUserConfig } from "vite-plus/pack";
-import { cssTextPlugin, solidBabelPlugin, solidWebBrowserPlugin } from "./solid-babel-plugin.js";
+import {
+  cssTextPlugin,
+  reactGlobalStubPlugin,
+  solidBabelPlugin,
+  solidWebBrowserPlugin,
+} from "./solid-babel-plugin.js";
 import { solidSourceLocationBabelPlugin } from "./solid-source-location-babel-plugin.js";
 
 const getCommitHash = (): string => {
@@ -69,8 +74,13 @@ const makeIifePack = (entry: string, globalName: string, isDemo: boolean): PackU
     entryFileNames: "[name].global.js",
   },
   define: createDefine(isDemo),
-  deps: { alwaysBundle },
-  plugins: [solidWebBrowserPlugin(), cssTextPlugin(), createSolidBabelPlugin()],
+  deps: { alwaysBundle: [...alwaysBundle, /^react$/] },
+  plugins: [
+    reactGlobalStubPlugin(),
+    solidWebBrowserPlugin(),
+    cssTextPlugin(),
+    createSolidBabelPlugin(),
+  ],
 });
 
 const makeModulePack = (entry: string[], isDemo: boolean): PackUserConfig => ({

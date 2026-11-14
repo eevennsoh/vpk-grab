@@ -9,6 +9,9 @@ import { Toolbar } from "./toolbar/index.js";
 import { ContextMenu } from "./context-menu.js";
 import { ToolbarMenu } from "./toolbar/toolbar-menu.js";
 import { HierarchyMenu } from "./toolbar/hierarchy-menu.js";
+import { AnnotationLayer } from "./inspect/annotation-layer.js";
+import { RedlinesOverlay } from "./inspect/redlines-overlay.js";
+import { SpecsPanel } from "./inspect/specs-panel.js";
 
 export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
   return (
@@ -24,6 +27,30 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
         labelInstances={props.labelInstances}
       />
       <FrozenGlow visible={props.isFrozen ?? false} />
+      <Show when={props.inspect}>
+        {(inspect) => (
+          <>
+            <AnnotationLayer
+              strokes={inspect().strokes()}
+              draftStroke={inspect().draftStroke()}
+              texts={inspect().texts()}
+              textDraftPosition={inspect().textDraftPosition()}
+              isEditing={inspect().annotationTool() === "edit"}
+              selectedAnnotationId={inspect().selectedAnnotationId()}
+              onTextDraftChange={inspect().onTextDraftChange}
+              onTextDraftCommit={inspect().onTextDraftCommit}
+              onTextDraftCancel={inspect().onTextDraftCancel}
+            />
+            <Show when={inspect().isRedlinesEnabled()}>
+              <RedlinesOverlay
+                element={inspect().element()}
+                measureTarget={inspect().measureTarget()}
+                viewportVersion={inspect().viewportVersion()}
+              />
+            </Show>
+          </>
+        )}
+      </Show>
       <Show
         when={props.selectionLabelVisible && (props.frozenLabelEntryAccessors?.length ?? 0) > 0}
       >
@@ -116,6 +143,22 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           </Show>
         )}
       </For>
+      {/* After the selection labels, which share its z-index: a label that
+          reaches the panel's corner must not cover the values being read. */}
+      <Show when={props.inspect?.isSpecsEnabled() ? props.inspect : undefined}>
+        {(inspect) => (
+          <SpecsPanel
+            element={inspect().element()}
+            componentName={props.selectionComponentName}
+            measureTarget={inspect().measureTarget()}
+            pointer={inspect().pointer()}
+            viewportVersion={inspect().viewportVersion()}
+            isPinned={inspect().isSpecsPinned()}
+            onHoverChange={inspect().onSpecsPanelHoverChange}
+            onStylesChange={inspect().onSpecsStylesChange}
+          />
+        )}
+      </Show>
       <Show when={props.toolbarVisible !== false}>
         <Toolbar
           isActive={props.isActive}
@@ -131,6 +174,15 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           onSelectHoverChange={props.onToolbarSelectHoverChange}
           onContainerRef={props.onToolbarRef}
           onToggleToolbarMenu={props.onToggleToolbarMenu}
+          isSpecsEnabled={props.inspect?.isSpecsEnabled()}
+          isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
+          annotationTool={props.inspect?.annotationTool()}
+          hasAnnotations={props.inspect?.hasAnnotations()}
+          hasSelectedAnnotation={Boolean(props.inspect?.selectedAnnotationId())}
+          onToggleSpecs={props.inspect?.onToggleSpecs}
+          onToggleRedlines={props.inspect?.onToggleRedlines}
+          onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}
+          onClearAnnotations={props.inspect?.onClearAnnotations}
         />
       </Show>
       <ContextMenu

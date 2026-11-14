@@ -8,7 +8,9 @@ const waitForToolbar = async (reactGrab: ReactGrabPageObject) => {
 
 test.describe("Toolbar Action Buttons", () => {
   test.describe("Layout", () => {
-    test("renders only the copy button, unpressed initially", async ({ reactGrab }) => {
+    test("renders the copy button unpressed, then the inspect and annotation controls", async ({
+      reactGrab,
+    }) => {
       await waitForToolbar(reactGrab);
 
       const actionIds = await reactGrab.page
@@ -16,7 +18,15 @@ test.describe("Toolbar Action Buttons", () => {
         .evaluateAll((elements) =>
           elements.map((element) => element.getAttribute("data-react-grab-toolbar-action")),
         );
-      expect(actionIds).toEqual(["copy"]);
+      expect(actionIds).toEqual([
+        "copy",
+        "inspect-specs",
+        "inspect-redlines",
+        "annotate-pen",
+        "annotate-text",
+        "annotate-edit",
+        "annotate-clear",
+      ]);
       expect(await reactGrab.getToolbarActionPressed("copy")).toBe(false);
     });
 

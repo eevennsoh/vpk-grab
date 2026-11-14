@@ -239,6 +239,10 @@ export const TOOLBAR_COLLAPSED_LONG_PX = 30;
 // can flip true mid-fade-in and start a dim transition on the outer
 // container while the inner content is still materializing.
 export const TOOLBAR_COLLAPSE_ANIMATION_DURATION_MS = 260;
+// Match the `duration-220` and `duration-140` classes on the toolbar's
+// annotation actions group.
+export const TOOLBAR_ANNOTATION_ACTIONS_REVEAL_DURATION_MS = 220;
+export const TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS = 140;
 export const TOOLBAR_DEFAULT_WIDTH_PX = 38;
 export const TOOLBAR_DEFAULT_HEIGHT_PX = 28;
 export const TOOLBAR_DEFAULT_POSITION_RATIO = 0.5;
@@ -414,3 +418,33 @@ export const RELEVANT_CSS_PROPERTIES = new Set([
   "object-fit",
   "object-position",
 ]);
+
+export const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
+export const ANNOTATION_INPUT_ATTRIBUTE = "data-react-grab-annotation-input";
+export const INSPECT_ACCENT_COLOR = "#f24822";
+export const INSPECT_ACCENT_CONTRAST_COLOR = "#ffffff";
+
+export const ANNOTATION_STROKE_WIDTH_PX = 3;
+export const ANNOTATION_MIN_STROKE_LENGTH_PX = 4;
+export const ANNOTATION_MIN_SAMPLE_DISTANCE_PX = 1;
+// A Shift-drawn line this close to horizontal or vertical is made exactly so,
+// which is what an underline or a divider drawn by hand is aiming for.
+export const ANNOTATION_STRAIGHT_LINE_AXIS_SNAP_DEG = 4;
+export const ANNOTATION_TEXT_FONT_SIZE_PX = 14;
+export const ANNOTATION_TEXT_LINE_HEIGHT_PX = 20;
+
+// Below this a gap is sub-pixel layout rounding rather than spacing.
+export const REDLINE_MIN_DISTANCE_PX = 0.5;
+export const REDLINE_TICK_LENGTH_PX = 7;
+export const REDLINE_LABEL_HEIGHT_PX = 16;
+// Neighbours are measured on every hover; a list with thousands of rows only
+// needs the ones around the hovered row to find the nearest on each side.
+export const REDLINE_SIBLING_SEARCH_RADIUS = 60;
+
+export const SPECS_PANEL_WIDTH_PX = 272;
+export const SPECS_PANEL_MARGIN_PX = 12;
+export const SPECS_PANEL_FALLBACK_HEIGHT_PX = 420;
+export const SPECS_VALUE_MAX_LENGTH = 44;
+export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
+export const ANNOTATION_HIT_WIDTH_PX = 14;
+export const ANNOTATION_SELECTION_PADDING_PX = 6;
