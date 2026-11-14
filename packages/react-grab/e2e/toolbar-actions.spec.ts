@@ -26,6 +26,7 @@ test.describe("Toolbar Action Buttons", () => {
         "annotate-text",
         "annotate-edit",
         "annotate-clear",
+        "style-changes",
       ]);
       expect(await reactGrab.getToolbarActionPressed("copy")).toBe(false);
     });
