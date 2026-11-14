@@ -85,12 +85,12 @@ Then load it at the top of the entry file:
 ```tsx
 // Vite
 if (import.meta.env.DEV) {
-  import("react-grab");
+  import("grab");
 }
 
 // webpack and others
 if (process.env.NODE_ENV === "development") {
-  import("react-grab");
+  import("grab");
 }
 ```
 
