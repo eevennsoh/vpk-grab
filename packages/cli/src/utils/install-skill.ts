@@ -11,11 +11,11 @@ import {
 } from "agent-install/skill";
 import { detectAvailableAgents } from "./detect-agents.js";
 
-const SKILL_NAME = "react-grab";
+const SKILL_NAME = "vpk-grab";
 
 // The skill is bundled next to the compiled CLI (see scripts/bundle-skill.mjs)
 // so installs work offline and stay pinned to this CLI version.
-const SKILL_SOURCE = fileURLToPath(new URL("../skills/react-grab", import.meta.url));
+const SKILL_SOURCE = fileURLToPath(new URL("../skills/vpk-grab", import.meta.url));
 
 export const agentLabel = (agent: SkillAgentType): string => getSkillAgentConfig(agent).displayName;
 

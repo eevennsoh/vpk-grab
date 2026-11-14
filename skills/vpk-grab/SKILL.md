@@ -1,13 +1,15 @@
 ---
 name: vpk-grab
 description: >-
-  Use when installing vpk-grab (the React Grab fork with a design inspector) in
-  a React project, and when the user brings something back from it: a pasted
-  grab, a style value or design token read from its specs panel, a property
-  they switched off there, a spacing measurement, or a screenshot with drawn
-  annotations. Triggers: "install vpk-grab", "add vpk-grab", "set up the grab
-  tool", "the specs panel says", "I turned off the padding and it looks right",
-  "the gap measures 12".
+  Use for anything involving vpk-grab, the React Grab fork with a design
+  inspector. Installing it in a React project. Acting on what the user brings
+  back from it: a pasted grab, a style value or design token read from its
+  specs panel, a property they switched off there, a spacing measurement, or a
+  screenshot with drawn annotations. And running the hands-free loop, where
+  each grab the user makes in the browser reaches the agent as a task with no
+  copy-paste. Triggers: "install vpk-grab", "add vpk-grab", "the specs panel
+  says", "I turned off the padding and it looks right", "the gap measures 12",
+  "watch my grabs", "monitor my grabs", "watch my clipboard for grabs".
 ---
 
 # vpk-grab
@@ -37,7 +39,8 @@ curl -s https://api.github.com/repos/eevennsoh/vpk-grab/releases/latest | grep '
 2. Check whether React Grab is already there: a `react-grab` dependency in
    `package.json`, or a script tag pointing at `unpkg.com/react-grab`. If so,
    replace that one reference and leave the rest of the setup as it is. Do not
-   load both.
+   load both. Do not run `npx grab@latest init` or `npx grab@latest upgrade`
+   either: they install upstream React Grab over the fork.
 
 3. Otherwise install by framework.
 
@@ -85,7 +88,13 @@ example, in `<head>` before the app's own scripts, on development pages only.
    `vpk-grab` intro line. If the project has a Content Security Policy, the
    script tag needs `cdn.jsdelivr.net` allowed in `script-src` for development.
 
-5. Tell the user how to use it (next section). They will not find the inspector
+5. Keep this skill with the project, so later sessions know how to act on
+   what the tool reports. Save this file as `vpk-grab/SKILL.md` in the folder
+   the project's agent reads skills from: `.agents/skills/`, `.claude/skills/`
+   or `.cursor/skills/`, whichever already exists. Skip this if it is already
+   there.
+
+6. Tell the user how to use it (next section). They will not find the inspector
    unless they know about the toolbar toggles.
 
 ## What the user can do with it
@@ -155,5 +164,53 @@ guessing from class names.
 
 ## The hands-free loop
 
-The `react-grab` skill in this repository watches for grabs and feeds each one
-to you as a task, with no pasting. It works unchanged with vpk-grab.
+Use this when the user wants their grabs handled as they make them ("watch my
+grabs"), not for a single pasted grab.
+
+`npx react-grab@latest pull` waits for new grabs and prints each as one line of
+JSON, starting a background clipboard watcher the first time. The watcher is
+React Grab's own CLI; it reads what vpk-grab copies, so it works unchanged.
+
+Repeat until the user says stop:
+
+1. Wait for the next grab:
+
+```bash
+npx react-grab@latest pull --max-age 0
+```
+
+It blocks until the user grabs something, then prints the new grab or grabs,
+one JSON object per line. `--max-age 0` delivers every grab whatever its age,
+so one made while you were busy is not dropped as stale. Act on every line. If
+your shell cancels the command before a grab arrives, run it again; the watcher
+keeps capturing and `pull` resumes where it left off.
+
+2. Act on the grab. Each has `content` (the element's source references) and,
+   when the user typed an instruction with it, `prompt`.
+   - With a `prompt`, that instruction is the task. Carry it out against the
+     source that `content` points to.
+   - Without one, apply the standing instruction the user gave when starting
+     the loop. If there is none, summarise the component and its `file:line`
+     and wait for direction.
+
+3. Go back to step 1.
+
+A new grab while you are working wins: the user is redirecting you. So run
+anything slow (dev servers, builds, installs, tests) in the background, and
+between steps check without blocking:
+
+```bash
+npx react-grab@latest pull --max-age 0 --wait 0
+```
+
+Empty output means nothing new. If it prints a grab, stop the current task,
+cancel the background processes you started for it, and act on the new grab.
+
+When the user says stop, run this and do not pull again:
+
+```bash
+npx react-grab@latest stop
+```
+
+The watcher reads the clipboard of the machine it runs on, so run it where the
+browser is, not over SSH or in a remote container.

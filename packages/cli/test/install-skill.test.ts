@@ -53,7 +53,7 @@ describe("installSkill", () => {
     expect(mockDetectAvailableAgents).toHaveBeenCalledTimes(1);
     expect(mockAdd).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: expect.stringContaining(join("skills", "react-grab")),
+        source: expect.stringContaining(join("skills", "vpk-grab")),
         agents: ["claude-code", "cursor"],
         global: false,
         cwd: "/app",
@@ -81,7 +81,7 @@ describe("removeSkill", () => {
 
     expect(removed).toEqual(["claude-code"]);
     expect(mockRmSync).toHaveBeenCalledTimes(1);
-    expect(mockRmSync).toHaveBeenCalledWith(join("/app/.claude-code", "react-grab"), {
+    expect(mockRmSync).toHaveBeenCalledWith(join("/app/.claude-code", "vpk-grab"), {
       recursive: true,
       force: true,
     });
@@ -106,7 +106,7 @@ describe("removeSkill", () => {
 
     expect(removed).toEqual(["universal"]);
     expect(mockGetCanonicalSkillsDir).toHaveBeenCalledWith(true, "/app");
-    expect(mockRmSync).toHaveBeenCalledWith(join("/app/.agents/skills", "react-grab"), {
+    expect(mockRmSync).toHaveBeenCalledWith(join("/app/.agents/skills", "vpk-grab"), {
       recursive: true,
       force: true,
     });

@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 // watch`), so only SKILL.md ships — not src/, configs, node_modules, or test/.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
-const skillRoot = path.join(repoRoot, "skills", "react-grab");
-const destination = path.join(here, "..", "skills", "react-grab");
+const skillRoot = path.join(repoRoot, "skills", "vpk-grab");
+const destination = path.join(here, "..", "skills", "vpk-grab");
 const RUNTIME_ENTRIES = ["SKILL.md"];
 
 const bundle = () => {

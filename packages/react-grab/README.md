@@ -95,16 +95,21 @@ if (process.env.NODE_ENV === "development") {
 
 ## For AI agents
 
-Two skills ship in [`skills/`](skills):
+One skill, [`vpk-grab`](skills/vpk-grab/SKILL.md), covers everything an agent needs:
 
-- [`vpk-grab`](skills/vpk-grab/SKILL.md) installs the tool in a project and tells the agent how to act on what you bring back from it: a pasted grab, a token the panel named, a property you switched off, a measurement.
-- [`react-grab`](skills/react-grab/SKILL.md) is React Grab's hands-free loop, where each grab you make in the browser is picked up and acted on without pasting.
+- installing the tool in a project;
+- acting on what you bring back from it: a pasted grab, a token the panel named, a property you switched off, a measurement;
+- the hands-free loop, where each grab you make in the browser is picked up and acted on without pasting.
 
-Add both to your agent with the [skills CLI](https://github.com/vercel-labs/skills):
+The skill lives in this repository and is not published to any skill registry. The install prompt above saves it into the project as part of the setup. To add it by hand, copy the file into the folder your agent reads skills from:
 
 ```bash
-npx skills add eevennsoh/vpk-grab
+mkdir -p .agents/skills/vpk-grab
+curl -fsSL https://raw.githubusercontent.com/eevennsoh/vpk-grab/main/skills/vpk-grab/SKILL.md \
+  -o .agents/skills/vpk-grab/SKILL.md
 ```
+
+Claude Code reads `.claude/skills/` and Cursor also reads `.cursor/skills/`; use whichever your project already has.
 
 ## Develop
 
