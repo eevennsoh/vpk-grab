@@ -12,6 +12,7 @@ import { HierarchyMenu } from "./toolbar/hierarchy-menu.js";
 import { AnnotationLayer } from "./inspect/annotation-layer.js";
 import { RedlinesOverlay } from "./inspect/redlines-overlay.js";
 import { SpecsPanel } from "./inspect/specs-panel.js";
+import { ChangesMenu } from "./toolbar/changes-menu.js";
 
 export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
   return (
@@ -153,8 +154,12 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             measureTarget={inspect().measureTarget()}
             pointer={inspect().pointer()}
             viewportVersion={inspect().viewportVersion()}
+            styleOverridesVersion={inspect().styleOverridesVersion()}
             isPinned={inspect().isSpecsPinned()}
+            isPinLocked={inspect().isSpecsPinLocked()}
             onHoverChange={inspect().onSpecsPanelHoverChange}
+            onEngagedChange={inspect().onSpecsPanelEngagedChange}
+            onTogglePinLock={inspect().onToggleSpecsPinLock}
             onStylesChange={inspect().onSpecsStylesChange}
           />
         )}
@@ -183,6 +188,8 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           onToggleRedlines={props.inspect?.onToggleRedlines}
           onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}
           onClearAnnotations={props.inspect?.onClearAnnotations}
+          styleChangeCount={props.inspect?.styleChangeCount()}
+          onToggleChangesMenu={props.inspect?.onToggleChangesMenu}
         />
       </Show>
       <ContextMenu
@@ -203,6 +210,17 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
         onSetDefaultAction={props.onSetDefaultAction ?? (() => {})}
         onDismiss={props.onToolbarMenuDismiss ?? (() => {})}
       />
+      <Show when={props.inspect}>
+        {(inspect) => (
+          <ChangesMenu
+            position={inspect().changesMenuPosition()}
+            styleOverridesVersion={inspect().styleOverridesVersion()}
+            onDismiss={inspect().onDismissChangesMenu}
+            onConfigure={inspect().onConfigureStyleChanges}
+            onStylesChange={inspect().onSpecsStylesChange}
+          />
+        )}
+      </Show>
       <HierarchyMenu position={props.hierarchyMenuPosition ?? null} state={props.hierarchyState} />
     </>
   );

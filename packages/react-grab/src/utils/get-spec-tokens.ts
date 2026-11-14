@@ -2,10 +2,10 @@ import { collectTokenRules } from "./collect-token-rules.js";
 import { createSheetRuleCache } from "./create-sheet-rule-cache.js";
 import { formatSpecToken } from "./format-spec-token.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
-import { isShadowRoot } from "./is-shadow-root.js";
+import { getStyleProbe } from "./get-style-probe.js";
+import { getElementStyleSheets } from "./get-element-style-sheets.js";
 import { isSpecSourceProperty } from "./is-spec-source-property.js";
 import { parseCssDeclarations, type CssDeclaration } from "./parse-css-declarations.js";
-import { REACT_GRAB_ATTRIBUTE_NAME } from "./react-grab-attribute-name.js";
 import { substituteCssVariables } from "./substitute-css-variables.js";
 
 const VARIABLE_FUNCTION = "var(";
@@ -33,21 +33,6 @@ const PROBE_CONTEXT_PROPERTIES = [
 
 const getTokenRules = createSheetRuleCache(collectTokenRules);
 
-let probeElement: HTMLElement | null = null;
-
-// Lives in the overlay's shadow root so no page stylesheet reaches it and no
-// page observer sees it.
-const getProbeElement = (): HTMLElement | null => {
-  if (probeElement?.isConnected) return probeElement;
-  const shadowRoot = document.querySelector(`[${REACT_GRAB_ATTRIBUTE_NAME}]`)?.shadowRoot;
-  if (!shadowRoot) return null;
-  probeElement = document.createElement("div");
-  probeElement.setAttribute("aria-hidden", "true");
-  probeElement.style.display = "none";
-  shadowRoot.appendChild(probeElement);
-  return probeElement;
-};
-
 const matchesSelector = (element: Element, selector: string): boolean => {
   try {
     return element.matches(selector);
@@ -74,10 +59,7 @@ const collectTokenDeclarations = (element: Element): CssDeclaration[] => {
     }
   }
 
-  const rootNode = element.getRootNode();
-  const styleScope = isShadowRoot(rootNode) ? rootNode : element.ownerDocument;
-  for (const sheet of [...styleScope.styleSheets, ...(styleScope.adoptedStyleSheets ?? [])]) {
-    if (sheet.disabled) continue;
+  for (const sheet of getElementStyleSheets(element)) {
     for (const tokenRule of getTokenRules(sheet) ?? []) {
       if (matchesSelector(element, tokenRule.selector)) {
         matchedDeclarations.push(...tokenRule.declarations);
@@ -107,7 +89,7 @@ export const getSpecTokens = (
 
   const declarations = collectTokenDeclarations(element);
   if (declarations.length === 0) return tokensBySpecProperty;
-  const probe = getProbeElement();
+  const probe = getStyleProbe();
   if (!probe) return tokensBySpecProperty;
 
   const computedStyle = getElementComputedStyle(element);

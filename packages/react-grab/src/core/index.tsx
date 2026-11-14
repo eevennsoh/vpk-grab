@@ -70,6 +70,7 @@ import { buildElementHierarchy } from "../utils/build-element-hierarchy.js";
 import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
   ANNOTATION_INPUT_ATTRIBUTE,
+  SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
   FEEDBACK_DURATION_MS,
@@ -150,6 +151,7 @@ import { isMac } from "../utils/is-mac.js";
 import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
+import { getAllStyleOverrides } from "../utils/style-override-store.js";
 import { createInspectController } from "./create-inspect-controller.js";
 import { copyPlugin } from "./plugins/copy.js";
 import { commentPlugin } from "./plugins/comment.js";
@@ -371,8 +373,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       initialToolbarState,
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
-    const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey);
-    const isAltKeyHeld = createModifierTracker((event) => event.altKey);
+    // Shift and Alt typed into a specs field are text, not a pin or a measure.
+    const isSpecsFieldEvent = (event: KeyboardEvent) =>
+      isEventFromOverlay(event, SPECS_INPUT_ATTRIBUTE);
+    const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey, isSpecsFieldEvent);
+    const isAltKeyHeld = createModifierTracker((event) => event.altKey, isSpecsFieldEvent);
     const inspect = createInspectController({ isShiftKeyHeld, getElementAtPosition });
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
@@ -2850,8 +2855,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
         // A note being typed owns its keys outright: Enter and Escape end the
-        // note (not the session), and Cmd+C copies its text.
+        // note (not the session), and Cmd+C copies its text. So does a value
+        // being typed into the specs panel.
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
+        if (isSpecsFieldEvent(event)) return;
+        if (event.key === "Escape" && inspect.isSpecsPinLocked()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          inspect.unpinSpecs();
+          return;
+        }
         if (
           isAnnotating() &&
           inspect.selectedAnnotationId() !== null &&
@@ -3156,6 +3169,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) {
           event.preventDefault();
           event.stopImmediatePropagation();
+          if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
           return;
         }
 
@@ -3661,6 +3675,56 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (inspect.measureAnchorElement() !== null) inspect.stopMeasuring();
     });
 
+    // Overrides stay on the page after the overlay is put away, so the count
+    // is read whether or not it is active. Re-read on the viewport version
+    // too: an override the app has since overwritten drops out of the list.
+    const styleChangeCount = createMemo(() => {
+      void inspect.styleOverridesVersion();
+      void viewportVersion();
+      return getAllStyleOverrides().length;
+    });
+
+    const [changesMenuPosition, setChangesMenuPosition] = createSignal<DropdownAnchor | null>(null);
+    let stopChangesMenuTracking: (() => void) | null = null;
+    onCleanup(() => stopChangesMenuTracking?.());
+
+    const dismissChangesMenu = () => {
+      stopChangesMenuTracking?.();
+      stopChangesMenuTracking = null;
+      setChangesMenuPosition(null);
+    };
+
+    const handleToggleChangesMenu = () => {
+      if (changesMenuPosition() !== null) {
+        dismissChangesMenu();
+        return;
+      }
+      dismissToolbarMenu();
+      stopChangesMenuTracking = trackDropdownPosition(
+        computeDropdownAnchor,
+        setChangesMenuPosition,
+      );
+    };
+
+    createEffect(
+      on(styleChangeCount, (changeCount) => {
+        if (changeCount === 0) dismissChangesMenu();
+      }),
+    );
+
+    // Reopens the specs panel on an element with changes, locked so it stays
+    // open without a key held, and activates whatever that needs.
+    const configureStyleChanges = (element: Element) => {
+      dismissChangesMenu();
+      if (!isElementConnected(element)) return;
+      if (!isActivated()) {
+        actions.setWasActivatedByToggle(true);
+        activateRenderer();
+      }
+      if (!inspect.isSpecsEnabled()) inspect.toggleSpecs();
+      inspect.lockSpecsPin(element);
+    };
+
     const inspectRendererState: InspectRendererState = {
       isSpecsEnabled: inspect.isSpecsEnabled,
       isRedlinesEnabled: inspect.isRedlinesEnabled,
@@ -3676,10 +3740,22 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       hasAnnotations: inspect.hasAnnotations,
       selectedAnnotationId: inspect.selectedAnnotationId,
       isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
+      isSpecsPinLocked: inspect.isSpecsPinLocked,
+      styleOverridesVersion: inspect.styleOverridesVersion,
+      styleChangeCount,
+      changesMenuPosition,
       onSpecsPanelHoverChange: inspect.setSpecsPanelHovered,
-      // Switching a property off moves things: the selection box, the redlines
-      // and the panel's own placement all re-measure on the viewport version.
-      onSpecsStylesChange: actions.incrementViewportVersion,
+      onSpecsPanelEngagedChange: inspect.setSpecsPanelEngaged,
+      onToggleSpecsPinLock: inspect.toggleSpecsPinLock,
+      // Changing a property moves things: the selection box, the redlines and
+      // the panel's own placement all re-measure on the viewport version.
+      onSpecsStylesChange: () => {
+        inspect.notifyStyleOverridesChanged();
+        actions.incrementViewportVersion();
+      },
+      onToggleChangesMenu: () => handleToggleChangesMenu(),
+      onDismissChangesMenu: () => dismissChangesMenu(),
+      onConfigureStyleChanges: (element) => configureStyleChanges(element),
       onToggleSpecs: inspect.toggleSpecs,
       onToggleRedlines: inspect.toggleRedlines,
       onSelectAnnotationTool: handleSelectAnnotationTool,

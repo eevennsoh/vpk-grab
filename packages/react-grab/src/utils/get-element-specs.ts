@@ -8,8 +8,8 @@ import { formatCssNumber } from "./format-css-number.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
 import { getSpecTokens } from "./get-spec-tokens.js";
 import { getTagName } from "./get-tag-name.js";
-import { mergeDisabledSpecRows } from "./merge-disabled-spec-rows.js";
-import { getDisabledSpecRows } from "./spec-overrides.js";
+import { groupSpecRows } from "./group-spec-rows.js";
+import { getElementStyleOverrides } from "./style-override-store.js";
 import { truncateString } from "./truncate-string.js";
 
 const BOX_SIDES = ["top", "right", "bottom", "left"] as const;
@@ -24,13 +24,14 @@ const TEXT_CONTROL_TAG_NAMES = new Set(["input", "textarea", "select", "button"]
 const PILL_RADIUS_THRESHOLD_PX = 9999;
 
 type ReadStyle = (propertyName: string) => string;
+type SpecRowDraft = Omit<ElementSpecRow, "sectionTitle">;
 
 const createRow = (
   property: string,
   value: string,
   isApplied: boolean,
   swatchColor?: string,
-): ElementSpecRow => ({
+): SpecRowDraft => ({
   property,
   value: truncateString(formatCssNumber(value), SPECS_VALUE_MAX_LENGTH),
   isApplied,
@@ -71,7 +72,7 @@ const formatCornerRadius = (radius: string): string =>
   Number.parseFloat(radius) >= PILL_RADIUS_THRESHOLD_PX ? `${PILL_RADIUS_THRESHOLD_PX}px` : radius;
 
 const createAppearanceRows = (read: ReadStyle, isNonNeutral: (name: string) => boolean) => {
-  const rows: ElementSpecRow[] = [];
+  const rows: SpecRowDraft[] = [];
 
   const backgroundColor = read("background-color");
   rows.push(
@@ -98,22 +99,28 @@ const createAppearanceRows = (read: ReadStyle, isNonNeutral: (name: string) => b
   const isUniformBorderColor = borderColors.every((color) => color === borderColors[0]);
   const isUniformBorderStyle = borderStyles.every((style) => style === borderStyles[0]);
 
-  rows.push(
-    createRow(
-      "border-color",
-      isUniformBorderColor
-        ? formatCssColor(borderColors[0])
-        : borderColors.map(formatCssColor).join(" "),
-      hasBorder,
-      isUniformBorderColor ? borderColors[0] : undefined,
-    ),
-    createRow("border-width", collapseSides(borderWidths), hasBorder),
-    createRow(
-      "border-style",
-      isUniformBorderStyle ? borderStyles[0] : borderStyles.join(" "),
-      hasBorder,
-    ),
-  );
+  if (hasBorder) {
+    rows.push(
+      createRow(
+        "border-color",
+        isUniformBorderColor
+          ? formatCssColor(borderColors[0])
+          : borderColors.map(formatCssColor).join(" "),
+        true,
+        isUniformBorderColor ? borderColors[0] : undefined,
+      ),
+    );
+  }
+  rows.push(createRow("border-width", collapseSides(borderWidths), hasBorder));
+  if (hasBorder) {
+    rows.push(
+      createRow(
+        "border-style",
+        isUniformBorderStyle ? borderStyles[0] : borderStyles.join(" "),
+        true,
+      ),
+    );
+  }
 
   const cornerRadii = BOX_CORNERS.map((corner) =>
     formatCornerRadius(read(`border-${corner}-radius`)),
@@ -140,7 +147,7 @@ const createSpacingRows = (read: ReadStyle, isLayoutContainer: boolean) => {
     (gap) => !NEUTRAL_KEYWORDS.has(gap) && !isZeroLength(gap),
   );
 
-  return [
+  const rows = [
     createRow(
       "margin",
       collapseSides(margins),
@@ -151,12 +158,11 @@ const createSpacingRows = (read: ReadStyle, isLayoutContainer: boolean) => {
       collapseSides(paddings),
       paddings.some((padding) => !isZeroLength(padding)),
     ),
-    createRow(
-      "gap",
-      rowGap === columnGap ? rowGap : `${rowGap} ${columnGap}`,
-      isLayoutContainer && hasGap,
-    ),
   ];
+  if (isLayoutContainer) {
+    rows.push(createRow("gap", rowGap === columnGap ? rowGap : `${rowGap} ${columnGap}`, hasGap));
+  }
+  return rows;
 };
 
 const createLayoutRows = (
@@ -168,7 +174,7 @@ const createLayoutRows = (
   const display = read("display");
   const isFlex = FLEX_DISPLAYS.has(display);
   const isGrid = GRID_DISPLAYS.has(display);
-  const rows: ElementSpecRow[] = [
+  const rows: SpecRowDraft[] = [
     createRow("display", display, display !== getDefaultStylesForTag(tagName).get("display")),
   ];
 
@@ -217,7 +223,7 @@ const createSizeRows = (
   isNonNeutral: (name: string) => boolean,
 ) => {
   const rect = element.getBoundingClientRect();
-  const createDimensionRow = (propertyName: "width" | "height"): ElementSpecRow => {
+  const createDimensionRow = (propertyName: "width" | "height"): SpecRowDraft => {
     const computedValue = read(propertyName);
     const specifiedValue = readSpecifiedValue(element, propertyName);
     const isAuthored = specifiedValue !== null && specifiedValue !== "auto";
@@ -230,7 +236,7 @@ const createSizeRows = (
     );
   };
 
-  const rows: ElementSpecRow[] = [createDimensionRow("width"), createDimensionRow("height")];
+  const rows: SpecRowDraft[] = [createDimensionRow("width"), createDimensionRow("height")];
   for (const propertyName of ["min-width", "max-width", "min-height", "max-height"]) {
     if (isNonNeutral(propertyName)) rows.push(createRow(propertyName, read(propertyName), true));
   }
@@ -243,7 +249,9 @@ const createSizeRows = (
       rows.push(createRow("inset", collapseSides(insets), true));
     }
   }
-  if (isNonNeutral("z-index")) rows.push(createRow("z-index", read("z-index"), true));
+  if (position !== "static" && isNonNeutral("z-index")) {
+    rows.push(createRow("z-index", read("z-index"), true));
+  }
 
   const overflowX = read("overflow-x");
   const overflowY = read("overflow-y");
@@ -266,7 +274,7 @@ const createTypographyRows = (
   isSetOnElement: (name: string) => boolean,
 ) => {
   const color = read("color");
-  const rows: ElementSpecRow[] = [
+  const rows: SpecRowDraft[] = [
     createRow("font-family", formatFontFamily(read("font-family")), isSetOnElement("font-family")),
     createRow("font-size", read("font-size"), isSetOnElement("font-size")),
     createRow("font-weight", read("font-weight"), isSetOnElement("font-weight")),
@@ -283,12 +291,45 @@ const createTypographyRows = (
   return rows;
 };
 
+const createSection = (title: string, rows: SpecRowDraft[]): ElementSpecSection => ({
+  title,
+  rows: rows.map((row) => ({ ...row, sectionTitle: title })),
+});
+
+// An override switched off shows the row as it stood before, struck through;
+// a property the panel no longer lists once it is off (a conditional row, or
+// a whole section) is put back so there is still something to switch on.
+const applyStyleOverrides = (element: Element, sections: ElementSpecSection[]) => {
+  const overrides = getElementStyleOverrides(element);
+  if (overrides.size === 0) return;
+
+  for (const section of sections) {
+    section.rows = section.rows.map((row) => {
+      const override = overrides.get(row.property);
+      if (!override) return row;
+      overrides.delete(row.property);
+      return override.isOff ? { ...override.original, override } : { ...row, override };
+    });
+  }
+  for (const override of overrides.values()) {
+    const orphanRow = { ...override.original, override };
+    const section = sections.find(({ title }) => title === orphanRow.sectionTitle);
+    if (section) section.rows.push(orphanRow);
+    else sections.push({ title: orphanRow.sectionTitle, rows: [orphanRow] });
+  }
+};
+
 // A row is "applied" when the element shows something other than the neutral
 // value: a non-transparent fill, a non-zero space, a display the tag does not
 // have by default. Inherited text properties count only where this element
-// changes what its parent hands down. Applied rows name the design tokens
-// behind them, and rows switched off in the panel stay listed as disabled.
-export const getElementSpecs = (element: Element): ElementSpecs | null => {
+// changes what its parent hands down. Applied and overridden rows name the
+// design tokens behind them. `frozenAppliedProperties` keeps the applied group
+// as it was when the panel was pinned, so an edit does not move rows under
+// the pointer.
+export const getElementSpecs = (
+  element: Element,
+  frozenAppliedProperties: string[] | null = null,
+): ElementSpecs | null => {
   if (getElementAdapter(element)) return null;
 
   const tagName = getTagName(element);
@@ -311,38 +352,44 @@ export const getElementSpecs = (element: Element): ElementSpecs | null => {
   const isLayoutContainer = FLEX_DISPLAYS.has(display) || GRID_DISPLAYS.has(display);
 
   const sections: ElementSpecSection[] = [
-    { title: "Appearance", rows: createAppearanceRows(read, isNonNeutral) },
-    { title: "Spacing", rows: createSpacingRows(read, isLayoutContainer) },
-    {
-      title: "Layout",
-      rows: createLayoutRows(
+    createSection("Appearance", createAppearanceRows(read, isNonNeutral)),
+    createSection("Spacing", createSpacingRows(read, isLayoutContainer)),
+    createSection(
+      "Layout",
+      createLayoutRows(
         read,
         isNonNeutral,
         tagName,
         parentStyle?.getPropertyValue("display") ?? null,
       ),
-    },
-    { title: "Size & position", rows: createSizeRows(element, read, isNonNeutral) },
+    ),
+    createSection("Size & position", createSizeRows(element, read, isNonNeutral)),
   ];
 
   const typographyRows = createTypographyRows(read, isNonNeutral, isSetOnElement);
   const isTextBearing = hasOwnText(element) || TEXT_CONTROL_TAG_NAMES.has(tagName);
   if (isTextBearing || typographyRows.some((row) => row.isApplied)) {
-    sections.push({ title: "Typography", rows: typographyRows });
+    sections.push(createSection("Typography", typographyRows));
   }
 
-  const appliedRows = sections.flatMap((section) => section.rows.filter((row) => row.isApplied));
+  applyStyleOverrides(element, sections);
+
+  // An off row keeps the tokens it had when it was switched off: looked up
+  // again, the unset property would name none.
+  const tokenRows = sections.flatMap((section) =>
+    section.rows.filter((row) => (row.override ? !row.override.isOff : row.isApplied)),
+  );
   const tokensBySpecProperty = getSpecTokens(
     element,
-    appliedRows.map((row) => row.property),
+    tokenRows.map((row) => row.property),
   );
-  for (const row of appliedRows) row.tokens = tokensBySpecProperty.get(row.property);
+  for (const row of tokenRows) row.tokens = tokensBySpecProperty.get(row.property);
 
   const rect = element.getBoundingClientRect();
   return {
     tagName,
     width: Math.round(rect.width * 100) / 100,
     height: Math.round(rect.height * 100) / 100,
-    sections: mergeDisabledSpecRows(sections, getDisabledSpecRows(element)),
+    ...groupSpecRows(sections, frozenAppliedProperties),
   };
 };

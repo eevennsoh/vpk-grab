@@ -647,17 +647,29 @@ export interface InspectSettings {
 
 export interface ElementSpecRow {
   property: string;
+  sectionTitle: string;
   value: string;
   isApplied: boolean;
   swatchColor?: string;
   tokens?: string[];
-  isDisabled?: boolean;
+  override?: StyleOverrideState;
 }
 
-export interface DisabledSpecRow {
-  sectionTitle: string;
-  rowIndex: number;
-  row: ElementSpecRow;
+export interface StyleOverrideState {
+  isOff: boolean;
+  value: string | null;
+  token: string | null;
+}
+
+export interface StyleOverride extends StyleOverrideState {
+  element: Element;
+  property: string;
+  original: ElementSpecRow;
+}
+
+export interface StyleOverrideGroup {
+  element: Element;
+  overrides: StyleOverride[];
 }
 
 export interface ElementSpecSection {
@@ -665,11 +677,23 @@ export interface ElementSpecSection {
   rows: ElementSpecRow[];
 }
 
-export interface ElementSpecs {
+export interface GroupedSpecRows {
+  appliedRows: ElementSpecRow[];
+  sections: ElementSpecSection[];
+}
+
+export interface ElementSpecs extends GroupedSpecRows {
   tagName: string;
   width: number;
   height: number;
-  sections: ElementSpecSection[];
+}
+
+export interface SpecValueOption {
+  kind: "token" | "keyword";
+  label: string;
+  value: string;
+  resolvedValue: string;
+  swatchColor?: string;
 }
 
 export type RedlineSide = "top" | "right" | "bottom" | "left";
@@ -710,8 +734,17 @@ export interface InspectRendererState {
   hasAnnotations: Accessor<boolean>;
   selectedAnnotationId: Accessor<string | null>;
   isSpecsPinned: Accessor<boolean>;
+  isSpecsPinLocked: Accessor<boolean>;
+  styleOverridesVersion: Accessor<number>;
+  styleChangeCount: Accessor<number>;
+  changesMenuPosition: Accessor<DropdownAnchor | null>;
   onSpecsPanelHoverChange: (isHovered: boolean) => void;
+  onSpecsPanelEngagedChange: (isEngaged: boolean) => void;
+  onToggleSpecsPinLock: () => void;
   onSpecsStylesChange: () => void;
+  onToggleChangesMenu: () => void;
+  onDismissChangesMenu: () => void;
+  onConfigureStyleChanges: (element: Element) => void;
   onToggleSpecs: () => void;
   onToggleRedlines: () => void;
   onSelectAnnotationTool: (tool: AnnotationTool) => void;

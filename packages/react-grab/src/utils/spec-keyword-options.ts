@@ -1,0 +1,46 @@
+const KEYWORDS_BY_PROPERTY: Record<string, string[]> = {
+  display: [
+    "block",
+    "inline",
+    "inline-block",
+    "flex",
+    "inline-flex",
+    "grid",
+    "inline-grid",
+    "contents",
+    "none",
+  ],
+  position: ["static", "relative", "absolute", "fixed", "sticky"],
+  "flex-direction": ["row", "row-reverse", "column", "column-reverse"],
+  "flex-wrap": ["nowrap", "wrap", "wrap-reverse"],
+  "justify-content": [
+    "normal",
+    "flex-start",
+    "center",
+    "flex-end",
+    "space-between",
+    "space-around",
+    "space-evenly",
+    "stretch",
+  ],
+  "align-items": ["normal", "stretch", "flex-start", "center", "flex-end", "baseline"],
+  "align-self": ["auto", "stretch", "flex-start", "center", "flex-end", "baseline"],
+  "border-style": ["none", "solid", "dashed", "dotted", "double"],
+  overflow: ["visible", "hidden", "clip", "scroll", "auto"],
+  "text-align": ["start", "left", "center", "right", "end", "justify"],
+  "text-transform": ["none", "uppercase", "lowercase", "capitalize"],
+  "text-decoration-line": ["none", "underline", "line-through", "overline"],
+  "font-style": ["normal", "italic"],
+  "font-weight": ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  width: ["auto", "fit-content", "min-content", "max-content", "100%"],
+  height: ["auto", "fit-content", "min-content", "max-content", "100%"],
+  "box-shadow": ["none"],
+  "background-image": ["none"],
+  "background-color": ["transparent", "currentcolor"],
+  "border-color": ["transparent", "currentcolor"],
+  color: ["currentcolor", "inherit"],
+};
+
+// The keywords a property's menu offers, kept to the ones this browser takes.
+export const getSpecKeywordOptions = (property: string): string[] =>
+  (KEYWORDS_BY_PROPERTY[property] ?? []).filter((keyword) => CSS.supports(property, keyword));

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, type Accessor } from "solid-js";
+import { batch, createMemo, createSignal, type Accessor } from "solid-js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_MIN_SAMPLE_DISTANCE_PX,
@@ -76,6 +76,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const [selectedAnnotationId, setSelectedAnnotationId] = createSignal<string | null>(null);
   const [pinnedSpecsElement, setPinnedSpecsElement] = createSignal<Element | null>(null);
   const [isSpecsPanelHovered, setIsSpecsPanelHovered] = createSignal(false);
+  const [isSpecsPanelEngaged, setIsSpecsPanelEngaged] = createSignal(false);
+  const [isSpecsPinLocked, setIsSpecsPinLocked] = createSignal(false);
+  const [styleOverridesVersion, setStyleOverridesVersion] = createSignal(0);
   const [measureAnchorElement, setMeasureAnchorElement] = createSignal<Element | null>(null);
   const [measureTargetElement, setMeasureTargetElement] = createSignal<Element | null>(null);
 
@@ -104,6 +107,38 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const unpinSpecs = () => {
     setPinnedSpecsElement(null);
     setIsSpecsPanelHovered(false);
+    setIsSpecsPanelEngaged(false);
+    setIsSpecsPinLocked(false);
+  };
+
+  // The pin outlives the Shift press while anything is still using the panel:
+  // the pointer is over it, a field or menu in it has focus, or it was locked.
+  const isSpecsPinHeld = () =>
+    options.isShiftKeyHeld() ||
+    isSpecsPanelHovered() ||
+    isSpecsPanelEngaged() ||
+    isSpecsPinLocked();
+
+  const releaseSpecsPin = () => {
+    if (!isSpecsPinHeld()) unpinSpecs();
+  };
+
+  // Locked before the element is pinned, in one batch: the panel's effects
+  // run on the pin and would otherwise release a pin nothing yet holds.
+  const lockSpecsPin = (element: Element) =>
+    batch(() => {
+      setIsSpecsPinLocked(true);
+      setPinnedSpecsElement(element);
+    });
+
+  const toggleSpecsPinLock = () => {
+    if (pinnedSpecsElement() === null) return;
+    if (!isSpecsPinLocked()) {
+      setIsSpecsPinLocked(true);
+      return;
+    }
+    setIsSpecsPinLocked(false);
+    releaseSpecsPin();
   };
 
   const startMeasuring = (anchorElement: Element) => {
@@ -146,16 +181,17 @@ export const createInspectController = (options: InspectControllerOptions) => {
     persistSettings();
   };
 
-  // The pin outlives the Shift press for as long as the pointer is in the
-  // panel, so the key does not have to be held through every click there.
   const setSpecsPanelHovered = (isHovered: boolean) => {
     setIsSpecsPanelHovered(isHovered);
-    if (!isHovered && !options.isShiftKeyHeld()) unpinSpecs();
+    if (!isHovered) releaseSpecsPin();
   };
 
-  const releaseSpecsPin = () => {
-    if (!isSpecsPanelHovered()) unpinSpecs();
+  const setSpecsPanelEngaged = (isEngaged: boolean) => {
+    setIsSpecsPanelEngaged(isEngaged);
+    if (!isEngaged) releaseSpecsPin();
   };
+
+  const notifyStyleOverridesChanged = () => setStyleOverridesVersion((version) => version + 1);
 
   const cancelPointerGesture = () => {
     activeDrawing = null;
@@ -359,7 +395,13 @@ export const createInspectController = (options: InspectControllerOptions) => {
     pinSpecs: setPinnedSpecsElement,
     unpinSpecs,
     releaseSpecsPin,
+    isSpecsPinLocked,
+    lockSpecsPin,
+    toggleSpecsPinLock,
     setSpecsPanelHovered,
+    setSpecsPanelEngaged,
+    styleOverridesVersion,
+    notifyStyleOverridesChanged,
     measureAnchorElement,
     measureTargetElement,
     startMeasuring,

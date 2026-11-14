@@ -5,6 +5,8 @@ import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } 
 import { IconSelect } from "../icons/icon-select.jsx";
 import { IconClear } from "../icons/icon-clear.jsx";
 import { IconMove } from "../icons/icon-move.jsx";
+import { IconChanges } from "../icons/icon-changes.jsx";
+import { ToolbarRevealGroup } from "./toolbar-reveal-group.jsx";
 import { IconPen } from "../icons/icon-pen.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
@@ -67,6 +69,8 @@ interface ToolbarProps {
   onToggleRedlines?: () => void;
   onSelectAnnotationTool?: (tool: AnnotationTool) => void;
   onClearAnnotations?: () => void;
+  styleChangeCount?: number;
+  onToggleChangesMenu?: () => void;
 }
 
 const SPECS_ACTION_ID = "inspect-specs";
@@ -75,6 +79,7 @@ const PEN_ACTION_ID = "annotate-pen";
 const TEXT_ACTION_ID = "annotate-text";
 const EDIT_ACTION_ID = "annotate-edit";
 const CLEAR_ACTION_ID = "annotate-clear";
+const CHANGES_ACTION_ID = "style-changes";
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
@@ -93,9 +98,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const [position, setPosition] = createSignal({ x: 0, y: 0 });
   const [isShaking, setIsShaking] = createSignal(false);
   const [isCollapseAnimating, setIsCollapseAnimating] = createSignal(false);
-  const [annotationActionsMotion, setAnnotationActionsMotion] = createSignal<
-    "revealing" | "hiding" | null
-  >(null);
+  const [revealGroupMotion, setRevealGroupMotion] = createSignal<"revealing" | "hiding" | null>(
+    null,
+  );
   const [isChevronPressed, setIsChevronPressed] = createSignal(false);
   const [isToolbarHovered, setIsToolbarHovered] = createSignal(false);
   const [selectIconRotationDeg, setSelectIconRotationDeg] = createSignal(0);
@@ -340,20 +345,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     props.onSelectAnnotationTool?.("edit"),
   );
   const handleClearAnnotations = drag.createDragAwareHandler(() => props.onClearAnnotations?.());
+  const handleToggleChangesMenu = drag.createDragAwareHandler(() => props.onToggleChangesMenu?.());
   // Move and Clear act on annotations, so they join the toolbar with the first
-  // one and leave with the last. The group opens the same way the toolbar
-  // itself expands: its track grows while the buttons fade in behind it.
+  // one and leave with the last. Changes does the same with style overrides.
   const hasAnnotationActions = () => Boolean(props.hasAnnotations);
-  const annotationActionsTrackClass = () => {
-    if (isVertical()) {
-      return hasAnnotationActions()
-        ? "grid-rows-[1fr] transition-[grid-template-rows] duration-220"
-        : "grid-rows-[0fr] transition-[grid-template-rows] duration-140";
-    }
-    return hasAnnotationActions()
-      ? "grid-cols-[1fr] transition-[grid-template-columns] duration-220"
-      : "grid-cols-[0fr] transition-[grid-template-columns] duration-140";
-  };
+  const hasStyleChanges = () => (props.styleChangeCount ?? 0) > 0;
   const separatorClass = () =>
     cn(
       "shrink-0 bg-[var(--rg-border-button)]",
@@ -456,7 +452,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const handleObservedSizeChange = (newWidth: number, newHeight: number) => {
     if (newWidth === 0 || newHeight === 0) return;
     if (drag.isDragging() || drag.isSnapping()) return;
-    if (isCollapseAnimating() || annotationActionsMotion() !== null) return;
+    if (isCollapseAnimating() || revealGroupMotion() !== null) return;
 
     if (isCollapsed()) {
       const currentCollapsed = collapsedDimensions();
@@ -483,36 +479,44 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   // length is known up front, so the toolbar is sent straight to where that
   // length belongs and travels there over the same time and curve as the
   // group opens: both ends move apart, and the middle stays put.
-  let annotationActionsRef: HTMLDivElement | undefined;
-  let annotationActionsMotionTimeout: ReturnType<typeof setTimeout> | undefined;
-  createEffect(
-    on(
-      hasAnnotationActions,
-      (isRevealed) => {
-        const content = annotationActionsRef?.firstElementChild;
-        if (!content) return;
-        const lengthChange =
-          (isRevealed ? 1 : -1) * (isVertical() ? content.scrollHeight : content.scrollWidth);
-        expandedDimensions = {
-          width: expandedDimensions.width + (isVertical() ? 0 : lengthChange),
-          height: expandedDimensions.height + (isVertical() ? lengthChange : 0),
-        };
-        lastObservedExpandedSize = { ...expandedDimensions };
-        if (isCollapsed()) return;
+  let revealGroupMotionTimeout: ReturnType<typeof setTimeout> | undefined;
+  const trackRevealGroup = (
+    isRevealed: () => boolean,
+    getGroupElement: () => HTMLDivElement | undefined,
+  ) =>
+    createEffect(
+      on(
+        isRevealed,
+        (isGroupRevealed) => {
+          const content = getGroupElement()?.firstElementChild;
+          if (!content) return;
+          const lengthChange =
+            (isGroupRevealed ? 1 : -1) *
+            (isVertical() ? content.scrollHeight : content.scrollWidth);
+          expandedDimensions = {
+            width: expandedDimensions.width + (isVertical() ? 0 : lengthChange),
+            height: expandedDimensions.height + (isVertical() ? lengthChange : 0),
+          };
+          lastObservedExpandedSize = { ...expandedDimensions };
+          if (isCollapsed()) return;
 
-        setAnnotationActionsMotion(isRevealed ? "revealing" : "hiding");
-        recalculatePosition();
-        clearTimeout(annotationActionsMotionTimeout);
-        annotationActionsMotionTimeout = setTimeout(
-          () => setAnnotationActionsMotion(null),
-          isRevealed
-            ? TOOLBAR_ANNOTATION_ACTIONS_REVEAL_DURATION_MS
-            : TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS,
-        );
-      },
-      { defer: true },
-    ),
-  );
+          setRevealGroupMotion(isGroupRevealed ? "revealing" : "hiding");
+          recalculatePosition();
+          clearTimeout(revealGroupMotionTimeout);
+          revealGroupMotionTimeout = setTimeout(
+            () => setRevealGroupMotion(null),
+            isGroupRevealed
+              ? TOOLBAR_ANNOTATION_ACTIONS_REVEAL_DURATION_MS
+              : TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS,
+          );
+        },
+        { defer: true },
+      ),
+    );
+  let annotationActionsRef: HTMLDivElement | undefined;
+  let changesActionsRef: HTMLDivElement | undefined;
+  trackRevealGroup(hasAnnotationActions, () => annotationActionsRef);
+  trackRevealGroup(hasStyleChanges, () => changesActionsRef);
 
   // In scoped mode the toolbar is anchored to a container whose viewport box
   // moves as the page scrolls, so it must re-anchor on scroll. Repositioning
@@ -728,7 +732,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     if (scopedScrollFrameId !== null) nativeCancelAnimationFrame(scopedScrollFrameId);
     clearTimeout(resizeTimeout);
     clearTimeout(collapseAnimationTimeout);
-    clearTimeout(annotationActionsMotionTimeout);
+    clearTimeout(revealGroupMotionTimeout);
 
     if (unfreezeUpdatesCallback) releaseInteractionFreeze();
   });
@@ -771,9 +775,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       const duration = isCollapsed() ? "duration-140" : "duration-220";
       return `transition-[transform,opacity] ${duration} ease-drawer`;
     }
-    const annotationActions = annotationActionsMotion();
-    if (annotationActions !== null) {
-      const duration = annotationActions === "revealing" ? "duration-220" : "duration-140";
+    const groupMotion = revealGroupMotion();
+    if (groupMotion !== null) {
+      const duration = groupMotion === "revealing" ? "duration-220" : "duration-140";
       return `transition-[transform,opacity] ${duration} ease-drawer`;
     }
     return "transition-[transform,opacity] duration-400 ease-drawer";
@@ -934,63 +938,79 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
             />
-            <div
-              ref={annotationActionsRef}
-              data-react-grab-toolbar-annotation-actions
-              data-revealed={hasAnnotationActions() ? "" : undefined}
-              inert={!hasAnnotationActions()}
-              class={cn(
-                "grid ease-drawer",
-                annotationActionsTrackClass(),
-                !hasAnnotationActions() && "pointer-events-none",
-              )}
+            <ToolbarRevealGroup
+              ref={(element) => (annotationActionsRef = element)}
+              dataAttribute="data-react-grab-toolbar-annotation-actions"
+              isRevealed={hasAnnotationActions()}
+              isVertical={isVertical()}
             >
-              <div
-                class={cn(
-                  "flex items-center ease-drawer transition-opacity",
-                  isVertical() ? "flex-col min-h-0" : "min-w-0",
-                  hasAnnotationActions()
-                    ? "opacity-100 duration-180 delay-[80ms]"
-                    : "opacity-0 duration-100",
-                )}
-              >
-                <span aria-hidden="true" class={separatorClass()} />
-                <ToolbarActionButton
-                  actionId={EDIT_ACTION_ID}
-                  keepsPageFocus
-                  label="Move or delete drawings and text"
-                  isActive={props.annotationTool === "edit"}
-                  class={actionButtonClass}
-                  wrapperClass={actionButtonWrapperClass()}
-                  onClick={handleSelectEdit}
-                  {...createFreezeHandlers(() => EDIT_ACTION_ID)}
-                  icon={
-                    <IconMove size={14} class={actionIconClass(props.annotationTool === "edit")} />
-                  }
-                  tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
-                  tooltipPosition={tooltipPosition()}
-                  tooltip="Move · drag to move, Delete to remove"
-                />
-                <ToolbarActionButton
-                  actionId={CLEAR_ACTION_ID}
-                  keepsPageFocus
-                  label={
-                    props.hasSelectedAnnotation
-                      ? "Delete the selected annotation"
-                      : "Clear drawings and text"
-                  }
-                  hasPressedState={false}
-                  class={actionButtonClass}
-                  wrapperClass={actionButtonWrapperClass()}
-                  onClick={handleClearAnnotations}
-                  {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
-                  icon={<IconClear size={14} class={actionIconClass(false)} />}
-                  tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
-                  tooltipPosition={tooltipPosition()}
-                  tooltip={props.hasSelectedAnnotation ? "Delete selected" : "Clear annotations"}
-                />
-              </div>
-            </div>
+              <span aria-hidden="true" class={separatorClass()} />
+              <ToolbarActionButton
+                actionId={EDIT_ACTION_ID}
+                keepsPageFocus
+                label="Move or delete drawings and text"
+                isActive={props.annotationTool === "edit"}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleSelectEdit}
+                {...createFreezeHandlers(() => EDIT_ACTION_ID)}
+                icon={
+                  <IconMove size={14} class={actionIconClass(props.annotationTool === "edit")} />
+                }
+                tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Move · drag to move, Delete to remove"
+              />
+              <ToolbarActionButton
+                actionId={CLEAR_ACTION_ID}
+                keepsPageFocus
+                label={
+                  props.hasSelectedAnnotation
+                    ? "Delete the selected annotation"
+                    : "Clear drawings and text"
+                }
+                hasPressedState={false}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleClearAnnotations}
+                {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
+                icon={<IconClear size={14} class={actionIconClass(false)} />}
+                tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip={props.hasSelectedAnnotation ? "Delete selected" : "Clear annotations"}
+              />
+            </ToolbarRevealGroup>
+            <ToolbarRevealGroup
+              ref={(element) => (changesActionsRef = element)}
+              dataAttribute="data-react-grab-toolbar-changes-actions"
+              isRevealed={hasStyleChanges()}
+              isVertical={isVertical()}
+            >
+              <span aria-hidden="true" class={separatorClass()} />
+              <ToolbarActionButton
+                actionId={CHANGES_ACTION_ID}
+                keepsPageFocus
+                label={`Style changes (${props.styleChangeCount ?? 0})`}
+                hasPressedState={false}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleToggleChangesMenu}
+                {...createFreezeHandlers(() => CHANGES_ACTION_ID)}
+                icon={
+                  <span class="relative flex">
+                    <IconChanges size={14} class={actionIconClass(false)} />
+                    <span
+                      data-react-grab-changes-count
+                      class="absolute -top-1.5 -right-2 min-w-[13px] h-[13px] px-[3px] rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[9px] leading-[13px] font-semibold tabular-nums text-center"
+                      textContent={String(props.styleChangeCount ?? 0)}
+                    />
+                  </span>
+                }
+                tooltipVisible={isActionHovered(CHANGES_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Style changes"
+              />
+            </ToolbarRevealGroup>
           </>
         }
       />
