@@ -1,43 +1,54 @@
-# <img src="https://github.com/aidenybai/react-grab/blob/main/.github/public/logo.png?raw=true" width="60" align="center" /> Grab
+# vpk-grab
 
-[![version](https://img.shields.io/npm/v/grab?style=flat&colorA=000000&colorB=000000)](https://npmjs.com/package/grab)
-[![downloads](https://img.shields.io/npm/dt/grab.svg?style=flat&colorA=000000&colorB=000000)](https://npmjs.com/package/grab)
+[React Grab](https://github.com/aidenybai/react-grab) with a design inspector built in: applied styles and the design tokens behind them, spacing redlines, element-to-element measuring, and pen and text annotations.
 
-Copy any UI element for your agent.
+It is a fork, and a drop-in one. The package is still named `react-grab` and the global is still `window.__REACT_GRAB__`, so everything written for React Grab (its CLI, its plugins, its agent skill) keeps working.
 
-React Grab points agents to the actual source behind each selection. Agents are [**2× faster**](https://react-grab.com/benchmarks) and more accurate when using React Grab.
+## What it adds
 
-[**Website →**](https://react-grab.com)
+Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too.
 
-## Quick Start
+| Toolbar control        | What it does                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Specs**              | A panel of the styles applied to the hovered element: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`. |
+| **Redlines**           | The element's size and its distance to the nearest sibling or container edge on each side.                                                                                                  |
+| **Pen**                | Draw on the page. Hold **Shift** for a straight line.                                                                                                                                       |
+| **Text**               | Click to place a note.                                                                                                                                                                      |
+| **Move** and **Clear** | Appear once something is drawn. Drag an annotation to move it, press **Delete** to remove it, or clear them all.                                                                            |
 
-Run this at your project root:
+Two keys work on whatever is hovered, without clicking:
 
-```bash
-npx grab@latest init
-```
+| Key            | With        | What it does                                                                                                     |
+| -------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| Hold **Shift** | Specs on    | Pins the panel to the element so the pointer can reach it. Click a property to switch it off and on in the page. |
+| Hold **Alt**   | Redlines on | Anchors the redlines to the element. Move to any other element to read the distances between the two.            |
 
-## How It Works
+Switching a property off is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
-React Grab turns a browser selection into source context your agent can use:
+## Install
 
-1. Hover any UI element in your app.
-2. Press **⌘C** or **Ctrl+C**.
-3. Paste the copied context into your agent.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.1`.
 
-The copied context includes the selected element and its component stack with source locations:
+### Let your agent do it
+
+Paste this into your coding agent:
 
 ```txt
-[<a class="ml-auto inline-block text-sm" href="#">Forgot your password?</a> in LoginForm (at components/login-form.tsx:46:19)]
+Install vpk-grab in this project. Follow https://raw.githubusercontent.com/eevennsoh/vpk-grab/main/skills/vpk-grab/SKILL.md
 ```
 
-## Manual Installation
+### Script tag
 
-If you cannot use the CLI, install React Grab manually for your framework:
+Works in any React app, and is the right choice for Next.js because the script must load before React does.
 
-#### Next.js (App router)
+```html
+<script
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.1/dist/vpk-grab.global.js"
+  crossorigin="anonymous"
+></script>
+```
 
-Add this inside your `app/layout.tsx`:
+Next.js App Router, in `app/layout.tsx`:
 
 ```jsx
 import Script from "next/script";
@@ -48,7 +59,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="//unpkg.com/grab/dist/index.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.1/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -60,100 +71,63 @@ export default function RootLayout({ children }) {
 }
 ```
 
-#### Next.js (Pages router)
+### Package
 
-Add this into your `pages/_document.tsx`:
+For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
-```jsx
-import { Html, Head, Main, NextScript } from "next/document";
-
-export default function Document() {
-  return (
-    <Html lang="en">
-      <Head>
-        {process.env.NODE_ENV === "development" && (
-          <Script
-            src="//unpkg.com/grab/dist/index.global.js"
-            crossOrigin="anonymous"
-            strategy="beforeInteractive"
-          />
-        )}
-      </Head>
-      <body>
-        <Main />
-        <NextScript />
-      </body>
-    </Html>
-  );
-}
+```bash
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.1/react-grab-0.2.0-vpk.1.tgz
 ```
 
-#### Vite
-
-Add this at the top of your main entry file (e.g., `src/main.tsx`):
+Then load it at the top of the entry file:
 
 ```tsx
+// Vite
 if (import.meta.env.DEV) {
   import("grab");
 }
-```
 
-#### Webpack
-
-First, install React Grab:
-
-```bash
-npm install grab
-```
-
-Then add this at the top of your main entry file (e.g., `src/index.tsx` or `src/main.tsx`):
-
-```tsx
+// webpack and others
 if (process.env.NODE_ENV === "development") {
   import("grab");
 }
 ```
 
-## Build your own React Grab
+## For AI agents
 
-Build a custom interface with the selection engine from `grab/primitives`. Use its APIs for hit testing, source context, page freezing, clipboard access, and editor navigation.
+Two skills ship in [`skills/`](skills):
 
-### Customize hit testing
+- [`vpk-grab`](skills/vpk-grab/SKILL.md) installs the tool in a project and tells the agent how to act on what you bring back from it: a pasted grab, a token the panel named, a property you switched off, a measurement.
+- [`react-grab`](skills/react-grab/SKILL.md) is React Grab's hands-free loop, where each grab you make in the browser is picked up and acted on without pasting.
 
-Scope hit testing to a container or replace the default element filter with your own rules.
+Add both to your agent with the [skills CLI](https://github.com/vercel-labs/skills):
 
-```typescript
-import { getElementAtPoint, isElementGrabbable } from "grab/primitives";
-
-export const getPickerTarget = (
-  event: PointerEvent,
-  appElement: Element,
-  toolbarElement: Element,
-): Element | null =>
-  getElementAtPoint(event.clientX, event.clientY, {
-    container: appElement,
-    filter: (candidate) => isElementGrabbable(candidate) && !toolbarElement.contains(candidate),
-  });
+```bash
+npx skills add eevennsoh/vpk-grab
 ```
 
-Add `data-react-grab-ignore` to your picker interface so hit testing skips its subtree.
+## Develop
 
-## Resources & Contributing Back
+```bash
+pnpm install
+pnpm --filter react-grab dev        # rebuild on change
+pnpm --filter react-grab test:unit
+```
 
-Want to try it out? Check out [our demo](https://react-grab.com).
+The inspector lives in `packages/react-grab/src/components/inspect/` and `packages/react-grab/src/core/create-inspect-controller.ts`. [AGENTS.md](AGENTS.md) has the conventions.
 
-Looking to contribute back? Check out the [Contributing Guide](https://github.com/aidenybai/react-grab/blob/main/CONTRIBUTING.md).
+To release, set the version in `packages/react-grab/package.json`, commit, and run `node scripts/release-fork.mjs` from a clean `main`. It builds, tags `v<version>` with the bundle the script tag serves, and publishes a GitHub release carrying the package tarball.
 
-Want to talk to the community? Hop in our [Discord](https://discord.com/invite/G7zxfUzkm7) and share your ideas and what you've built with React Grab.
+To pick up upstream changes:
 
-Find a bug? Head over to our [issue tracker](https://github.com/aidenybai/react-grab/issues) and we'll do our best to help. We love pull requests, too!
+```bash
+git remote add upstream https://github.com/aidenybai/react-grab.git
+git fetch upstream && git merge upstream/main
+```
 
-We expect all contributors to abide by the terms of our [Code of Conduct](https://github.com/aidenybai/react-grab/blob/main/.github/CODE_OF_CONDUCT.md).
+## Credits and license
 
-[**Start contributing on GitHub**](https://github.com/aidenybai/react-grab/blob/main/CONTRIBUTING.md)
+MIT, like the projects it builds on.
 
-### License
-
-React Grab is MIT-licensed open-source software.
-
-_Thank you to [Andrew Luetgers](https://github.com/andrewluetgers) for donating the `grab` npm package name._
+- [React Grab](https://github.com/aidenybai/react-grab) by Aiden Bai is the tool this forks. Selection, source lookup, copying, the toolbar and the page freeze are all its work.
+- [Mesurer](https://github.com/ibelick/mesurer) by Julien Thibeaut inspired the annotation tools, and its ink smoothing is adapted here. See [THIRD_PARTY_NOTICES.md](packages/react-grab/THIRD_PARTY_NOTICES.md).

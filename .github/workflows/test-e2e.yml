@@ -43,9 +43,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # @perf scenarios run in their own workflow (test-perf.yml) on a
-      # dedicated runner so multi-worker contention doesn't pollute their
-      # timing measurements. Exclude them here.
+      # @perf scenarios need a runner to themselves for stable timings, so
+      # they are left out of CI.
       - name: Run Vite Plus E2E tests
         run: pnpm --filter react-grab exec playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} --grep-invert @perf
 

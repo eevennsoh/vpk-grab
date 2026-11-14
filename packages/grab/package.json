@@ -1,7 +1,7 @@
 {
   "name": "grab",
-  "version": "0.2.0",
-  "description": "Select context for coding agents directly from your website",
+  "version": "0.2.0-vpk.1",
+  "description": "React Grab with a design inspector: applied styles and tokens, redlines, measuring and annotations",
   "keywords": [
     "agent",
     "context",
@@ -9,9 +9,9 @@
     "react",
     "react-grab"
   ],
-  "homepage": "https://react-grab.com",
+  "homepage": "https://github.com/eevennsoh/vpk-grab",
   "bugs": {
-    "url": "https://github.com/aidenybai/react-grab/issues"
+    "url": "https://github.com/eevennsoh/vpk-grab/issues"
   },
   "license": "MIT",
   "author": {
@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aidenybai/react-grab.git"
+    "url": "git+https://github.com/eevennsoh/vpk-grab.git"
   },
   "bin": {
     "grab": "./bin/cli.js"
