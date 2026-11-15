@@ -8,13 +8,21 @@ const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
+const PEN_COLORS_SELECTOR = "[data-react-grab-toolbar-pen-colors]";
+const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
+const DEFAULT_PEN_COLOR = "#f24822";
+const BLUE_PEN_COLOR = "#0d99ff";
 // The separator and the two buttons, less whatever a transition still holds.
 const ANNOTATION_ACTIONS_MIN_WIDTH_PX = 30;
 const LINE_START = { x: 300, y: 320 };
 const LINE_END = { x: 520, y: 320 };
+const SECOND_LINE_OFFSET_Y = 60;
 const NOTE_POSITION = { x: 300, y: 420 };
 const EMPTY_POSITION = { x: 700, y: 520 };
 const DRAG_DELTA = { x: 60, y: 40 };
+const MARQUEE_START = { x: 260, y: 280 };
+const MARQUEE_END = { x: 620, y: 460 };
+const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
 
 const toolbarAction = (page: Page, actionId: string) =>
   page.locator(`[data-react-grab-toolbar-action="${actionId}"]`);
@@ -186,6 +194,61 @@ test.describe("Annotations", () => {
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
   });
 
+  test("a marquee selects everything it touches and the group moves together", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const strokeBefore = await getBox(page, STROKE_SELECTOR);
+    const noteBefore = await getBox(page, TEXT_SELECTOR);
+
+    await page.mouse.move(MARQUEE_START.x, MARQUEE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END.x, MARQUEE_END.y, { steps: 6 });
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(2);
+
+    await page.mouse.move(LINE_START.x + 100, LINE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(LINE_START.x + 100 + DRAG_DELTA.x, LINE_START.y + DRAG_DELTA.y, {
+      steps: 5,
+    });
+    await page.mouse.up();
+
+    const strokeAfter = await getBox(page, STROKE_SELECTOR);
+    const noteAfter = await getBox(page, TEXT_SELECTOR);
+    expect(strokeAfter.x - strokeBefore.x).toBeCloseTo(DRAG_DELTA.x, 0);
+    expect(strokeAfter.y - strokeBefore.y).toBeCloseTo(DRAG_DELTA.y, 0);
+    expect(noteAfter.x - noteBefore.x).toBeCloseTo(DRAG_DELTA.x, 0);
+    expect(noteAfter.y - noteBefore.y).toBeCloseTo(DRAG_DELTA.y, 0);
+
+    await page.keyboard.press("Delete");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+  });
+
+  test("a marquee only picks up what it touches", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    await page.mouse.move(LINE_START.x - 20, LINE_START.y - 20);
+    await page.mouse.down();
+    await page.mouse.move(LINE_START.x + 40, LINE_START.y + 20, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+  });
+
+  test("Shift-click adds to and removes from the selection", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(note.x + 10, note.y + note.height / 2);
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(2);
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y);
+    await page.keyboard.up("Shift");
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(`${TEXT_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+  });
+
   test("leaving the move tool drops the selection", async ({ page }) => {
     await toolbarAction(page, "annotate-edit").click();
     await page.mouse.click(LINE_START.x + 100, LINE_START.y);
@@ -195,5 +258,45 @@ test.describe("Annotations", () => {
     await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(0);
     await page.keyboard.press("Delete");
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+  });
+
+  test("pen colors join the toolbar only while the pen is in hand", async ({ page }) => {
+    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("inert");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
+    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "annotate-text").click();
+    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
+  });
+
+  test("a new stroke takes the picked color and earlier strokes keep theirs", async ({ page }) => {
+    await toolbarAction(page, "annotate-pen").click();
+    await toolbarAction(page, "pen-color-blue").click();
+    await expect(toolbarAction(page, "pen-color-blue")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "false");
+
+    const secondLineY = LINE_START.y + SECOND_LINE_OFFSET_Y;
+    await page.keyboard.down("Shift");
+    await page.mouse.move(LINE_START.x, secondLineY);
+    await page.mouse.down();
+    await page.mouse.move(LINE_END.x, secondLineY, { steps: 6 });
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+
+    const strokes = page.locator(STROKE_SELECTOR);
+    await expect(strokes).toHaveCount(2);
+    await expect(strokes.nth(0)).toHaveAttribute("fill", DEFAULT_PEN_COLOR);
+    await expect(strokes.nth(1)).toHaveAttribute("fill", BLUE_PEN_COLOR);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (storageKey) => localStorage.getItem(storageKey),
+          INSPECT_SETTINGS_STORAGE_KEY,
+        ),
+      )
+      .toContain(BLUE_PEN_COLOR);
   });
 });

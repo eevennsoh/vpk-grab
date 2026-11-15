@@ -1,3 +1,4 @@
+import type { PenColorOption } from "./types.js";
 import { overlayColor } from "./utils/overlay-color.js";
 
 export const VERSION = process.env.VERSION as string;
@@ -424,6 +425,14 @@ export const ANNOTATION_INPUT_ATTRIBUTE = "data-react-grab-annotation-input";
 export const INSPECT_ACCENT_COLOR = "#f24822";
 export const INSPECT_ACCENT_CONTRAST_COLOR = "#ffffff";
 
+export const PEN_COLOR_OPTIONS: PenColorOption[] = [
+  { label: "Red", value: INSPECT_ACCENT_COLOR },
+  { label: "Yellow", value: "#facc15" },
+  { label: "Green", value: "#22c55e" },
+  { label: "Blue", value: "#0d99ff" },
+  { label: "Black", value: "#111827" },
+];
+
 export const ANNOTATION_STROKE_WIDTH_PX = 3;
 export const ANNOTATION_MIN_STROKE_LENGTH_PX = 4;
 export const ANNOTATION_MIN_SAMPLE_DISTANCE_PX = 1;
@@ -454,3 +463,5 @@ export const CHANGES_MENU_MAX_HEIGHT_PX = 360;
 export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
 export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
+export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
+export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;

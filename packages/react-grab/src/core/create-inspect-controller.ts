@@ -1,6 +1,7 @@
 import { batch, createMemo, createSignal, type Accessor } from "solid-js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
+  ANNOTATION_MARQUEE_MIN_DRAG_PX,
   ANNOTATION_MIN_SAMPLE_DISTANCE_PX,
   ANNOTATION_MIN_STROKE_LENGTH_PX,
   ELEMENT_DETECTION_THROTTLE_MS,
@@ -11,15 +12,19 @@ import type {
   AnnotationText,
   AnnotationTool,
   Position,
+  Rect,
 } from "../types.js";
+import { createRectFromCorners } from "../utils/create-rect-from-corners.js";
 import { generateId } from "../utils/generate-id.js";
 import { getNextInkWeight, INK_NEUTRAL_WEIGHT } from "../utils/ink-path.js";
 import { loadInspectSettings, saveInspectSettings } from "../utils/inspect-settings.js";
+import { isRectOverlapping } from "../utils/is-rect-overlapping.js";
 import { snapStraightLineEnd } from "../utils/snap-straight-line-end.js";
 
 interface InspectControllerOptions {
   isShiftKeyHeld: Accessor<boolean>;
   getElementAtPosition: (clientX: number, clientY: number) => Element | null;
+  getAnnotationElements: () => Iterable<Element>;
 }
 
 interface ActiveDrawing {
@@ -31,8 +36,19 @@ interface ActiveDrawing {
 
 interface ActiveMove {
   pointerId: number;
-  annotationId: string;
   lastPoint: Position;
+}
+
+interface AnnotationHitBox {
+  annotationId: string;
+  pageRect: Rect;
+}
+
+interface ActiveMarquee {
+  pointerId: number;
+  origin: Position;
+  baseSelectionIds: string[];
+  hitBoxes: AnnotationHitBox[];
 }
 
 const DRAFT_STROKE_ID = "draft";
@@ -55,6 +71,27 @@ const getPressedAnnotationId = (event: PointerEvent): string | null => {
   return null;
 };
 
+// Measured once when the marquee starts: nothing moves while it is drawn, and
+// the browser's own boxes cover notes, whose width depends on the font.
+const measureAnnotationHitBoxes = (elements: Iterable<Element>): AnnotationHitBox[] => {
+  const hitBoxes: AnnotationHitBox[] = [];
+  for (const element of elements) {
+    const annotationId = element.getAttribute(ANNOTATION_ID_ATTRIBUTE);
+    if (!annotationId) continue;
+    const clientRect = element.getBoundingClientRect();
+    hitBoxes.push({
+      annotationId,
+      pageRect: {
+        left: clientRect.left + window.scrollX,
+        top: clientRect.top + window.scrollY,
+        right: clientRect.right + window.scrollX,
+        bottom: clientRect.bottom + window.scrollY,
+      },
+    });
+  }
+  return hitBoxes;
+};
+
 const createStraightPoints = (points: AnnotationPoint[]): AnnotationPoint[] => {
   const startPoint = points[0];
   const endPoint = snapStraightLineEnd(startPoint, points[points.length - 1]);
@@ -68,12 +105,14 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const initialSettings = loadInspectSettings();
   const [isSpecsEnabled, setIsSpecsEnabled] = createSignal(initialSettings.isSpecsEnabled);
   const [isRedlinesEnabled, setIsRedlinesEnabled] = createSignal(initialSettings.isRedlinesEnabled);
+  const [penColor, setPenColor] = createSignal(initialSettings.penColor);
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
   const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
   const [texts, setTexts] = createSignal<AnnotationText[]>([]);
   const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([]);
   const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
-  const [selectedAnnotationId, setSelectedAnnotationId] = createSignal<string | null>(null);
+  const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
+  const [marqueeRect, setMarqueeRect] = createSignal<Rect | null>(null);
   const [pinnedSpecsElement, setPinnedSpecsElement] = createSignal<Element | null>(null);
   const [isSpecsPanelHovered, setIsSpecsPanelHovered] = createSignal(false);
   const [isSpecsPanelEngaged, setIsSpecsPanelEngaged] = createSignal(false);
@@ -86,14 +125,20 @@ export const createInspectController = (options: InspectControllerOptions) => {
   let measureDetectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let activeDrawing: ActiveDrawing | null = null;
   let activeMove: ActiveMove | null = null;
+  let activeMarquee: ActiveMarquee | null = null;
   let textDraftValue = "";
 
   const draftStroke = createMemo((): AnnotationStroke | null => {
     const points = drawingPoints();
     if (points.length === 0) return null;
     return options.isShiftKeyHeld()
-      ? { id: DRAFT_STROKE_ID, points: createStraightPoints(points), isStraight: true }
-      : { id: DRAFT_STROKE_ID, points, isStraight: false };
+      ? {
+          id: DRAFT_STROKE_ID,
+          points: createStraightPoints(points),
+          isStraight: true,
+          color: penColor(),
+        }
+      : { id: DRAFT_STROKE_ID, points, isStraight: false, color: penColor() };
   });
 
   const hasAnnotations = createMemo(() => strokes().length > 0 || texts().length > 0);
@@ -102,6 +147,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     saveInspectSettings({
       isSpecsEnabled: isSpecsEnabled(),
       isRedlinesEnabled: isRedlinesEnabled(),
+      penColor: penColor(),
     });
 
   const unpinSpecs = () => {
@@ -181,6 +227,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
     persistSettings();
   };
 
+  const selectPenColor = (color: string) => {
+    setPenColor(color);
+    persistSettings();
+  };
+
   const setSpecsPanelHovered = (isHovered: boolean) => {
     setIsSpecsPanelHovered(isHovered);
     if (!isHovered) releaseSpecsPin();
@@ -196,7 +247,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const cancelPointerGesture = () => {
     activeDrawing = null;
     activeMove = null;
+    activeMarquee = null;
     setDrawingPoints([]);
+    setMarqueeRect(null);
   };
 
   const discardTextDraft = () => {
@@ -224,7 +277,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const selectTool = (tool: AnnotationTool) => {
     cancelPointerGesture();
     commitTextDraft();
-    setSelectedAnnotationId(null);
+    setSelectedAnnotationIds([]);
     setAnnotationTool(tool);
   };
 
@@ -238,27 +291,28 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const clearAnnotations = () => {
     cancelPointerGesture();
     discardTextDraft();
-    setSelectedAnnotationId(null);
+    setSelectedAnnotationIds([]);
     setStrokes([]);
     setTexts([]);
     putDownEditToolIfEmpty();
   };
 
-  const removeSelectedAnnotation = () => {
-    const annotationId = selectedAnnotationId();
-    if (!annotationId) return;
+  const removeSelectedAnnotations = () => {
+    const removedIds = new Set(selectedAnnotationIds());
+    if (removedIds.size === 0) return;
     activeMove = null;
-    setSelectedAnnotationId(null);
-    setStrokes((previousStrokes) => previousStrokes.filter((stroke) => stroke.id !== annotationId));
-    setTexts((previousTexts) => previousTexts.filter((text) => text.id !== annotationId));
+    setSelectedAnnotationIds([]);
+    setStrokes((previousStrokes) => previousStrokes.filter((stroke) => !removedIds.has(stroke.id)));
+    setTexts((previousTexts) => previousTexts.filter((text) => !removedIds.has(text.id)));
     putDownEditToolIfEmpty();
   };
 
-  const moveAnnotation = (annotationId: string, deltaX: number, deltaY: number) => {
-    if (strokes().some((stroke) => stroke.id === annotationId)) {
+  const moveSelectedAnnotations = (deltaX: number, deltaY: number) => {
+    const movedIds = new Set(selectedAnnotationIds());
+    batch(() => {
       setStrokes((previousStrokes) =>
         previousStrokes.map((stroke) =>
-          stroke.id === annotationId
+          movedIds.has(stroke.id)
             ? {
                 ...stroke,
                 points: stroke.points.map((point) => ({
@@ -270,13 +324,62 @@ export const createInspectController = (options: InspectControllerOptions) => {
             : stroke,
         ),
       );
+      setTexts((previousTexts) =>
+        previousTexts.map((text) =>
+          movedIds.has(text.id) ? { ...text, x: text.x + deltaX, y: text.y + deltaY } : text,
+        ),
+      );
+    });
+  };
+
+  const pressAnnotation = (event: PointerEvent, annotationId: string) => {
+    const isAlreadySelected = selectedAnnotationIds().includes(annotationId);
+    if (event.shiftKey && isAlreadySelected) {
+      setSelectedAnnotationIds((previousIds) => previousIds.filter((id) => id !== annotationId));
       return;
     }
-    setTexts((previousTexts) =>
-      previousTexts.map((text) =>
-        text.id === annotationId ? { ...text, x: text.x + deltaX, y: text.y + deltaY } : text,
-      ),
-    );
+    if (event.shiftKey) {
+      setSelectedAnnotationIds((previousIds) => [...previousIds, annotationId]);
+    } else if (!isAlreadySelected) {
+      setSelectedAnnotationIds([annotationId]);
+    }
+    activeMove = { pointerId: event.pointerId, lastPoint: toPagePoint(event) };
+  };
+
+  // A press on empty page deselects, as it does in a design tool, and a drag
+  // from there boxes in whatever it touches; Shift adds to the selection.
+  const startMarquee = (event: PointerEvent) => {
+    const baseSelectionIds = event.shiftKey ? selectedAnnotationIds() : [];
+    setSelectedAnnotationIds(baseSelectionIds);
+    activeMarquee = {
+      pointerId: event.pointerId,
+      origin: toPagePoint(event),
+      baseSelectionIds,
+      hitBoxes: measureAnnotationHitBoxes(options.getAnnotationElements()),
+    };
+  };
+
+  const updateMarquee = (marquee: ActiveMarquee, event: PointerEvent) => {
+    const currentPoint = toPagePoint(event);
+    // Until the pointer really travels this is a click, which only deselects.
+    if (
+      marqueeRect() === null &&
+      Math.hypot(currentPoint.x - marquee.origin.x, currentPoint.y - marquee.origin.y) <
+        ANNOTATION_MARQUEE_MIN_DRAG_PX
+    ) {
+      return;
+    }
+    const nextMarqueeRect = createRectFromCorners(marquee.origin, currentPoint);
+    const nextSelectionIds = new Set(marquee.baseSelectionIds);
+    for (const hitBox of marquee.hitBoxes) {
+      if (isRectOverlapping(nextMarqueeRect, hitBox.pageRect)) {
+        nextSelectionIds.add(hitBox.annotationId);
+      }
+    }
+    batch(() => {
+      setMarqueeRect(nextMarqueeRect);
+      setSelectedAnnotationIds([...nextSelectionIds]);
+    });
   };
 
   const addDrawingSample = (sample: PointerEvent, isFinalSample: boolean) => {
@@ -320,12 +423,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
         return;
       }
       case "edit": {
-        // A press on empty page deselects, as it does in a design tool.
         const annotationId = getPressedAnnotationId(event);
-        setSelectedAnnotationId(annotationId);
-        activeMove = annotationId
-          ? { pointerId: event.pointerId, annotationId, lastPoint: toPagePoint(event) }
-          : null;
+        if (annotationId) pressAnnotation(event, annotationId);
+        else startMarquee(event);
         return;
       }
       default: {
@@ -338,12 +438,15 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const handlePointerMove = (event: PointerEvent) => {
     if (activeMove && activeMove.pointerId === event.pointerId) {
       const currentPoint = toPagePoint(event);
-      moveAnnotation(
-        activeMove.annotationId,
+      moveSelectedAnnotations(
         currentPoint.x - activeMove.lastPoint.x,
         currentPoint.y - activeMove.lastPoint.y,
       );
       activeMove.lastPoint = currentPoint;
+      return;
+    }
+    if (activeMarquee && activeMarquee.pointerId === event.pointerId) {
+      updateMarquee(activeMarquee, event);
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
@@ -364,6 +467,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
       activeMove = null;
       return;
     }
+    if (activeMarquee && activeMarquee.pointerId === event.pointerId) {
+      activeMarquee = null;
+      setMarqueeRect(null);
+      return;
+    }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
     addDrawingSample(event, true);
     const isStraight = event.shiftKey;
@@ -375,7 +483,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     if (lengthPx >= ANNOTATION_MIN_STROKE_LENGTH_PX) {
       setStrokes((previousStrokes) => [
         ...previousStrokes,
-        { id: generateId("annotation-stroke"), points, isStraight },
+        { id: generateId("annotation-stroke"), points, isStraight, color: penColor() },
       ]);
     }
     cancelPointerGesture();
@@ -388,9 +496,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
     strokes,
     texts,
     draftStroke,
+    penColor,
+    selectPenColor,
     textDraftPosition,
     hasAnnotations,
-    selectedAnnotationId,
+    selectedAnnotationIds,
+    marqueeRect,
     pinnedSpecsElement,
     pinSpecs: setPinnedSpecsElement,
     unpinSpecs,
@@ -411,7 +522,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     toggleRedlines,
     selectTool,
     clearAnnotations,
-    removeSelectedAnnotation,
+    removeSelectedAnnotations,
     cancelPointerGesture,
     commitTextDraft,
     discardTextDraft,

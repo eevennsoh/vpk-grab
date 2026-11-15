@@ -1,11 +1,19 @@
-import { INSPECT_SETTINGS_STORAGE_KEY } from "../constants.js";
+import {
+  INSPECT_ACCENT_COLOR,
+  INSPECT_SETTINGS_STORAGE_KEY,
+  PEN_COLOR_OPTIONS,
+} from "../constants.js";
 import type { InspectSettings } from "../types.js";
 import { IS_DEMO } from "./runtime-mode.js";
 
 const DEFAULT_INSPECT_SETTINGS: InspectSettings = {
   isSpecsEnabled: false,
   isRedlinesEnabled: false,
+  penColor: INSPECT_ACCENT_COLOR,
 };
+
+const isPenColor = (value: unknown): value is string =>
+  PEN_COLOR_OPTIONS.some((option) => option.value === value);
 
 export const loadInspectSettings = (): InspectSettings => {
   if (IS_DEMO) return DEFAULT_INSPECT_SETTINGS;
@@ -18,6 +26,7 @@ export const loadInspectSettings = (): InspectSettings => {
     return {
       isSpecsEnabled: record.isSpecsEnabled === true,
       isRedlinesEnabled: record.isRedlinesEnabled === true,
+      penColor: isPenColor(record.penColor) ? record.penColor : DEFAULT_INSPECT_SETTINGS.penColor,
     };
   } catch {
     return DEFAULT_INSPECT_SETTINGS;

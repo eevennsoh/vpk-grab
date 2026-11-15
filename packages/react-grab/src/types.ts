@@ -633,6 +633,12 @@ export interface AnnotationStroke {
   id: string;
   points: AnnotationPoint[];
   isStraight: boolean;
+  color: string;
+}
+
+export interface PenColorOption {
+  label: string;
+  value: string;
 }
 
 export interface AnnotationText extends Position {
@@ -643,6 +649,7 @@ export interface AnnotationText extends Position {
 export interface InspectSettings {
   isSpecsEnabled: boolean;
   isRedlinesEnabled: boolean;
+  penColor: string;
 }
 
 export interface ElementSpecRow {
@@ -729,10 +736,12 @@ export interface InspectRendererState {
   viewportVersion: Accessor<number>;
   strokes: Accessor<AnnotationStroke[]>;
   draftStroke: Accessor<AnnotationStroke | null>;
+  penColor: Accessor<string>;
   texts: Accessor<AnnotationText[]>;
   textDraftPosition: Accessor<Position | null>;
   hasAnnotations: Accessor<boolean>;
-  selectedAnnotationId: Accessor<string | null>;
+  selectedAnnotationIds: Accessor<string[]>;
+  annotationMarqueeRect: Accessor<Rect | null>;
   isSpecsPinned: Accessor<boolean>;
   isSpecsPinLocked: Accessor<boolean>;
   styleOverridesVersion: Accessor<number>;
@@ -748,6 +757,7 @@ export interface InspectRendererState {
   onToggleSpecs: () => void;
   onToggleRedlines: () => void;
   onSelectAnnotationTool: (tool: AnnotationTool) => void;
+  onSelectPenColor: (color: string) => void;
   onClearAnnotations: () => void;
   onTextDraftChange: (text: string) => void;
   onTextDraftCommit: (draftPosition: Position) => void;

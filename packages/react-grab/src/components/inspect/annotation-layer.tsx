@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import {
   ANNOTATION_HIT_WIDTH_PX,
+  ANNOTATION_MARQUEE_FILL_OPACITY,
   ANNOTATION_SELECTION_PADDING_PX,
   ANNOTATION_STROKE_WIDTH_PX,
   ANNOTATION_TEXT_FONT_SIZE_PX,
@@ -19,7 +20,7 @@ import {
   Z_INDEX_OVERLAY,
   Z_INDEX_OVERLAY_CANVAS,
 } from "../../constants.js";
-import type { AnnotationStroke, AnnotationText, Position } from "../../types.js";
+import type { AnnotationStroke, AnnotationText, Position, Rect } from "../../types.js";
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
 import { getAnnotationStrokeBounds } from "../../utils/get-annotation-stroke-bounds.js";
 import { createInkPath } from "../../utils/ink-path.js";
@@ -32,7 +33,8 @@ interface AnnotationLayerProps {
   texts: AnnotationText[];
   textDraftPosition: Position | null;
   isEditing: boolean;
-  selectedAnnotationId: string | null;
+  selectedAnnotationIds: string[];
+  marqueeRect: Rect | null;
   onTextDraftChange: (text: string) => void;
   onTextDraftCommit: (draftPosition: Position) => void;
   onTextDraftCancel: () => void;
@@ -67,11 +69,17 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
     });
   });
 
+  const selectedIds = createMemo(() => new Set(props.selectedAnnotationIds));
+  const isSelected = (annotationId: string) => selectedIds().has(annotationId);
+
   const selectedStrokeBounds = createMemo(() => {
-    const selectedStroke = props.strokes.find((stroke) => stroke.id === props.selectedAnnotationId);
-    return selectedStroke
-      ? getAnnotationStrokeBounds(selectedStroke.points, ANNOTATION_SELECTION_PADDING_PX)
-      : null;
+    const boundsList: Rect[] = [];
+    for (const stroke of props.strokes) {
+      if (!isSelected(stroke.id)) continue;
+      const bounds = getAnnotationStrokeBounds(stroke.points, ANNOTATION_SELECTION_PADDING_PX);
+      if (bounds) boundsList.push(bounds);
+    }
+    return boundsList;
   });
 
   // Annotations only take the pointer while they are being rearranged; the
@@ -92,16 +100,15 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         height="1"
         style={{ "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
       >
-        <g style={{ transform: pageTransform() }} fill={INSPECT_ACCENT_COLOR}>
+        <g style={{ transform: pageTransform() }}>
           <For each={props.strokes}>
             {(stroke) => (
               <path
                 data-react-grab-annotation-stroke={stroke.isStraight ? "straight" : "freehand"}
                 data-react-grab-annotation-id={stroke.id}
-                data-react-grab-annotation-selected={
-                  stroke.id === props.selectedAnnotationId ? "" : undefined
-                }
+                data-react-grab-annotation-selected={isSelected(stroke.id) ? "" : undefined}
                 d={createInkPath(stroke.points, ANNOTATION_STROKE_WIDTH_PX, stroke.isStraight)}
+                fill={stroke.color}
                 // Invisible, so it only widens what counts as a press on a thin line.
                 stroke="transparent"
                 stroke-width={ANNOTATION_HIT_WIDTH_PX}
@@ -110,14 +117,14 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
               />
             )}
           </For>
-          <Show when={selectedStrokeBounds()}>
+          <For each={selectedStrokeBounds()}>
             {(bounds) => (
               <rect
                 data-react-grab-annotation-selection
-                x={bounds().left}
-                y={bounds().top}
-                width={bounds().right - bounds().left}
-                height={bounds().bottom - bounds().top}
+                x={bounds.left}
+                y={bounds.top}
+                width={bounds.right - bounds.left}
+                height={bounds.bottom - bounds.top}
                 rx="4"
                 fill="none"
                 stroke={INSPECT_ACCENT_COLOR}
@@ -125,16 +132,31 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 stroke-dasharray="4 3"
               />
             )}
-          </Show>
+          </For>
           <Show when={props.draftStroke}>
             {(draftStroke) => (
               <path
                 data-react-grab-annotation-draft
+                fill={draftStroke().color}
                 d={createInkPath(
                   draftStroke().points,
                   ANNOTATION_STROKE_WIDTH_PX,
                   draftStroke().isStraight,
                 )}
+              />
+            )}
+          </Show>
+          <Show when={props.marqueeRect}>
+            {(marqueeRect) => (
+              <rect
+                data-react-grab-annotation-marquee
+                x={marqueeRect().left}
+                y={marqueeRect().top}
+                width={marqueeRect().right - marqueeRect().left}
+                height={marqueeRect().bottom - marqueeRect().top}
+                fill-opacity={ANNOTATION_MARQUEE_FILL_OPACITY}
+                stroke={INSPECT_ACCENT_COLOR}
+                stroke-width="1"
               />
             )}
           </Show>
@@ -149,9 +171,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             <div
               data-react-grab-annotation-text
               data-react-grab-annotation-id={annotationText.id}
-              data-react-grab-annotation-selected={
-                annotationText.id === props.selectedAnnotationId ? "" : undefined
-              }
+              data-react-grab-annotation-selected={isSelected(annotationText.id) ? "" : undefined}
               class="absolute whitespace-pre rounded-[3px]"
               style={{
                 ...textBaseStyle,
@@ -159,10 +179,9 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 left: `${annotationText.x}px`,
                 top: textTop(annotationText.y),
                 "text-shadow": TEXT_HALO,
-                outline:
-                  annotationText.id === props.selectedAnnotationId
-                    ? `1px dashed ${INSPECT_ACCENT_COLOR}`
-                    : "none",
+                outline: isSelected(annotationText.id)
+                  ? `1px dashed ${INSPECT_ACCENT_COLOR}`
+                  : "none",
                 "outline-offset": `${ANNOTATION_SELECTION_PADDING_PX - 2}px`,
               }}
               textContent={annotationText.text}

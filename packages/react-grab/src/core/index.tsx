@@ -69,6 +69,7 @@ import { getTagName } from "../utils/get-tag-name.js";
 import { buildElementHierarchy } from "../utils/build-element-hierarchy.js";
 import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
+  ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
   SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
@@ -378,7 +379,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       isEventFromOverlay(event, SPECS_INPUT_ATTRIBUTE);
     const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey, isSpecsFieldEvent);
     const isAltKeyHeld = createModifierTracker((event) => event.altKey, isSpecsFieldEvent);
-    const inspect = createInspectController({ isShiftKeyHeld, getElementAtPosition });
+    const inspect = createInspectController({
+      isShiftKeyHeld,
+      getElementAtPosition,
+      getAnnotationElements: () => rendererRoot.querySelectorAll(`[${ANNOTATION_ID_ATTRIBUTE}]`),
+    });
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
     const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
@@ -2867,12 +2872,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         if (
           isAnnotating() &&
-          inspect.selectedAnnotationId() !== null &&
+          inspect.selectedAnnotationIds().length > 0 &&
           (event.key === "Delete" || event.key === "Backspace")
         ) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          inspect.removeSelectedAnnotation();
+          inspect.removeSelectedAnnotations();
           return;
         }
         // Editable controls keep their native arrow/Tab keys (caret movement,
@@ -3735,10 +3740,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       viewportVersion,
       strokes: inspect.strokes,
       draftStroke: inspect.draftStroke,
+      penColor: inspect.penColor,
       texts: inspect.texts,
       textDraftPosition: inspect.textDraftPosition,
       hasAnnotations: inspect.hasAnnotations,
-      selectedAnnotationId: inspect.selectedAnnotationId,
+      selectedAnnotationIds: inspect.selectedAnnotationIds,
+      annotationMarqueeRect: inspect.marqueeRect,
       isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
       isSpecsPinLocked: inspect.isSpecsPinLocked,
       styleOverridesVersion: inspect.styleOverridesVersion,
@@ -3759,11 +3766,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onToggleSpecs: inspect.toggleSpecs,
       onToggleRedlines: inspect.toggleRedlines,
       onSelectAnnotationTool: handleSelectAnnotationTool,
-      // With one annotation selected the button removes just that one.
+      onSelectPenColor: inspect.selectPenColor,
+      // With annotations selected the button removes just those.
       onClearAnnotations: () =>
-        inspect.selectedAnnotationId() === null
+        inspect.selectedAnnotationIds().length === 0
           ? inspect.clearAnnotations()
-          : inspect.removeSelectedAnnotation(),
+          : inspect.removeSelectedAnnotations(),
       onTextDraftChange: inspect.setTextDraftValue,
       onTextDraftCommit: inspect.commitTextDraft,
       onTextDraftCancel: inspect.discardTextDraft,
