@@ -75,6 +75,9 @@ export const Tooltip: Component<TooltipProps> = (props) => {
         data-react-grab-tooltip
         class={cn(
           "absolute flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-sans font-medium leading-4 pointer-events-none",
+          // A 14px key cap in the 20px-tall tooltip leaves 3px above and below
+          // it; the same 3px on its right keeps the circle evenly inset.
+          props.shortcut && "pr-[3px]",
           "bg-[var(--rg-panel-bg)] text-[var(--rg-text-primary)] [box-shadow:var(--rg-shadow)]",
           props.position === "top" && "bottom-full mb-2.5",
           props.position === "bottom" && "top-full mt-2.5",
@@ -89,7 +92,7 @@ export const Tooltip: Component<TooltipProps> = (props) => {
           {(shortcut) => (
             <kbd
               data-react-grab-tooltip-shortcut
-              class="min-w-[14px] px-1 rounded-[4px] bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-[14px] text-center text-[var(--rg-text-secondary)]"
+              class="flex size-[14px] shrink-0 items-center justify-center rounded-full bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-none text-[var(--rg-text-secondary)]"
               textContent={shortcut()}
             />
           )}
