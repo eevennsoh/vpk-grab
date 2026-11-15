@@ -26,12 +26,20 @@ export const metadata: Metadata = {
   description,
   icons: {
     icon: [
-      { url: "/favicon-fallback.svg", type: "image/svg+xml" },
-      { url: "/favicon-dark.svg", type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
-      { url: "/favicon-light.svg", type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
+      { url: "/favicon-fallback.svg", type: "image/svg+xml", sizes: "any" },
+      {
+        url: "/favicon-dark.svg",
+        type: "image/svg+xml",
+        sizes: "any",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/favicon-light.svg",
+        type: "image/svg+xml",
+        sizes: "any",
+        media: "(prefers-color-scheme: dark)",
+      },
     ],
-    shortcut: "/favicon.ico",
-    apple: "/favicon-fallback.svg",
   },
   openGraph: {
     title: "vpk-grab",
