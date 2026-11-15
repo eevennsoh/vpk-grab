@@ -92,7 +92,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         height="1"
         style={{ "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
       >
-        <g style={{ transform: pageTransform() }} fill={INSPECT_ACCENT_COLOR}>
+        <g style={{ transform: pageTransform() }}>
           <For each={props.strokes}>
             {(stroke) => (
               <path
@@ -102,6 +102,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                   stroke.id === props.selectedAnnotationId ? "" : undefined
                 }
                 d={createInkPath(stroke.points, ANNOTATION_STROKE_WIDTH_PX, stroke.isStraight)}
+                fill={stroke.color}
                 // Invisible, so it only widens what counts as a press on a thin line.
                 stroke="transparent"
                 stroke-width={ANNOTATION_HIT_WIDTH_PX}
@@ -130,6 +131,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             {(draftStroke) => (
               <path
                 data-react-grab-annotation-draft
+                fill={draftStroke().color}
                 d={createInkPath(
                   draftStroke().points,
                   ANNOTATION_STROKE_WIDTH_PX,

@@ -3735,6 +3735,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       viewportVersion,
       strokes: inspect.strokes,
       draftStroke: inspect.draftStroke,
+      penColor: inspect.penColor,
       texts: inspect.texts,
       textDraftPosition: inspect.textDraftPosition,
       hasAnnotations: inspect.hasAnnotations,
@@ -3759,6 +3760,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onToggleSpecs: inspect.toggleSpecs,
       onToggleRedlines: inspect.toggleRedlines,
       onSelectAnnotationTool: handleSelectAnnotationTool,
+      onSelectPenColor: inspect.selectPenColor,
       // With one annotation selected the button removes just that one.
       onClearAnnotations: () =>
         inspect.selectedAnnotationId() === null

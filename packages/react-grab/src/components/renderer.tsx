@@ -182,11 +182,13 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           isSpecsEnabled={props.inspect?.isSpecsEnabled()}
           isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
           annotationTool={props.inspect?.annotationTool()}
+          penColor={props.inspect?.penColor()}
           hasAnnotations={props.inspect?.hasAnnotations()}
           hasSelectedAnnotation={Boolean(props.inspect?.selectedAnnotationId())}
           onToggleSpecs={props.inspect?.onToggleSpecs}
           onToggleRedlines={props.inspect?.onToggleRedlines}
           onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}
+          onSelectPenColor={props.inspect?.onSelectPenColor}
           onClearAnnotations={props.inspect?.onClearAnnotations}
           styleChangeCount={props.inspect?.styleChangeCount()}
           onToggleChangesMenu={props.inspect?.onToggleChangesMenu}
