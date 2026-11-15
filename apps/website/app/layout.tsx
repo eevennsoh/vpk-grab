@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getSiteUrl } from "@/utils/get-site-url";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,10 +19,10 @@ const geistMono = Geist_Mono({
 
 const description =
   "React Grab with a design inspector built in: styles and tokens, redlines, measuring and annotations.";
-const ogImage = "/api/og";
+const ogImage = `/api/og?subtitle=${encodeURIComponent(description)}`;
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://react-grab.com"),
+  metadataBase: new URL(getSiteUrl()),
   title: "vpk-grab",
   description,
   icons: {
