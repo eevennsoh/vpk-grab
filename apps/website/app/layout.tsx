@@ -25,9 +25,13 @@ export const metadata: Metadata = {
   title: "vpk-grab",
   description,
   icons: {
-    icon: "/logo.svg",
-    shortcut: "/logo.svg",
-    apple: "/logo.svg",
+    icon: [
+      { url: "/favicon-fallback.svg", type: "image/svg+xml" },
+      { url: "/favicon-dark.svg", type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon-light.svg", type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/favicon-fallback.svg",
   },
   openGraph: {
     title: "vpk-grab",
