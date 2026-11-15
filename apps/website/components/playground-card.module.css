@@ -1,0 +1,168 @@
+.root {
+  --ds-space-025: 2px;
+  --ds-space-050: 4px;
+  --ds-space-075: 6px;
+  --ds-space-100: 8px;
+  --ds-space-150: 12px;
+  --ds-space-200: 16px;
+  --ds-space-300: 24px;
+  --ds-radius-small: 4px;
+  --ds-radius-medium: 6px;
+  --ds-radius-large: 12px;
+  --ds-radius-full: 999px;
+  --ds-font-size-075: 12px;
+  --ds-font-size-100: 14px;
+  --ds-font-size-200: 16px;
+  --ds-font-weight-medium: 500;
+  --ds-font-weight-semibold: 600;
+  --ds-surface-raised: #ffffff;
+  --ds-shadow-raised: 0 1px 1px #1e1f2140, 0 0 1px #1e1f214f;
+  --ds-border: #0b120e24;
+  --ds-text: #292a2e;
+  --ds-text-subtle: #505258;
+  --ds-text-inverse: #ffffff;
+  --ds-background-neutral: #0515240f;
+  --ds-background-neutral-hovered: #0b120e24;
+  --ds-background-brand-bold: #1868db;
+  --ds-background-brand-bold-hovered: #1558bc;
+  --ds-background-information: #e9f2fe;
+  --ds-text-information: #1558bc;
+  --ds-background-accent-purple-subtle: #d8a0f7;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-200);
+  padding: calc(var(--ds-space-050) * 5);
+  border-radius: var(--ds-radius-large);
+  background-color: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-raised);
+  color: var(--ds-text);
+  font-size: var(--ds-font-size-100);
+}
+
+:global(.dark) .root {
+  --ds-surface-raised: #242528;
+  --ds-shadow-raised: 0 0 0 1px #bdbdbd1f, 0 1px 1px #01040475;
+  --ds-border: #e3e4f21f;
+  --ds-text: #cecfd2;
+  --ds-text-subtle: #a9abaf;
+  --ds-text-inverse: #1f1f21;
+  --ds-background-neutral: #ceced912;
+  --ds-background-neutral-hovered: #e3e4f21f;
+  --ds-background-brand-bold: #669df1;
+  --ds-background-brand-bold-hovered: #8fb8f6;
+  --ds-background-information: #1c2b42;
+  --ds-text-information: #8fb8f6;
+  --ds-background-accent-purple-subtle: #803fa5;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-150);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: calc(var(--ds-space-100) * 5);
+  height: calc(var(--ds-space-100) * 5);
+  border-radius: var(--ds-radius-full);
+  background-color: var(--ds-background-accent-purple-subtle);
+  font-weight: var(--ds-font-weight-semibold);
+}
+
+.titleGroup {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--ds-space-025);
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--ds-font-size-200);
+  font-weight: var(--ds-font-weight-semibold);
+}
+
+.meta {
+  color: var(--ds-text-subtle);
+  font-size: var(--ds-font-size-075);
+}
+
+.lozenge {
+  padding: 0 var(--ds-space-050);
+  border-radius: var(--ds-radius-small);
+  background-color: var(--ds-background-information);
+  color: var(--ds-text-information);
+  font-size: var(--ds-font-size-075);
+  font-weight: var(--ds-font-weight-semibold);
+  text-transform: uppercase;
+}
+
+.body {
+  color: var(--ds-text-subtle);
+  line-height: 1.5;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-075);
+}
+
+.progressLabel {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ds-text-subtle);
+  font-size: var(--ds-font-size-075);
+}
+
+.track {
+  height: var(--ds-space-075);
+  border-radius: var(--ds-radius-full);
+  background-color: var(--ds-background-neutral);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--ds-background-brand-bold);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ds-space-100);
+  padding-top: var(--ds-space-150);
+  border-top: 1px solid var(--ds-border);
+}
+
+.button {
+  padding: var(--ds-space-075) var(--ds-space-150);
+  border-radius: var(--ds-radius-medium);
+  font-weight: var(--ds-font-weight-medium);
+  transition: background-color 120ms ease-out;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  composes: button;
+  background-color: var(--ds-background-neutral);
+  color: var(--ds-text);
+}
+
+.secondaryButton:hover {
+  background-color: var(--ds-background-neutral-hovered);
+}
+
+.primaryButton {
+  composes: button;
+  background-color: var(--ds-background-brand-bold);
+  color: var(--ds-text-inverse);
+}
+
+.primaryButton:hover {
+  background-color: var(--ds-background-brand-bold-hovered);
+}

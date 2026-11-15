@@ -16,12 +16,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const description = "Copy any UI element for your coding agent.";
+const description =
+  "React Grab with a design inspector built in: styles and tokens, redlines, measuring and annotations.";
 const ogImage = "/api/og";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://react-grab.com"),
-  title: "React Grab",
+  title: "vpk-grab",
   description,
   icons: {
     icon: "/logo.svg",
@@ -29,17 +30,17 @@ export const metadata: Metadata = {
     apple: "/logo.svg",
   },
   openGraph: {
-    title: "React Grab",
+    title: "vpk-grab",
     description,
     url: "/",
-    siteName: "React Grab",
-    images: [{ url: ogImage, width: 1200, height: 630, alt: "React Grab" }],
+    siteName: "vpk-grab",
+    images: [{ url: ogImage, width: 1200, height: 630, alt: "vpk-grab" }],
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "React Grab",
+    title: "vpk-grab",
     description,
     images: [ogImage],
   },
