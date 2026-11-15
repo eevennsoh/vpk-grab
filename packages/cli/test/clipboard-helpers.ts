@@ -6,6 +6,22 @@ const PICKLE_ALIGN_BYTES = 4;
 const GRAB_MIME = "application/x-react-grab";
 const CHROMIUM_CUSTOM_FORMAT = "chromium/x-web-custom-data";
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const DARWIN_GRAB_WRITER_SOURCE = path.join(FIXTURES_DIR, "write-pasteboard.swift");
+const DARWIN_GRAB_WRITER_BINARY_NAME = "write-pasteboard";
+
+let compiledDarwinGrabWriter: string | null = null;
+
+// Interpreting the writer with `swift` recompiles it on every call, which costs
+// tens of seconds on a runner with a cold module cache. Compiling it once up
+// front keeps that cost out of the capture tests' own time budget.
+export const prepareDarwinGrabWriter = (directory: string): boolean => {
+  const binary = path.join(directory, DARWIN_GRAB_WRITER_BINARY_NAME);
+  const didCompile =
+    spawnSync("swiftc", [DARWIN_GRAB_WRITER_SOURCE, "-o", binary], { stdio: "ignore" }).status ===
+    0;
+  compiledDarwinGrabWriter = didCompile ? binary : null;
+  return didCompile;
+};
 
 // Mirror of the CLI parser: encode one base::Pickle string16 (uint32 length in
 // UTF-16 code units, UTF-16LE bytes, padded to a 4-byte boundary).
@@ -76,8 +92,10 @@ export const writeText = (text: string): boolean => {
 export const writeGrab = ({ text, grabJson }: { text: string; grabJson: string }): boolean => {
   const pickle = encodeGrabPickle(grabJson);
   if (process.platform === "darwin") {
-    const fixture = path.join(FIXTURES_DIR, "write-pasteboard.swift");
-    return spawnSync("swift", [fixture, text], { input: pickle }).status === 0;
+    const [command, commandArguments] = compiledDarwinGrabWriter
+      ? [compiledDarwinGrabWriter, [text]]
+      : ["swift", [DARWIN_GRAB_WRITER_SOURCE, text]];
+    return spawnSync(command, commandArguments, { input: pickle }).status === 0;
   }
   if (process.platform === "linux") {
     return (
