@@ -1024,7 +1024,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 }
                 tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
-                tooltip="Move (V) · drag to move or box-select, Delete to remove"
+                tooltip="Move (v) · drag to move or box-select, Delete to remove"
               />
               <ToolbarActionButton
                 actionId={CLEAR_ACTION_ID}
