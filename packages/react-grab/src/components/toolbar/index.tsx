@@ -372,14 +372,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     "group contain-layout flex items-center justify-center cursor-pointer interactive-scale a11y-hitbox";
   const actionButtonWrapperClass = () =>
     cn("relative contain-layout flex items-center justify-center", buttonSpacingClass());
-  // Selecting, specs and redlines are on hold while the pen or text tool has
-  // the pointer, so they step back until hovered.
-  const elementToolWrapperClass = () =>
-    cn(
-      actionButtonWrapperClass(),
-      "transition-opacity duration-150",
-      isColorTool() && "opacity-40 hover:opacity-100",
-    );
   const actionIconClass = (isActive: boolean) =>
     isActive
       ? "text-[var(--rg-text-primary)]"
@@ -787,7 +779,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     isCollapseAnimating() ||
     isChevronPressed();
 
-  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting();
+  // Drawing and writing keep the toolbar at full strength: its colors and
+  // tools are what the pen and text work from.
+  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting() && !isColorTool();
 
   const getTransitionClass = (): string => {
     // Drag must follow the pointer frame-to-frame; any transform transition
@@ -886,7 +880,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               }
               isActive={isCurrentActionActive() && isGrabTool()}
               class={actionButtonClass}
-              wrapperClass={elementToolWrapperClass()}
+              wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggle}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -913,7 +907,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               label="Show design specs on hover"
               isActive={Boolean(props.isSpecsEnabled)}
               class={actionButtonClass}
-              wrapperClass={elementToolWrapperClass()}
+              wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggleSpecs}
               {...createFreezeHandlers(() => SPECS_ACTION_ID)}
               icon={<IconSpecs size={14} class={actionIconClass(Boolean(props.isSpecsEnabled))} />}
@@ -927,7 +921,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               label="Show spacing redlines on hover"
               isActive={Boolean(props.isRedlinesEnabled)}
               class={actionButtonClass}
-              wrapperClass={elementToolWrapperClass()}
+              wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggleRedlines}
               {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
               icon={

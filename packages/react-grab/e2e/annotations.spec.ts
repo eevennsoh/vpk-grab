@@ -280,20 +280,25 @@ test.describe("Annotations", () => {
     expect(Math.abs(finalBox.width - settledBox.width)).toBeLessThan(1);
   });
 
-  test("selecting, specs and redlines dim while the pen or text tool is in hand", async ({
+  test("the toolbar stays at full strength while the pen or text tool is in hand", async ({
     page,
   }) => {
-    const specsWrapper = toolbarAction(page, "inspect-specs").locator("..");
-    const readOpacity = () =>
-      specsWrapper.evaluate((element) => Number(getComputedStyle(element).opacity));
+    const readToolbarOpacity = () =>
+      page
+        .locator(TOOLBAR_SELECTOR)
+        .evaluate((element) => Number(getComputedStyle(element).opacity));
 
     await toolbarAction(page, "annotate-pen").click();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
-    await expect.poll(readOpacity).toBeLessThan(0.5);
+    await expect.poll(readToolbarOpacity).toBe(1);
 
-    await toolbarAction(page, "annotate-pen").click();
+    await toolbarAction(page, "annotate-text").click();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
-    await expect.poll(readOpacity).toBe(1);
+    await expect.poll(readToolbarOpacity).toBe(1);
+
+    await toolbarAction(page, "annotate-text").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect.poll(readToolbarOpacity).toBeLessThan(1);
   });
 
   test("colors join the toolbar only while the pen or text tool is in hand", async ({ page }) => {
