@@ -8,10 +8,15 @@ const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
+const PEN_COLORS_SELECTOR = "[data-react-grab-toolbar-pen-colors]";
+const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
+const DEFAULT_PEN_COLOR = "#f24822";
+const BLUE_PEN_COLOR = "#0d99ff";
 // The separator and the two buttons, less whatever a transition still holds.
 const ANNOTATION_ACTIONS_MIN_WIDTH_PX = 30;
 const LINE_START = { x: 300, y: 320 };
 const LINE_END = { x: 520, y: 320 };
+const SECOND_LINE_OFFSET_Y = 60;
 const NOTE_POSITION = { x: 300, y: 420 };
 const EMPTY_POSITION = { x: 700, y: 520 };
 const DRAG_DELTA = { x: 60, y: 40 };
@@ -253,5 +258,45 @@ test.describe("Annotations", () => {
     await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(0);
     await page.keyboard.press("Delete");
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+  });
+
+  test("pen colors join the toolbar only while the pen is in hand", async ({ page }) => {
+    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("inert");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
+    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "annotate-text").click();
+    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
+  });
+
+  test("a new stroke takes the picked color and earlier strokes keep theirs", async ({ page }) => {
+    await toolbarAction(page, "annotate-pen").click();
+    await toolbarAction(page, "pen-color-blue").click();
+    await expect(toolbarAction(page, "pen-color-blue")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "false");
+
+    const secondLineY = LINE_START.y + SECOND_LINE_OFFSET_Y;
+    await page.keyboard.down("Shift");
+    await page.mouse.move(LINE_START.x, secondLineY);
+    await page.mouse.down();
+    await page.mouse.move(LINE_END.x, secondLineY, { steps: 6 });
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+
+    const strokes = page.locator(STROKE_SELECTOR);
+    await expect(strokes).toHaveCount(2);
+    await expect(strokes.nth(0)).toHaveAttribute("fill", DEFAULT_PEN_COLOR);
+    await expect(strokes.nth(1)).toHaveAttribute("fill", BLUE_PEN_COLOR);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (storageKey) => localStorage.getItem(storageKey),
+          INSPECT_SETTINGS_STORAGE_KEY,
+        ),
+      )
+      .toContain(BLUE_PEN_COLOR);
   });
 });
