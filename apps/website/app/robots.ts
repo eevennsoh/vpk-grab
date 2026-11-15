@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { getSiteUrl } from "@/utils/get-site-url";
 
 const robots = (): MetadataRoute.Robots => {
   return {
@@ -7,7 +8,7 @@ const robots = (): MetadataRoute.Robots => {
       allow: "/",
       disallow: ["/api"],
     },
-    sitemap: "https://react-grab.com/sitemap.xml",
+    sitemap: `${getSiteUrl()}/sitemap.xml`,
   };
 };
 

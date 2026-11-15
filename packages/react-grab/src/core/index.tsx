@@ -71,6 +71,7 @@ import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
+  MOVE_TOOL_KEY,
   SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
@@ -149,6 +150,7 @@ import { logIntro } from "./log-intro.js";
 import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { isMac } from "../utils/is-mac.js";
+import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
 import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -2885,6 +2887,38 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           handleSelectAnnotationTool("pen");
           return;
         }
+        const canHandleEditShortcut =
+          isActivated() &&
+          !isPromptMode() &&
+          !isCopying() &&
+          !isKeyboardEventTriggeredByInput(event);
+        const editHistoryDirection = canHandleEditShortcut ? getEditHistoryDirection(event) : null;
+        if (editHistoryDirection) {
+          const entry = editHistoryDirection === "undo" ? inspect.undo() : inspect.redo();
+          if (entry) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (entry.kind === "styles") actions.incrementViewportVersion();
+            return;
+          }
+        }
+        // V picks the move tool up and puts it down, as in a design tool, so
+        // drawings can be selected without a trip to the toolbar.
+        if (
+          canHandleEditShortcut &&
+          inspect.hasAnnotations() &&
+          event.key.toLowerCase() === MOVE_TOOL_KEY &&
+          !event.repeat &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.shiftKey
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          handleSelectAnnotationTool("edit");
+          return;
+        }
         if (
           isAnnotating() &&
           inspect.selectedAnnotationIds().length > 0 &&
@@ -3771,9 +3805,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onToggleSpecsPinLock: inspect.toggleSpecsPinLock,
       // Changing a property moves things: the selection box, the redlines and
       // the panel's own placement all re-measure on the viewport version.
-      onSpecsStylesChange: () => {
-        inspect.notifyStyleOverridesChanged();
-        actions.incrementViewportVersion();
+      onSpecsStyleChange: (mutate) => {
+        const versionBeforeChange = inspect.styleOverridesVersion();
+        const result = inspect.changeStyles(mutate);
+        if (inspect.styleOverridesVersion() !== versionBeforeChange) {
+          actions.incrementViewportVersion();
+        }
+        return result;
       },
       onToggleChangesMenu: () => handleToggleChangesMenu(),
       onDismissChangesMenu: () => dismissChangesMenu(),

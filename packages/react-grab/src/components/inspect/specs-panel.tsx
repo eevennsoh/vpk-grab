@@ -21,6 +21,7 @@ import type {
   Rect,
   SpecsPanelCorner,
   SpecValueOption,
+  StyleChangeRunner,
 } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { createElementBounds } from "../../utils/create-element-bounds.js";
@@ -52,7 +53,7 @@ interface SpecsPanelProps {
   onHoverChange: (isHovered: boolean) => void;
   onEngagedChange: (isEngaged: boolean) => void;
   onTogglePinLock: () => void;
-  onStylesChange: () => void;
+  onStyleChange: StyleChangeRunner;
 }
 
 interface OpenValueMenu {
@@ -137,28 +138,25 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
     const element = props.element;
     if (!element) return;
     const isOff = row.override ? !row.override.isOff : true;
-    setStyleOverrideOff(element, row, isOff);
-    props.onStylesChange();
+    props.onStyleChange(() => setStyleOverrideOff(element, row, isOff));
   };
 
   const commitRowValue = (row: ElementSpecRow, value: string, token: string | null): boolean => {
     const element = props.element;
     if (!element) return false;
-    const didApply = setStyleOverrideValue(element, row, value, token);
-    if (didApply) props.onStylesChange();
-    return didApply;
+    return props.onStyleChange(() => setStyleOverrideValue(element, row, value, token));
   };
 
   const resetRow = (row: ElementSpecRow) => {
-    if (!props.element) return;
-    resetStyleOverride(props.element, row.property);
-    props.onStylesChange();
+    const element = props.element;
+    if (!element) return;
+    props.onStyleChange(() => resetStyleOverride(element, row.property));
   };
 
   const resetRows = () => {
-    if (!props.element) return;
-    resetElementStyleOverrides(props.element);
-    props.onStylesChange();
+    const element = props.element;
+    if (!element) return;
+    props.onStyleChange(() => resetElementStyleOverrides(element));
   };
 
   const selectValueOption = (row: ElementSpecRow, option: SpecValueOption) => {

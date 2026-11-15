@@ -5,7 +5,12 @@ import {
   SPECS_VALUE_MAX_LENGTH,
 } from "../../constants.js";
 import { getNearestComponentName } from "../../core/context.js";
-import type { DropdownAnchor, StyleOverride, StyleOverrideGroup } from "../../types.js";
+import type {
+  DropdownAnchor,
+  StyleChangeRunner,
+  StyleOverride,
+  StyleOverrideGroup,
+} from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { formatCssColor } from "../../utils/format-css-color.js";
 import { formatCssNumber } from "../../utils/format-css-number.js";
@@ -27,7 +32,7 @@ interface ChangesMenuProps {
   styleOverridesVersion: number;
   onDismiss: () => void;
   onConfigure: (element: Element) => void;
-  onStylesChange: () => void;
+  onStyleChange: StyleChangeRunner;
 }
 
 interface ChangesGroupProps {
@@ -145,13 +150,11 @@ export const ChangesMenu: Component<ChangesMenuProps> = (props) => {
   });
 
   const removeOverride = (override: StyleOverride) => {
-    resetStyleOverride(override.element, override.property);
-    props.onStylesChange();
+    props.onStyleChange(() => resetStyleOverride(override.element, override.property));
   };
 
   const resetAll = () => {
-    resetAllStyleOverrides();
-    props.onStylesChange();
+    props.onStyleChange(resetAllStyleOverrides);
   };
 
   return (

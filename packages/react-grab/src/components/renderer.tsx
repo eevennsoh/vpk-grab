@@ -183,7 +183,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             onHoverChange={inspect().onSpecsPanelHoverChange}
             onEngagedChange={inspect().onSpecsPanelEngagedChange}
             onTogglePinLock={inspect().onToggleSpecsPinLock}
-            onStylesChange={inspect().onSpecsStylesChange}
+            onStyleChange={inspect().onSpecsStyleChange}
           />
         )}
       </Show>
@@ -242,7 +242,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             styleOverridesVersion={inspect().styleOverridesVersion()}
             onDismiss={inspect().onDismissChangesMenu}
             onConfigure={inspect().onConfigureStyleChanges}
-            onStylesChange={inspect().onSpecsStylesChange}
+            onStyleChange={inspect().onSpecsStyleChange}
           />
         )}
       </Show>

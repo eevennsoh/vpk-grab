@@ -370,6 +370,64 @@ test.describe("Annotations", () => {
       )
       .toContain(BLUE_ANNOTATION_COLOR);
   });
+
+  test("undo takes back the note, then the line, and redo brings them back", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+  });
+
+  test("undo puts a moved drawing back and a new change clears redo", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const strokeBefore = await getBox(page, STROKE_SELECTOR);
+
+    await page.mouse.move(LINE_START.x + 100, LINE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(LINE_START.x + 100 + DRAG_DELTA.x, LINE_START.y + DRAG_DELTA.y, {
+      steps: 5,
+    });
+    await page.mouse.up();
+    expect((await getBox(page, STROKE_SELECTOR)).x).not.toBeCloseTo(strokeBefore.x, 0);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    expect(await getBox(page, STROKE_SELECTOR)).toEqual(strokeBefore);
+
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y);
+    await page.keyboard.press("Delete");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+  });
+
+  test("V picks the move tool up and puts it down while something is drawn", async ({ page }) => {
+    const moveTool = toolbarAction(page, "annotate-edit");
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect(moveTool).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("v");
+    await expect(moveTool).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("v");
+    await expect(moveTool).toHaveAttribute("aria-pressed", "false");
+  });
 });
 
 test.describe("Control toggles the pen on a Mac", () => {

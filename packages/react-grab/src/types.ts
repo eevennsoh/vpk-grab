@@ -683,6 +683,33 @@ export interface StyleOverrideGroup {
   overrides: StyleOverride[];
 }
 
+export interface AnnotationSnapshot {
+  strokes: AnnotationStroke[];
+  texts: AnnotationText[];
+}
+
+export interface AnnotationHistoryEntry {
+  kind: "annotations";
+  before: AnnotationSnapshot;
+  after: AnnotationSnapshot;
+}
+
+export interface StyleHistoryEntry {
+  kind: "styles";
+  before: StyleOverride[];
+  after: StyleOverride[];
+}
+
+export type EditHistoryEntry = AnnotationHistoryEntry | StyleHistoryEntry;
+
+export interface EditHistory<Entry> {
+  record: (entry: Entry) => void;
+  undo: () => Entry | null;
+  redo: () => Entry | null;
+}
+
+export type StyleChangeRunner = <Result>(mutate: () => Result) => Result;
+
 export interface ElementSpecSection {
   title: string;
   rows: ElementSpecRow[];
@@ -754,7 +781,7 @@ export interface InspectRendererState {
   onSpecsPanelHoverChange: (isHovered: boolean) => void;
   onSpecsPanelEngagedChange: (isEngaged: boolean) => void;
   onToggleSpecsPinLock: () => void;
-  onSpecsStylesChange: () => void;
+  onSpecsStyleChange: StyleChangeRunner;
   onToggleChangesMenu: () => void;
   onDismissChangesMenu: () => void;
   onConfigureStyleChanges: (element: Element) => void;

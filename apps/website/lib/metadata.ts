@@ -9,7 +9,7 @@ interface PageMetadataOptions {
 // One place for the per-page metadata shape (title pattern, OG image endpoint,
 // social cards) so pages differ only in copy and path.
 export const createPageMetadata = ({ title, description, path }: PageMetadataOptions): Metadata => {
-  const fullTitle = `${title} - React Grab`;
+  const fullTitle = `${title} - vpk-grab`;
   const ogImageUrl = `/api/og?title=${encodeURIComponent(title)}&subtitle=${encodeURIComponent(description)}`;
   return {
     title: fullTitle,
@@ -18,8 +18,8 @@ export const createPageMetadata = ({ title, description, path }: PageMetadataOpt
       title: fullTitle,
       description,
       url: path,
-      siteName: "React Grab",
-      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `React Grab - ${title}` }],
+      siteName: "vpk-grab",
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `vpk-grab - ${title}` }],
       locale: "en_US",
       type: "website",
     },

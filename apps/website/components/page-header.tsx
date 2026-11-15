@@ -15,7 +15,7 @@ export const PageHeader = ({ title, subtitle }: PageHeaderProps) => (
       className="mb-3 inline-flex w-fit items-center gap-1.5 text-sm text-faint transition-colors hover:text-prose"
     >
       <ArrowLeft size={13} />
-      React Grab
+      vpk-grab
     </Link>
     <div className="flex items-center justify-between">
       <h1 className="text-h2 font-medium text-title">{title}</h1>
