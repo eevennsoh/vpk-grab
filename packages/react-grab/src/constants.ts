@@ -429,11 +429,14 @@ export const RELEVANT_CSS_PROPERTIES = new Set([
 
 export const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
 export const ANNOTATION_INPUT_ATTRIBUTE = "data-react-grab-annotation-input";
-export const INSPECT_ACCENT_COLOR = "#f24822";
-export const INSPECT_ACCENT_CONTRAST_COLOR = "#ffffff";
+// VPK's accent (vpk-html iso/accent.mjs, ADS orange) with the dark ink VPK
+// sets on it: selection, grab/copy and spacing marks all share it.
+export const INSPECT_ACCENT_COLOR = "#fca700";
+export const INSPECT_ACCENT_CONTRAST_COLOR = "#292a2e";
+export const ANNOTATION_RED_COLOR = "#f24822";
 
 export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
-  { label: "Red", value: INSPECT_ACCENT_COLOR },
+  { label: "Red", value: ANNOTATION_RED_COLOR },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
   { label: "Blue", value: "#0d99ff" },
