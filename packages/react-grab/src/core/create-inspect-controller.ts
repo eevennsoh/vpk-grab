@@ -4,22 +4,29 @@ import {
   ANNOTATION_MARQUEE_MIN_DRAG_PX,
   ANNOTATION_MIN_SAMPLE_DISTANCE_PX,
   ANNOTATION_MIN_STROKE_LENGTH_PX,
+  EDIT_HISTORY_MAX_ENTRIES,
   ELEMENT_DETECTION_THROTTLE_MS,
 } from "../constants.js";
 import type {
   AnnotationPoint,
+  AnnotationSnapshot,
   AnnotationStroke,
   AnnotationText,
   AnnotationTool,
+  EditHistoryEntry,
   Position,
   Rect,
+  StyleChangeRunner,
 } from "../types.js";
+import { areStyleOverrideSnapshotsEqual } from "../utils/are-style-override-snapshots-equal.js";
+import { createEditHistory } from "../utils/create-edit-history.js";
 import { createRectFromCorners } from "../utils/create-rect-from-corners.js";
 import { generateId } from "../utils/generate-id.js";
 import { getNextInkWeight, INK_NEUTRAL_WEIGHT } from "../utils/ink-path.js";
 import { loadInspectSettings, saveInspectSettings } from "../utils/inspect-settings.js";
 import { isRectOverlapping } from "../utils/is-rect-overlapping.js";
 import { snapStraightLineEnd } from "../utils/snap-straight-line-end.js";
+import { getAllStyleOverrides, restoreStyleOverrides } from "../utils/style-override-store.js";
 
 interface InspectControllerOptions {
   isShiftKeyHeld: Accessor<boolean>;
@@ -37,6 +44,8 @@ interface ActiveDrawing {
 interface ActiveMove {
   pointerId: number;
   lastPoint: Position;
+  startSnapshot: AnnotationSnapshot;
+  didMove: boolean;
 }
 
 interface AnnotationHitBox {
@@ -143,6 +152,29 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const hasAnnotations = createMemo(() => strokes().length > 0 || texts().length > 0);
 
+  // One history for drawings, notes and style changes, so undo walks back
+  // through them in the order they were made.
+  const editHistory = createEditHistory<EditHistoryEntry>(EDIT_HISTORY_MAX_ENTRIES);
+
+  const captureAnnotations = (): AnnotationSnapshot => ({ strokes: strokes(), texts: texts() });
+
+  // Strokes and texts are replaced, never mutated, so an unchanged array is
+  // the same array and a snapshot is just the two references.
+  const recordAnnotationChange = (before: AnnotationSnapshot) => {
+    const after = captureAnnotations();
+    if (after.strokes === before.strokes && after.texts === before.texts) return;
+    editHistory.record({ kind: "annotations", before, after });
+  };
+
+  const restoreAnnotations = (snapshot: AnnotationSnapshot) => {
+    batch(() => {
+      setSelectedAnnotationIds([]);
+      setStrokes(snapshot.strokes);
+      setTexts(snapshot.texts);
+    });
+    putDownEditToolIfEmpty();
+  };
+
   const persistSettings = () =>
     saveInspectSettings({
       isSpecsEnabled: isSpecsEnabled(),
@@ -244,7 +276,52 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const notifyStyleOverridesChanged = () => setStyleOverridesVersion((version) => version + 1);
 
+  // Every style change runs through here so its before and after are captured
+  // around the change itself. One that changed nothing (a value the browser
+  // rejected) is neither recorded nor announced, so the panel keeps its state.
+  const changeStyles: StyleChangeRunner = (mutate) => {
+    const before = getAllStyleOverrides();
+    const result = mutate();
+    const after = getAllStyleOverrides();
+    if (!areStyleOverrideSnapshotsEqual(before, after)) {
+      editHistory.record({ kind: "styles", before, after });
+      notifyStyleOverridesChanged();
+    }
+    return result;
+  };
+
+  const applyHistoryEntry = (entry: EditHistoryEntry, direction: "undo" | "redo") => {
+    const isUndo = direction === "undo";
+    if (entry.kind === "annotations") {
+      restoreAnnotations(isUndo ? entry.before : entry.after);
+      return;
+    }
+    restoreStyleOverrides(isUndo ? entry.before : entry.after);
+    notifyStyleOverridesChanged();
+  };
+
+  // A note still being typed is finished first, so undo takes back the note
+  // rather than skipping past it.
+  const undo = (): EditHistoryEntry | null => {
+    cancelPointerGesture();
+    commitTextDraft();
+    const entry = editHistory.undo();
+    if (entry) applyHistoryEntry(entry, "undo");
+    return entry;
+  };
+
+  const redo = (): EditHistoryEntry | null => {
+    cancelPointerGesture();
+    commitTextDraft();
+    const entry = editHistory.redo();
+    if (entry) applyHistoryEntry(entry, "redo");
+    return entry;
+  };
+
   const cancelPointerGesture = () => {
+    // A drag cut short (the tool changed mid-move) still leaves the
+    // annotations where it took them, so it is still a change to take back.
+    if (activeMove?.didMove) recordAnnotationChange(activeMove.startSnapshot);
     activeDrawing = null;
     activeMove = null;
     activeMarquee = null;
@@ -266,6 +343,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     if (draftPosition && draftPosition !== currentPosition) return;
     const text = textDraftValue.trim();
     if (text) {
+      const before = captureAnnotations();
       setTexts((previousTexts) => [
         ...previousTexts,
         {
@@ -276,6 +354,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
           color: annotationColor(),
         },
       ]);
+      recordAnnotationChange(before);
     }
     discardTextDraft();
   };
@@ -298,8 +377,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
     cancelPointerGesture();
     discardTextDraft();
     setSelectedAnnotationIds([]);
-    setStrokes([]);
-    setTexts([]);
+    if (hasAnnotations()) {
+      const before = captureAnnotations();
+      setStrokes([]);
+      setTexts([]);
+      recordAnnotationChange(before);
+    }
     putDownEditToolIfEmpty();
   };
 
@@ -307,9 +390,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
     const removedIds = new Set(selectedAnnotationIds());
     if (removedIds.size === 0) return;
     activeMove = null;
+    const before = captureAnnotations();
     setSelectedAnnotationIds([]);
     setStrokes((previousStrokes) => previousStrokes.filter((stroke) => !removedIds.has(stroke.id)));
     setTexts((previousTexts) => previousTexts.filter((text) => !removedIds.has(text.id)));
+    recordAnnotationChange(before);
     putDownEditToolIfEmpty();
   };
 
@@ -349,7 +434,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
     } else if (!isAlreadySelected) {
       setSelectedAnnotationIds([annotationId]);
     }
-    activeMove = { pointerId: event.pointerId, lastPoint: toPagePoint(event) };
+    activeMove = {
+      pointerId: event.pointerId,
+      lastPoint: toPagePoint(event),
+      startSnapshot: captureAnnotations(),
+      didMove: false,
+    };
   };
 
   // A press on empty page deselects, as it does in a design tool, and a drag
@@ -444,11 +534,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const handlePointerMove = (event: PointerEvent) => {
     if (activeMove && activeMove.pointerId === event.pointerId) {
       const currentPoint = toPagePoint(event);
-      moveSelectedAnnotations(
-        currentPoint.x - activeMove.lastPoint.x,
-        currentPoint.y - activeMove.lastPoint.y,
-      );
+      const deltaX = currentPoint.x - activeMove.lastPoint.x;
+      const deltaY = currentPoint.y - activeMove.lastPoint.y;
+      if (deltaX === 0 && deltaY === 0) return;
+      moveSelectedAnnotations(deltaX, deltaY);
       activeMove.lastPoint = currentPoint;
+      activeMove.didMove = true;
       return;
     }
     if (activeMarquee && activeMarquee.pointerId === event.pointerId) {
@@ -470,6 +561,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const handlePointerUp = (event: PointerEvent) => {
     if (activeMove && activeMove.pointerId === event.pointerId) {
+      if (activeMove.didMove) recordAnnotationChange(activeMove.startSnapshot);
       activeMove = null;
       return;
     }
@@ -487,10 +579,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
       ? Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)
       : activeDrawing.lengthPx;
     if (lengthPx >= ANNOTATION_MIN_STROKE_LENGTH_PX) {
+      const before = captureAnnotations();
       setStrokes((previousStrokes) => [
         ...previousStrokes,
         { id: generateId("annotation-stroke"), points, isStraight, color: annotationColor() },
       ]);
+      recordAnnotationChange(before);
     }
     cancelPointerGesture();
   };
@@ -518,7 +612,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
     setSpecsPanelHovered,
     setSpecsPanelEngaged,
     styleOverridesVersion,
-    notifyStyleOverridesChanged,
+    changeStyles,
+    undo,
+    redo,
     measureAnchorElement,
     measureTargetElement,
     startMeasuring,

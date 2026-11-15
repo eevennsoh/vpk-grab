@@ -8,14 +8,14 @@ It is a fork, and a drop-in one. The package is still named `react-grab` and the
 
 Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too.
 
-| Toolbar control        | What it does                                                                                                                                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Specs**              | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`. |
-| **Redlines**           | The element's distance to the nearest sibling or container edge on each side, with its size in the name tag. Around elements too small to hold them, the numbers move out past the end of each line so they never overlap.            |
-| **Pen**                | Draw on the page in one of five colors. Hold **Shift** for a straight line. On a Mac, press **Control** while active to pick the pen up or put it down, without going back to the toolbar.                                            |
-| **Text**               | Click to place a note, in the same colors as the pen.                                                                                                                                                                                 |
-| **Move** and **Clear** | Appear once something is drawn. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all.                      |
-| **Changes**            | Appears with the first style change, showing how many there are. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                  |
+| Toolbar control        | What it does                                                                                                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Specs**              | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`.                        |
+| **Redlines**           | The element's distance to the nearest sibling or container edge on each side, with its size in the name tag. Around elements too small to hold them, the numbers move out past the end of each line so they never overlap.                                   |
+| **Pen**                | Draw on the page in one of five colors. Hold **Shift** for a straight line. On a Mac, press **Control** while active to pick the pen up or put it down, without going back to the toolbar.                                                                   |
+| **Text**               | Click to place a note, in the same colors as the pen.                                                                                                                                                                                                        |
+| **Move** and **Clear** | Appear once something is drawn; press **V** to pick Move up or put it down. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all. |
+| **Changes**            | Appears with the first style change, showing how many there are. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                                         |
 
 Two keys work on whatever is hovered, without clicking:
 
@@ -25,6 +25,8 @@ Two keys work on whatever is hovered, without clicking:
 | Hold **Alt**   | Redlines on | Anchors the redlines to the element. Move to any other element to read the distances between the two.                                                                                                                             |
 
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
+
+While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).
 
 ## Install
 

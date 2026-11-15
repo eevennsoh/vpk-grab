@@ -48,6 +48,25 @@ test.describe("style changes", () => {
     await expect(page.locator(CHANGES_COUNT_SELECTOR)).toHaveText("2");
   });
 
+  test("undo takes changes back one at a time and redo replays them", async ({
+    reactGrab,
+    page,
+  }) => {
+    await makeTwoChanges(page);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(CHANGES_COUNT_SELECTOR)).toHaveText("1");
+    expect(await getStyle(page, "specs-plain-button", "padding-left")).toBe("20px");
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(CHANGES_ACTIONS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    expect(await getStyle(page, "specs-plain-button", "padding-left")).toBe("8px");
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expect(page.locator(CHANGES_COUNT_SELECTOR)).toHaveText("1");
+    expect(await getStyle(page, "specs-plain-button", "padding-left")).toBe("20px");
+  });
+
   test("the menu lists changes by element and removes one", async ({ page }) => {
     await makeTwoChanges(page);
     await page.locator(CHANGES_BUTTON_SELECTOR).click();

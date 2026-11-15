@@ -219,3 +219,17 @@ export const resetElementStyleOverrides = (element: Element) => {
 export const resetAllStyleOverrides = () => {
   for (const element of [...overridesByElement.keys()]) resetElementStyleOverrides(element);
 };
+
+// Undo and redo put the page back to an earlier set of overrides. Clearing
+// first restores every element's own inline styles, so each override is laid
+// over what the element really had, not over another override.
+export const restoreStyleOverrides = (snapshot: readonly StyleOverride[]) => {
+  resetAllStyleOverrides();
+  for (const override of snapshot) {
+    if (!override.element.isConnected) continue;
+    if (override.value !== null) {
+      setStyleOverrideValue(override.element, override.original, override.value, override.token);
+    }
+    if (override.isOff) setStyleOverrideOff(override.element, override.original, true);
+  }
+};

@@ -466,4 +466,6 @@ export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
 export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
+export const EDIT_HISTORY_MAX_ENTRIES = 100;
+export const MOVE_TOOL_KEY = "v";
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;
