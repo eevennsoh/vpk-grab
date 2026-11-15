@@ -1,4 +1,5 @@
 import type { AnnotationColorOption } from "./types.js";
+import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import { overlayColor } from "./utils/overlay-color.js";
 
 export const VERSION = process.env.VERSION as string;
@@ -472,4 +473,9 @@ export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
 export const PEN_TOOL_KEY = "3";
 export const TEXT_TOOL_KEY = "4";
+export const PEN_ICON_PATH =
+  "M4 20l1.2-4.6L16.4 4.2a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8 4 20zM14.5 6l3.5 3.5";
+export const MOVE_ICON_PATH = "M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3";
+export const PEN_TOOL_CURSOR = createSvgCursor(PEN_ICON_PATH, { x: 4, y: 20 }, "crosshair");
+export const MOVE_TOOL_CURSOR = createSvgCursor(MOVE_ICON_PATH, { x: 12, y: 12 }, "move");
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;

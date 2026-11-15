@@ -71,11 +71,13 @@ import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
+  MOVE_TOOL_CURSOR,
   MOVE_TOOL_KEY,
   PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
   TEXT_TOOL_KEY,
+  PEN_TOOL_CURSOR,
   SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
@@ -393,15 +395,18 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
     const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
+    // Each tool gets its own cursor, drawn from its toolbar icon, so the page
+    // shows which tool is in hand; selection keeps the plain crosshair.
     const getAnnotationToolCursor = (tool: AnnotationTool): string => {
       switch (tool) {
         case "grab":
-        case "pen":
           return "crosshair";
+        case "pen":
+          return PEN_TOOL_CURSOR;
         case "text":
           return "text";
         case "edit":
-          return "default";
+          return MOVE_TOOL_CURSOR;
         default: {
           const unhandledTool: never = tool;
           return unhandledTool;

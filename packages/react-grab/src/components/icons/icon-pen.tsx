@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import { PEN_ICON_PATH } from "../../constants.js";
 
 interface IconPenProps {
   size?: number;
@@ -21,7 +22,7 @@ export const IconPen: Component<IconPenProps> = (props) => {
       stroke-linejoin="round"
       class={props.class}
     >
-      <path d="M4 20l1.2-4.6L16.4 4.2a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8 4 20zM14.5 6l3.5 3.5" />
+      <path d={PEN_ICON_PATH} />
     </svg>
   );
 };
