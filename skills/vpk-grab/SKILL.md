@@ -102,16 +102,17 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
 - **Specs** (toolbar toggle): a panel of the hovered element's applied styles,
   with the design token under each value that came from one.
-- **Redlines** (toolbar toggle): the element's size and its distance to
-  neighbours and container edges.
+- **Redlines** (toolbar toggle): the element's distance to neighbours and
+  container edges, with its size in the name tag.
 - **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
   property off and on, pick another token or keyword, or type a value.
 - **Changes** (toolbar, once something is edited): every style change on the
   page, by element, with remove, reopen and reset all.
 - **Hold Alt** with Redlines on: anchors on the hovered element; moving to
   another element shows the distances between the two.
-- **Pen**, **Text**: draw and write on the page. **Move** and **Clear** appear
-  once something is drawn.
+- **Pen**, **Text**: draw and write on the page in one of five colors; on a
+  Mac, Control picks the pen up and puts it down. **Move** and **Clear** appear
+  once something is drawn; Move box-selects and drags annotations together.
 
 ## Acting on what the user brings back
 
