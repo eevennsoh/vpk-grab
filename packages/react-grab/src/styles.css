@@ -9,6 +9,9 @@
 :host {
   all: initial;
   direction: ltr;
+  /* VPK's accent (vpk-html iso/accent.mjs, ADS orange), the same in both
+     themes; it marks a tool that is switched on. */
+  --rg-accent: #fca700;
 }
 
 /* Theme tokens — light values are duplicated across the @media fallback and

@@ -7,6 +7,17 @@ import type { MaterialIconPaths } from "./types.js";
 
 export const MATERIAL_ICON_VIEW_BOX = "0 -960 960 960";
 
+// One shape for every direction: the collapse control rotates it to face its
+// edge, and keyboard_arrow_up is this shape turned half a turn. The arrow has
+// no filled variant, so both states share it.
+const KEYBOARD_ARROW_DOWN_PATH =
+  "M467.1-378.31q-5.98-2.46-11.1-7.77L278.65-563.42q-8.3-8.12-8.25-19.58.06-11.46 8.56-19.65 8.5-8.2 19.62-8.2 11.11 0 19.3 8.2L480-440.54l162.12-162.11q7.8-7.81 19.11-8 11.31-.2 19.81 8 8.5 8.19 8.75 19.46.25 11.27-8.25 19.77L504.19-386.08q-5.31 5.31-11.29 7.77-5.98 2.46-12.9 2.46t-12.9-2.46Z";
+
+export const KEYBOARD_ARROW_DOWN_ICON_PATHS: MaterialIconPaths = {
+  outline: KEYBOARD_ARROW_DOWN_PATH,
+  filled: KEYBOARD_ARROW_DOWN_PATH,
+};
+
 export const NAVIGATION_ICON_PATHS: MaterialIconPaths = {
   outline:
     "m479.69-268-222.03 95.19q-11.17 4.62-20.93 2.12-9.77-2.5-16.46-9.64-6.69-7.13-9.19-17.2-2.5-10.06 2.5-20.86L449.4-748.23q4.29-10.5 12.93-15.61 8.63-5.12 18.07-5.12 9.45 0 18.08 5.12 8.64 5.11 12.91 15.62l235.53 530.33q4.81 10.66 2.15 20.54-2.65 9.89-9.34 17.02-6.69 7.14-16.46 9.64-9.76 2.5-20.93-2.12L479.69-268Zm-192.77 20.77 193.58-82.39 192.77 82.39L480.5-681.58 286.92-247.23Zm193.58-82.39Z",

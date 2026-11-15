@@ -642,6 +642,7 @@ export interface AnnotationStroke {
 export interface AnnotationColorOption {
   label: string;
   value: string;
+  hasInnerBorder?: boolean;
 }
 
 export interface AnnotationText extends Position {

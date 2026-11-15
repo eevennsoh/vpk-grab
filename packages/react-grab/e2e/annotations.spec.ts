@@ -524,4 +524,30 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect(tooltip).toBeVisible();
     await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("2");
   });
+
+  test("Specs and Spacing start off and are remembered after a reload", async ({
+    reactGrab,
+    page,
+  }) => {
+    const specs = toolbarAction(page, "inspect-specs");
+    const spacing = toolbarAction(page, "inspect-redlines");
+    await expect(specs).toHaveAttribute("aria-pressed", "false");
+    await expect(spacing).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("1");
+    await page.keyboard.press("2");
+    await expect(spacing).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect(specs).toHaveAttribute("aria-pressed", "true");
+    await expect(spacing).toHaveAttribute("aria-pressed", "true");
+
+    await specs.click();
+    await spacing.click();
+    await expect(spacing).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect(specs).toHaveAttribute("aria-pressed", "false");
+    await expect(spacing).toHaveAttribute("aria-pressed", "false");
+  });
 });

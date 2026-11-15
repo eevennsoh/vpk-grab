@@ -49,15 +49,15 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
     const collapsed = props.isCollapsed;
     switch (edge()) {
       case "top":
-        return collapsed ? "rotate-90" : "-rotate-90";
-      case "bottom":
-        return collapsed ? "-rotate-90" : "rotate-90";
-      case "left":
         return collapsed ? "rotate-0" : "rotate-180";
-      case "right":
+      case "bottom":
         return collapsed ? "rotate-180" : "rotate-0";
+      case "left":
+        return collapsed ? "-rotate-90" : "rotate-90";
+      case "right":
+        return collapsed ? "rotate-90" : "-rotate-90";
       default:
-        return "-rotate-90";
+        return "rotate-180";
     }
   };
 

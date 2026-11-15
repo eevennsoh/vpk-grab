@@ -379,8 +379,21 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     cn("relative contain-layout flex items-center justify-center", buttonSpacingClass());
   const actionIconClass = (isActive: boolean) =>
     isActive
-      ? "text-[var(--rg-text-primary)]"
+      ? "text-[var(--rg-accent)]"
       : "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)]";
+  // Only a swatch that would vanish into the dark panel gets an edge, drawn
+  // inside the dot so every swatch keeps the same size; the selection ring
+  // sits outside it.
+  const getColorSwatchShadowClass = (isSelected: boolean, hasInnerBorder?: boolean) => {
+    if (isSelected && hasInnerBorder) {
+      return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
+    }
+    if (isSelected) {
+      return "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
+    }
+    if (hasInnerBorder) return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button)]";
+    return "";
+  };
 
   const handleToggleCollapse = drag.createDragAwareHandler(() => {
     if (isCollapsed()) {
@@ -1019,9 +1032,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                           <span
                             class={cn(
                               "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
-                              isSelected()
-                                ? "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
-                                : "[box-shadow:0_0_0_1px_var(--rg-border-button)]",
+                              getColorSwatchShadowClass(isSelected(), colorOption.hasInnerBorder),
                             )}
                             style={{ "background-color": colorOption.value }}
                           />
@@ -1061,7 +1072,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
                 tooltip="Move"
-                tooltipShortcut={MOVE_TOOL_KEY.toUpperCase()}
+                tooltipShortcut={MOVE_TOOL_KEY}
               />
               <ToolbarActionButton
                 actionId={CLEAR_ACTION_ID}

@@ -432,7 +432,7 @@ export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
   { label: "Blue", value: "#0d99ff" },
-  { label: "Black", value: "#111827" },
+  { label: "Black", value: "#111827", hasInnerBorder: true },
 ];
 
 export const ANNOTATION_STROKE_WIDTH_PX = 3;
