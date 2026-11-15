@@ -536,6 +536,7 @@ export interface TagBadgeProps {
   onClick: (event: MouseEvent) => void;
   onHoverChange?: (hovered: boolean) => void;
   shrink?: boolean;
+  sizeText?: string;
 }
 
 export interface BottomSectionProps {
@@ -598,6 +599,8 @@ export interface SelectionLabelProps {
   onShowContextMenu?: () => void;
   onHoverChange?: (isHovered: boolean) => void;
   hideArrow?: boolean;
+  sizeText?: string;
+  clearanceBelowPx?: number;
 }
 
 export interface SourceLocation extends SourceInfo {

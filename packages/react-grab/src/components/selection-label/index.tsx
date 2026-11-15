@@ -223,7 +223,8 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
       // the transform to push it back on-screen without moving left.
       const anchorX = cursorX;
       let edgeOffsetX = 0;
-      let positionTop = selectionBottom + actualArrowHeight + LABEL_GAP_PX;
+      let positionTop =
+        selectionBottom + (props.clearanceBelowPx ?? 0) + actualArrowHeight + LABEL_GAP_PX;
 
       const labelLeft = anchorX - labelWidth / 2;
       const labelRight = anchorX + labelWidth / 2;
@@ -419,6 +420,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
                   isClickable={Boolean(props.filePath && props.onOpen)}
                   onClick={handleTagClick}
                   onHoverChange={handleTagHoverChange}
+                  sizeText={props.sizeText}
                   shrink
                 />
               </div>
@@ -434,6 +436,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
                   isClickable={Boolean(props.filePath && props.onOpen)}
                   onClick={handleTagClick}
                   onHoverChange={handleTagHoverChange}
+                  sizeText={props.sizeText}
                 />
               </div>
               <BottomSection>

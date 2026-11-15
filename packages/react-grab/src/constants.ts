@@ -446,6 +446,8 @@ export const ANNOTATION_TEXT_LINE_HEIGHT_PX = 20;
 export const REDLINE_MIN_DISTANCE_PX = 0.5;
 export const REDLINE_TICK_LENGTH_PX = 7;
 export const REDLINE_LABEL_HEIGHT_PX = 16;
+export const REDLINE_LABEL_GAP_PX = 4;
+export const REDLINE_COMPACT_ELEMENT_MAX_PX = 48;
 // Neighbours are measured on every hover; a list with thousands of rows only
 // needs the ones around the hovered row to find the nearest on each side.
 export const REDLINE_SIBLING_SEARCH_RADIUS = 60;

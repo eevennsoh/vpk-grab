@@ -1,7 +1,11 @@
-import { For, Show, type Component } from "solid-js";
+import { createMemo, For, Show, type Component } from "solid-js";
 import type { ReactGrabRendererProps } from "../types.js";
 import { DEFAULT_ACTION_ID } from "../constants.js";
 import { isElementConnected } from "../utils/is-element-connected.js";
+import { formatElementSize } from "../utils/format-element-size.js";
+import { getElementRedlines } from "../utils/get-element-redlines.js";
+import { getPairRedlines } from "../utils/get-pair-redlines.js";
+import { getRedlineLabelClearance } from "../utils/get-redline-label-clearance.js";
 import { OverlayCanvas } from "./overlay-canvas.js";
 import { FrozenGlow } from "./frozen-glow.js";
 import { SelectionLabel } from "./selection-label/index.js";
@@ -15,6 +19,31 @@ import { SpecsPanel } from "./inspect/specs-panel.js";
 import { ChangesMenu } from "./toolbar/changes-menu.js";
 
 export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
+  // With a measure target the element's own spacing gives way to the
+  // distances between the two; a target with no box to measure falls back.
+  const redlines = createMemo(() => {
+    const inspect = props.inspect;
+    if (!inspect?.isRedlinesEnabled()) return null;
+    void inspect.viewportVersion();
+    const element = inspect.element();
+    if (!element) return null;
+    const measureTarget = inspect.measureTarget();
+    const pairRedlines =
+      measureTarget && measureTarget !== element ? getPairRedlines(element, measureTarget) : null;
+    return pairRedlines ?? getElementRedlines(element);
+  });
+  const isSelectionLabelShown = () =>
+    Boolean(
+      props.selectionLabelVisible &&
+      props.selectionBounds &&
+      (props.frozenLabelEntryAccessors?.length ?? 0) === 0,
+    );
+  const selectionSizeText = () => {
+    const bounds = props.selectionBounds;
+    if (!bounds || !redlines() || !isSelectionLabelShown()) return undefined;
+    return formatElementSize(bounds.width, bounds.height);
+  };
+
   return (
     <>
       <OverlayCanvas
@@ -30,28 +59,24 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
       <FrozenGlow visible={props.isFrozen ?? false} />
       <Show when={props.inspect}>
         {(inspect) => (
-          <>
-            <AnnotationLayer
-              strokes={inspect().strokes()}
-              draftStroke={inspect().draftStroke()}
-              texts={inspect().texts()}
-              textDraftPosition={inspect().textDraftPosition()}
-              annotationColor={inspect().annotationColor()}
-              isEditing={inspect().annotationTool() === "edit"}
-              selectedAnnotationIds={inspect().selectedAnnotationIds()}
-              marqueeRect={inspect().annotationMarqueeRect()}
-              onTextDraftChange={inspect().onTextDraftChange}
-              onTextDraftCommit={inspect().onTextDraftCommit}
-              onTextDraftCancel={inspect().onTextDraftCancel}
-            />
-            <Show when={inspect().isRedlinesEnabled()}>
-              <RedlinesOverlay
-                element={inspect().element()}
-                measureTarget={inspect().measureTarget()}
-                viewportVersion={inspect().viewportVersion()}
-              />
-            </Show>
-          </>
+          <AnnotationLayer
+            strokes={inspect().strokes()}
+            draftStroke={inspect().draftStroke()}
+            texts={inspect().texts()}
+            textDraftPosition={inspect().textDraftPosition()}
+            annotationColor={inspect().annotationColor()}
+            isEditing={inspect().annotationTool() === "edit"}
+            selectedAnnotationIds={inspect().selectedAnnotationIds()}
+            marqueeRect={inspect().annotationMarqueeRect()}
+            onTextDraftChange={inspect().onTextDraftChange}
+            onTextDraftCommit={inspect().onTextDraftCommit}
+            onTextDraftCancel={inspect().onTextDraftCancel}
+          />
+        )}
+      </Show>
+      <Show when={redlines()}>
+        {(currentRedlines) => (
+          <RedlinesOverlay redlines={currentRedlines()} showsSizeLabel={!selectionSizeText()} />
         )}
       </Show>
       <Show
@@ -84,16 +109,12 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           />
         )}
       </Show>
-      <Show
-        when={
-          props.selectionLabelVisible &&
-          props.selectionBounds &&
-          (props.frozenLabelEntryAccessors?.length ?? 0) === 0
-        }
-      >
+      <Show when={isSelectionLabelShown()}>
         <SelectionLabel
           tagName={props.selectionTagName}
           componentName={props.selectionComponentName}
+          sizeText={selectionSizeText()}
+          clearanceBelowPx={selectionSizeText() ? getRedlineLabelClearance(redlines()) : 0}
           elementsCount={props.selectionElementsCount}
           selectionBounds={props.selectionBounds}
           mouseX={props.mouseX}

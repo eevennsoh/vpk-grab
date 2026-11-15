@@ -28,6 +28,15 @@ export const TagBadge: Component<TagBadgeProps> = (props) => {
       <Show when={!props.componentName}>
         <span class="text-[var(--rg-text-primary)]" textContent={props.tagName} />
       </Show>
+      <Show when={props.sizeText}>
+        {(sizeText) => (
+          <span
+            data-react-grab-tag-size
+            class="ml-1.5 text-[var(--rg-text-secondary)] tabular-nums"
+            textContent={sizeText()}
+          />
+        )}
+      </Show>
     </span>
   );
 
