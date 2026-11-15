@@ -25,6 +25,8 @@ const DRAG_DELTA = { x: 60, y: 40 };
 const MARQUEE_START = { x: 260, y: 280 };
 const MARQUEE_END = { x: 620, y: 460 };
 const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
+// Longer than the toolbar's reveal animation, so its position has settled.
+const TOOLBAR_SETTLE_MS = 400;
 
 const toolbarAction = (page: Page, actionId: string) =>
   page.locator(`[data-react-grab-toolbar-action="${actionId}"]`);
@@ -260,6 +262,38 @@ test.describe("Annotations", () => {
     await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(0);
     await page.keyboard.press("Delete");
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+  });
+
+  test("switching between pen and text leaves the toolbar where it is", async ({ page }) => {
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(page.locator(ANNOTATION_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
+    await page.waitForTimeout(TOOLBAR_SETTLE_MS);
+    const settledBox = await getBox(page, TOOLBAR_SELECTOR);
+
+    await toolbarAction(page, "annotate-text").click();
+    await page.waitForTimeout(TOOLBAR_SETTLE_MS);
+    await toolbarAction(page, "annotate-pen").click();
+    await page.waitForTimeout(TOOLBAR_SETTLE_MS);
+
+    const finalBox = await getBox(page, TOOLBAR_SELECTOR);
+    expect(Math.abs(finalBox.x - settledBox.x)).toBeLessThan(1);
+    expect(Math.abs(finalBox.width - settledBox.width)).toBeLessThan(1);
+  });
+
+  test("selecting, specs and redlines dim while the pen or text tool is in hand", async ({
+    page,
+  }) => {
+    const specsWrapper = toolbarAction(page, "inspect-specs").locator("..");
+    const readOpacity = () =>
+      specsWrapper.evaluate((element) => Number(getComputedStyle(element).opacity));
+
+    await toolbarAction(page, "annotate-pen").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect.poll(readOpacity).toBeLessThan(0.5);
+
+    await toolbarAction(page, "annotate-pen").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect.poll(readOpacity).toBe(1);
   });
 
   test("colors join the toolbar only while the pen or text tool is in hand", async ({ page }) => {

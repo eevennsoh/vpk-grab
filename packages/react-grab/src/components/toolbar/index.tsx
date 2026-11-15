@@ -1,4 +1,13 @@
-import { createEffect, createSignal, For, on, onCleanup, onMount, type Component } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
 import type { AnnotationTool, Position } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } from "./state.js";
@@ -363,6 +372,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     "group contain-layout flex items-center justify-center cursor-pointer interactive-scale a11y-hitbox";
   const actionButtonWrapperClass = () =>
     cn("relative contain-layout flex items-center justify-center", buttonSpacingClass());
+  // Selecting, specs and redlines are on hold while the pen or text tool has
+  // the pointer, so they step back until hovered.
+  const elementToolWrapperClass = () =>
+    cn(
+      actionButtonWrapperClass(),
+      "transition-opacity duration-150",
+      isColorTool() && "opacity-40 hover:opacity-100",
+    );
   const actionIconClass = (isActive: boolean) =>
     isActive
       ? "text-[var(--rg-text-primary)]"
@@ -487,10 +504,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const trackRevealGroup = (
     isRevealed: () => boolean,
     getGroupElement: () => HTMLDivElement | undefined,
-  ) =>
+  ) => {
+    // Memoized so a change that leaves the group as it was (Pen to Text, both
+    // showing the colors) does not count its length a second time.
+    const isGroupRevealedMemo = createMemo(isRevealed);
     createEffect(
       on(
-        isRevealed,
+        isGroupRevealedMemo,
         (isGroupRevealed) => {
           const content = getGroupElement()?.firstElementChild;
           if (!content) return;
@@ -517,6 +537,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         { defer: true },
       ),
     );
+  };
   let annotationColorsRef: HTMLDivElement | undefined;
   let annotationActionsRef: HTMLDivElement | undefined;
   let changesActionsRef: HTMLDivElement | undefined;
@@ -865,7 +886,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               }
               isActive={isCurrentActionActive() && isGrabTool()}
               class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
+              wrapperClass={elementToolWrapperClass()}
               onClick={handleToggle}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -892,7 +913,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               label="Show design specs on hover"
               isActive={Boolean(props.isSpecsEnabled)}
               class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
+              wrapperClass={elementToolWrapperClass()}
               onClick={handleToggleSpecs}
               {...createFreezeHandlers(() => SPECS_ACTION_ID)}
               icon={<IconSpecs size={14} class={actionIconClass(Boolean(props.isSpecsEnabled))} />}
@@ -906,7 +927,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               label="Show spacing redlines on hover"
               isActive={Boolean(props.isRedlinesEnabled)}
               class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
+              wrapperClass={elementToolWrapperClass()}
               onClick={handleToggleRedlines}
               {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
               icon={
