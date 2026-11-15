@@ -102,7 +102,8 @@ const HomePage = () => (
 
       <section aria-label="Playground" className="flex min-w-0 flex-col gap-3">
         <p className="text-sm text-meta">
-          Try it here: hover the card and hold <Kbd>⌘C</Kbd> to freeze the page.
+          Try it here: hover <Kbd>⋯</Kbd> to open its menu, then hold <Kbd>⌘C</Kbd> to freeze it
+          open.
         </p>
         <PlaygroundCard />
       </section>
