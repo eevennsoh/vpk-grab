@@ -1,5 +1,5 @@
 import {
-  INSPECT_ACCENT_COLOR,
+  ANNOTATION_RED_COLOR,
   INSPECT_SETTINGS_STORAGE_KEY,
   ANNOTATION_COLOR_OPTIONS,
 } from "../constants.js";
@@ -9,7 +9,7 @@ import { IS_DEMO } from "./runtime-mode.js";
 const DEFAULT_INSPECT_SETTINGS: InspectSettings = {
   isSpecsEnabled: false,
   isRedlinesEnabled: false,
-  annotationColor: INSPECT_ACCENT_COLOR,
+  annotationColor: ANNOTATION_RED_COLOR,
 };
 
 const isAnnotationColor = (value: unknown): value is string =>
