@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import { MOVE_ICON_PATH } from "../../constants.js";
 
 interface IconMoveProps {
   size?: number;
@@ -21,7 +22,7 @@ export const IconMove: Component<IconMoveProps> = (props) => {
       stroke-linejoin="round"
       class={props.class}
     >
-      <path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" />
+      <path d={MOVE_ICON_PATH} />
     </svg>
   );
 };

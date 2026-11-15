@@ -65,6 +65,24 @@ test.describe("Annotations", () => {
     await addNote(page, "Tighten this gap");
   });
 
+  test("each tool shows its own cursor on the page", async ({ page }) => {
+    const readPageCursor = () =>
+      page.evaluate(() => document.querySelector("[data-react-grab-cursor]")?.textContent ?? "");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect.poll(readPageCursor).toContain("data:image/svg+xml");
+    expect(await readPageCursor()).toContain("4 20, crosshair");
+
+    await toolbarAction(page, "annotate-text").click();
+    await expect.poll(readPageCursor).toContain("cursor: text");
+
+    await toolbarAction(page, "annotate-edit").click();
+    await expect.poll(readPageCursor).toContain("12 12, move");
+
+    await toolbarAction(page, "annotate-edit").click();
+    await expect.poll(readPageCursor).toContain("cursor: crosshair");
+  });
+
   test("Move and Clear leave the toolbar with the last annotation", async ({ page }) => {
     await expect(page.locator(ANNOTATION_ACTIONS_SELECTOR)).toHaveAttribute("data-revealed", "");
     await expect(page.locator(ANNOTATION_ACTIONS_SELECTOR)).not.toHaveAttribute("inert");
