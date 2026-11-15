@@ -435,6 +435,18 @@ test.describe("Copy Feedback Behavior", () => {
         .toBe(true);
     });
 
+    test("should use the pointer cursor while selecting", async ({ reactGrab }) => {
+      await reactGrab.activate();
+
+      await expect
+        .poll(() =>
+          reactGrab.page.evaluate(
+            () => document.querySelector("[data-react-grab-cursor]")?.textContent ?? "",
+          ),
+        )
+        .toContain("cursor: pointer");
+    });
+
     test("should set progress cursor during copy", async ({ reactGrab }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");

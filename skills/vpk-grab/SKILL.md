@@ -113,7 +113,7 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Pen**, **Text**: draw and write on the page in one of five colors; on a
   Mac, Control picks the pen up and puts it down. **Move** and **Clear** appear
   once something is drawn; Move box-selects and drags annotations together,
-  and V picks it up or puts it down.
+  and v picks it up or puts it down.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
   drawings, notes, moves, removals and style changes.
 

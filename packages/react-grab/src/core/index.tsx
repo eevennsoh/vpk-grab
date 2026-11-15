@@ -392,6 +392,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const getAnnotationToolCursor = (tool: AnnotationTool): string => {
       switch (tool) {
         case "grab":
+          return "pointer";
         case "pen":
           return "crosshair";
         case "text":
