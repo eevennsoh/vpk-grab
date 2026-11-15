@@ -21,10 +21,10 @@ export const IconSpecs: Component<IconSpecsProps> = (props) => {
       stroke-linejoin="round"
       class={props.class}
     >
-      <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />
-      <circle cx="15" cy="7" r="2" />
-      <circle cx="9" cy="12" r="2" />
-      <circle cx="17" cy="17" r="2" />
+      <path d="M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z" />
+      <path d="M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7" />
+      <path d="M7 17h.01" />
+      <path d="m11 8 2.3-2.3a2.4 2.4 0 0 1 3.404.004L18.6 7.6a2.4 2.4 0 0 1 .026 3.434L9.9 19.8" />
     </svg>
   );
 };

@@ -5,7 +5,6 @@ import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } 
 import { IconSelect } from "../icons/icon-select.jsx";
 import { IconClear } from "../icons/icon-clear.jsx";
 import { IconMove } from "../icons/icon-move.jsx";
-import { IconChanges } from "../icons/icon-changes.jsx";
 import { ToolbarRevealGroup } from "./toolbar-reveal-group.jsx";
 import { IconPen } from "../icons/icon-pen.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
@@ -1048,14 +1047,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 onClick={handleToggleChangesMenu}
                 {...createFreezeHandlers(() => CHANGES_ACTION_ID)}
                 icon={
-                  <span class="relative flex">
-                    <IconChanges size={14} class={actionIconClass(false)} />
-                    <span
-                      data-react-grab-changes-count
-                      class="absolute -top-1.5 -right-2 min-w-[13px] h-[13px] px-[3px] rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[9px] leading-[13px] font-semibold tabular-nums text-center"
-                      textContent={String(props.styleChangeCount ?? 0)}
-                    />
-                  </span>
+                  <span
+                    data-react-grab-changes-count
+                    class="min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[10px] leading-[16px] font-semibold tabular-nums text-center"
+                    textContent={String(props.styleChangeCount ?? 0)}
+                  />
                 }
                 tooltipVisible={isActionHovered(CHANGES_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
