@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DARWIN_READER_BINARY_NAME } from "./constants.js";
 import { sleep } from "./sleep.js";
 
 export const HISTORY_FILE_NAME = "history.jsonl";
@@ -186,11 +187,11 @@ const runJson = (command: string, args: string[]): NativeRead | null => {
   }
 };
 
-const compileSwiftReader = (readersDir: string, workDir: string): string | null => {
+export const compileSwiftReader = (readersDir: string, workDir: string): string | null => {
   if (!hasCommand("swiftc")) return null;
   const source = path.join(readersDir, "read-clipboard.swift");
   if (!fs.existsSync(source)) return null;
-  const binary = path.join(workDir, "pbread");
+  const binary = path.join(workDir, DARWIN_READER_BINARY_NAME);
   const isStale =
     !fs.existsSync(binary) || fs.statSync(source).mtimeMs > fs.statSync(binary).mtimeMs;
   if (isStale && spawnSync("swiftc", ["-O", source, "-o", binary]).status !== 0) return null;

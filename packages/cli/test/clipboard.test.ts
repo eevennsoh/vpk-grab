@@ -3,26 +3,33 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import {
   GRAB_MIME,
+  compileSwiftReader,
   detectLinuxTool,
   extractGrab,
   extractPrompt,
   isGrabText,
   parseChromiumPickle,
 } from "../src/utils/clipboard.js";
+import { DARWIN_READER_BINARY_NAME } from "../src/utils/constants.js";
 import {
   canUseClipboard,
   encodeChromiumPickle,
   encodeGrabPickle,
   hasCommand,
+  prepareDarwinGrabWriter,
   writeGrab,
   writeText,
 } from "./clipboard-helpers.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_BIN = path.join(HERE, "..", "bin", "cli.js");
+// The spawned watcher runs the built CLI, which compiles its reader from here.
+const BUILT_READERS_DIR = path.join(HERE, "..", "dist");
+// A cold Swift module cache makes each first compile take tens of seconds.
+const SWIFT_WARM_UP_TIMEOUT_MS = 240_000;
 
 // Real bytes captured from Chromium copying application/x-react-grab on macOS
 // (see fixtures/golden-pickle.bin). Proves the parser matches actual browser
@@ -40,13 +47,22 @@ interface CapturedRecord {
 // always killed once the timeout lapses — captured grabs are read from disk.
 const POLL_MS = 100;
 
+interface CollectGrabsOptions {
+  timeoutMs?: number;
+  minRecords?: number;
+  prebuiltReader?: string | null;
+}
+
 const collectGrabs = (
   extraArgs: string[],
-  { timeoutMs = 6000, minRecords = 0 }: { timeoutMs?: number; minRecords?: number } = {},
+  { timeoutMs = 6000, minRecords = 0, prebuiltReader = null }: CollectGrabsOptions = {},
 ): Promise<CapturedRecord[]> =>
   new Promise((resolve) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-test-"));
     const logPath = path.join(dir, "history.jsonl");
+    // A copy is newer than the reader's source, so the watcher takes it as up
+    // to date and skips its own compile.
+    if (prebuiltReader) fs.copyFileSync(prebuiltReader, path.join(dir, DARWIN_READER_BINARY_NAME));
     const child = spawn(
       process.execPath,
       [CLI_BIN, "watch", "--dir", dir, "--interval", "120", "--replay-last", ...extraArgs],
@@ -226,11 +242,35 @@ describe(`clipboard round-trip via custom format (${process.platform})`, () => {
       ? canUseClipboard()
       : process.platform === "darwin" && hasCommand("swift") && hasCommand("swiftc");
 
+  // The macOS round-trip needs two Swift binaries: the fixture that writes the
+  // pasteboard and the reader the watcher compiles. Both are built once here,
+  // through the CLI's own compile step for the reader, so the capture test's
+  // budget covers capturing rather than a cold compiler.
+  const swiftToolsDir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-swift-tools-"));
+  let prebuiltReader: string | null = null;
+
+  beforeAll(() => {
+    if (!customSupported || process.platform !== "darwin") return;
+    const warmUpStartedAt = Date.now();
+    expect(prepareDarwinGrabWriter(swiftToolsDir)).toBe(true);
+    prebuiltReader = compileSwiftReader(BUILT_READERS_DIR, swiftToolsDir);
+    expect(prebuiltReader).toBeTruthy();
+    console.info(`Swift clipboard tools built in ${Date.now() - warmUpStartedAt}ms`);
+  }, SWIFT_WARM_UP_TIMEOUT_MS);
+
+  afterAll(() => {
+    fs.rmSync(swiftToolsDir, { recursive: true, force: true });
+  });
+
   it.skipIf(!customSupported)(
     "captures a structured grab end-to-end",
     async () => {
       if (!writeGrab({ text: "plain text alongside", grabJson })) return;
-      const records = await collectGrabs([], { timeoutMs: 20000, minRecords: 1 });
+      const records = await collectGrabs([], {
+        timeoutMs: 20000,
+        minRecords: 1,
+        prebuiltReader,
+      });
       expect(records.length >= 1).toBe(true);
       expect(records[0].source).toBe("custom");
       expect(records[0].entries[0].componentName).toBe("NavLink");
