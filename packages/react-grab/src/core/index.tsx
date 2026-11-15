@@ -2870,6 +2870,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.unpinSpecs();
           return;
         }
+        // Off the Mac, Control is half of the Ctrl+C activation itself, so the
+        // pen toggle only claims a bare Control press there.
+        if (
+          event.key === "Control" &&
+          !event.repeat &&
+          isMac() &&
+          isActivated() &&
+          !isPromptMode() &&
+          !isCopying()
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          handleSelectAnnotationTool("pen");
+          return;
+        }
         if (
           isAnnotating() &&
           inspect.selectedAnnotationIds().length > 0 &&

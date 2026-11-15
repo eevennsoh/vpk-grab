@@ -332,3 +332,33 @@ test.describe("Annotations", () => {
       .toContain(BLUE_ANNOTATION_COLOR);
   });
 });
+
+test.describe("Control toggles the pen on a Mac", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
+    });
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+  });
+
+  test("a bare Control press picks the pen up and puts it down", async ({ reactGrab, page }) => {
+    const pen = toolbarAction(page, "annotate-pen");
+    await expect(pen).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("Control");
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("Control");
+    await expect(pen).toHaveAttribute("aria-pressed", "false");
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+  });
+
+  test("Control switches from the text tool to the pen", async ({ page }) => {
+    await toolbarAction(page, "annotate-text").click();
+    await page.keyboard.press("Control");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "false");
+  });
+});

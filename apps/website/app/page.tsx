@@ -45,7 +45,8 @@ const FEATURES: Feature[] = [
     name: "Pen & Text",
     description: (
       <>
-        Draw or drop notes on the page. <Kbd>Shift</Kbd> for straight lines.
+        Draw or drop notes on the page. <Kbd>⌃</Kbd> toggles the pen, <Kbd>Shift</Kbd> draws
+        straight.
       </>
     ),
   },
