@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import { getSiteUrl } from "@/utils/get-site-url";
 
-const BASE_URL = "https://react-grab.com";
+const BASE_URL = getSiteUrl();
 
 const EXCLUDED_PATHS = new Set(["api", "open-file"]);
 
