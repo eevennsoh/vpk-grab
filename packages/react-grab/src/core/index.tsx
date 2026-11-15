@@ -72,6 +72,10 @@ import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_KEY,
+  PEN_TOOL_KEY,
+  SPACING_TOOL_KEY,
+  SPECS_TOOL_KEY,
+  TEXT_TOOL_KEY,
   SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
@@ -2902,22 +2906,40 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
         }
-        // V picks the move tool up and puts it down, as in a design tool, so
-        // drawings can be selected without a trip to the toolbar.
-        if (
-          canHandleEditShortcut &&
-          inspect.hasAnnotations() &&
-          event.key.toLowerCase() === MOVE_TOOL_KEY &&
-          !event.repeat &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !event.shiftKey
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          handleSelectAnnotationTool("edit");
-          return;
+        // Bare keys pick the toolbar's tools up and put them down, as in a
+        // design tool, so a frozen hover state never needs a trip to the
+        // toolbar. V only means something once there is a drawing to move.
+        const isBareKeyPress =
+          !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+        if (canHandleEditShortcut && isBareKeyPress) {
+          const pressedKey = event.key.toLowerCase();
+          const runToolShortcut = (): boolean => {
+            switch (pressedKey) {
+              case SPECS_TOOL_KEY:
+                inspect.toggleSpecs();
+                return true;
+              case SPACING_TOOL_KEY:
+                inspect.toggleRedlines();
+                return true;
+              case PEN_TOOL_KEY:
+                handleSelectAnnotationTool("pen");
+                return true;
+              case TEXT_TOOL_KEY:
+                handleSelectAnnotationTool("text");
+                return true;
+              case MOVE_TOOL_KEY:
+                if (!inspect.hasAnnotations()) return false;
+                handleSelectAnnotationTool("edit");
+                return true;
+              default:
+                return false;
+            }
+          };
+          if (runToolShortcut()) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+          }
         }
         if (
           isAnnotating() &&

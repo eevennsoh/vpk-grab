@@ -34,6 +34,11 @@ import {
   SELECT_ICON_POINT_MIN_DISTANCE_PX,
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
+  MOVE_TOOL_KEY,
+  PEN_TOOL_KEY,
+  SPACING_TOOL_KEY,
+  SPECS_TOOL_KEY,
+  TEXT_TOOL_KEY,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -914,11 +919,12 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Specs"
+              tooltipShortcut={SPECS_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={REDLINES_ACTION_ID}
               keepsPageFocus
-              label="Show spacing redlines on hover"
+              label="Show spacing on hover"
               isActive={Boolean(props.isRedlinesEnabled)}
               class={actionButtonClass}
               wrapperClass={actionButtonWrapperClass()}
@@ -929,7 +935,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               }
               tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
-              tooltip="Redlines · hold Alt to measure to another element"
+              tooltip="Spacing"
+              tooltipShortcut={SPACING_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={PEN_ACTION_ID}
@@ -943,7 +950,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               icon={<IconPen size={14} class={actionIconClass(props.annotationTool === "pen")} />}
               tooltipVisible={isActionHovered(PEN_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
-              tooltip="Pen · hold Shift for a straight line"
+              tooltip="Pen"
+              tooltipShortcut={PEN_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={TEXT_ACTION_ID}
@@ -958,6 +966,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
+              tooltipShortcut={TEXT_TOOL_KEY}
             />
             <ToolbarRevealGroup
               ref={(element) => (annotationColorsRef = element)}
@@ -1024,7 +1033,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 }
                 tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
-                tooltip="Move (V) · drag to move or box-select, Delete to remove"
+                tooltip="Move"
+                tooltipShortcut={MOVE_TOOL_KEY.toUpperCase()}
               />
               <ToolbarActionButton
                 actionId={CLEAR_ACTION_ID}
@@ -1042,7 +1052,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 icon={<IconClear size={14} class={actionIconClass(false)} />}
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
-                tooltip={props.hasSelectedAnnotation ? "Delete selected" : "Clear annotations"}
+                tooltip="Clear"
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup

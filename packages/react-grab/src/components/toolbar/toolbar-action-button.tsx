@@ -17,6 +17,7 @@ interface ToolbarActionButtonProps {
   onMouseLeave?: (event: MouseEvent) => void;
   icon: JSX.Element;
   tooltip?: string;
+  tooltipShortcut?: string;
   tooltipVisible?: boolean;
   tooltipPosition?: "top" | "bottom" | "left" | "right";
 }
@@ -51,6 +52,7 @@ export const ToolbarActionButton: Component<ToolbarActionButtonProps> = (props) 
           visible={Boolean(props.tooltipVisible)}
           position={props.tooltipPosition ?? "top"}
           textContent={tooltip()}
+          shortcut={props.tooltipShortcut}
         />
       )}
     </Show>

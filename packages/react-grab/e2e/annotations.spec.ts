@@ -25,6 +25,8 @@ const DRAG_DELTA = { x: 60, y: 40 };
 const MARQUEE_START = { x: 260, y: 280 };
 const MARQUEE_END = { x: 620, y: 460 };
 const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
+const TOOLTIP_SELECTOR = "[data-react-grab-tooltip]";
+const TOOLTIP_SHORTCUT_SELECTOR = "[data-react-grab-tooltip-shortcut]";
 // Longer than the toolbar's reveal animation, so its position has settled.
 const TOOLBAR_SETTLE_MS = 400;
 
@@ -457,5 +459,51 @@ test.describe("Control toggles the pen on a Mac", () => {
     await page.keyboard.press("Control");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+test.describe("Number keys pick up the toolbar's tools", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+  });
+
+  test("1 and 2 switch Specs and Spacing on and off", async ({ page }) => {
+    const specs = toolbarAction(page, "inspect-specs");
+    const spacing = toolbarAction(page, "inspect-redlines");
+    await expect(specs).toHaveAttribute("aria-pressed", "false");
+    await expect(spacing).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("1");
+    await expect(specs).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("2");
+    await expect(spacing).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("1");
+    await page.keyboard.press("2");
+    await expect(specs).toHaveAttribute("aria-pressed", "false");
+    await expect(spacing).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("3 and 4 pick up the pen and text tools and put them down", async ({ page }) => {
+    const pen = toolbarAction(page, "annotate-pen");
+    const text = toolbarAction(page, "annotate-text");
+
+    await page.keyboard.press("3");
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("4");
+    await expect(text).toHaveAttribute("aria-pressed", "true");
+    await expect(pen).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("4");
+    await expect(text).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("a tooltip shows the tool's name and its key", async ({ page }) => {
+    await toolbarAction(page, "inspect-redlines").hover();
+    const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Spacing" });
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("2");
   });
 });
