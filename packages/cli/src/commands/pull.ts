@@ -23,7 +23,9 @@ interface PullOptions {
   all?: boolean;
 }
 
-const fail = (message: string): never => {
+// Typed on the binding, not just the return: TypeScript only narrows after a
+// call to a never-returning function whose declared type is explicit.
+const fail: (message: string) => never = (message) => {
   process.stderr.write(`react-grab pull: ${message}\n`);
   process.exit(1);
 };
