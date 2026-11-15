@@ -76,13 +76,13 @@ test.describe("Annotations", () => {
     expect(await readPageCursor()).toContain("4 20, crosshair");
 
     await toolbarAction(page, "annotate-text").click();
-    await expect.poll(readPageCursor).toContain("cursor: text");
+    await expect.poll(readPageCursor).toContain("12 12, text");
 
     await toolbarAction(page, "annotate-edit").click();
     await expect.poll(readPageCursor).toContain("12 12, move");
 
     await toolbarAction(page, "annotate-edit").click();
-    await expect.poll(readPageCursor).toContain("cursor: crosshair");
+    await expect.poll(readPageCursor).toContain("7 7, crosshair");
   });
 
   test("Move and Clear leave the toolbar with the last annotation", async ({ page }) => {
@@ -549,5 +549,15 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
     await expect(specs).toHaveAttribute("aria-pressed", "false");
     await expect(spacing).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+test.describe("Grab", () => {
+  test("the toolbar names Grab and shows its activation shortcut", async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await toolbarAction(page, "copy").hover();
+    const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText(/^(⌘C|Ctrl\+C)$/);
   });
 });

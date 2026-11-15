@@ -67,6 +67,7 @@ interface ToolbarProps {
   activeActionId?: string | null;
   defaultActionId?: string;
   defaultActionLabel?: string;
+  grabShortcut?: string;
   enabled?: boolean;
   shakeCount?: number;
   onStateChange?: (state: ToolbarState) => void;
@@ -917,7 +918,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               }
               tooltipVisible={isTooltipVisible(currentActionId())}
               tooltipPosition={tooltipPosition()}
-              tooltip={currentActionLabel()}
+              tooltip="Grab"
+              tooltipShortcut={props.grabShortcut}
             />
             <span aria-hidden="true" class={separatorClass()} />
             <ToolbarActionButton

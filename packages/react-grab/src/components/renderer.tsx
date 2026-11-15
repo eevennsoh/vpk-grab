@@ -195,6 +195,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           activeActionId={props.activeActionId}
           defaultActionId={props.defaultActionId}
           defaultActionLabel={props.defaultActionLabel}
+          grabShortcut={props.grabShortcut}
           enabled={props.enabled}
           shakeCount={props.shakeCount}
           onStateChange={props.onToolbarStateChange}

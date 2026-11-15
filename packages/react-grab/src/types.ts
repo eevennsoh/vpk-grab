@@ -493,6 +493,7 @@ export interface ReactGrabRendererProps {
   toolbarMenuActions?: ContextMenuAction[];
   defaultActionId?: string;
   defaultActionLabel?: string;
+  grabShortcut?: string;
   onSetDefaultAction?: (actionId: string) => void;
   onToggleToolbarMenu?: () => void;
   onToolbarMenuDismiss?: () => void;

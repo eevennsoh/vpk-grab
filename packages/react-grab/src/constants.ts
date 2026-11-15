@@ -1,6 +1,11 @@
 import type { AnnotationColorOption } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
-import { PAN_TOOL_ICON_PATHS, STYLUS_ICON_PATHS } from "./material-icon-paths.js";
+import {
+  NAVIGATION_ICON_PATHS,
+  PAN_TOOL_ICON_PATHS,
+  STYLUS_ICON_PATHS,
+  TITLE_ICON_PATHS,
+} from "./material-icon-paths.js";
 import { overlayColor } from "./utils/overlay-color.js";
 
 export const VERSION = process.env.VERSION as string;
@@ -474,11 +479,20 @@ export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
 export const PEN_TOOL_KEY = "3";
 export const TEXT_TOOL_KEY = "4";
+// Leaned a quarter-turn left of upright so the arrow reads as a pointer; its
+// tip then lands at (7, 7) on the cursor's 24px grid.
+export const GRAB_TOOL_CURSOR = createSvgCursor(
+  NAVIGATION_ICON_PATHS.filled,
+  { x: 7, y: 7 },
+  "crosshair",
+  -45,
+);
 export const PEN_TOOL_CURSOR = createSvgCursor(
   STYLUS_ICON_PATHS.filled,
   { x: 4, y: 20 },
   "crosshair",
 );
+export const TEXT_TOOL_CURSOR = createSvgCursor(TITLE_ICON_PATHS.filled, { x: 12, y: 12 }, "text");
 export const MOVE_TOOL_CURSOR = createSvgCursor(
   PAN_TOOL_ICON_PATHS.filled,
   { x: 12, y: 12 },

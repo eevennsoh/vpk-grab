@@ -92,7 +92,7 @@ export const Tooltip: Component<TooltipProps> = (props) => {
           {(shortcut) => (
             <kbd
               data-react-grab-tooltip-shortcut
-              class="flex size-[14px] shrink-0 items-center justify-center rounded-full bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-none text-[var(--rg-text-secondary)]"
+              class="flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-full px-[3px] bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-none text-[var(--rg-text-secondary)]"
               textContent={shortcut()}
             />
           )}
