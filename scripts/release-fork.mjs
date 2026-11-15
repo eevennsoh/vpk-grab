@@ -71,4 +71,6 @@ run("gh", [
 console.log(`\nReleased ${tag}`);
 console.log(`Script tag: https://cdn.jsdelivr.net/gh/${REPOSITORY}@${tag}/${BUNDLE_RELEASE_PATH}`);
 console.log(`Package:    https://github.com/${REPOSITORY}/releases/download/${tag}/${tarballName}`);
-console.log("\nNext: in the VPK repo, run `pnpm run update:vpk-grab` and ship it, so VPK moves to this release.");
+console.log(
+  "\nNext: in the VPK repo, run `pnpm run update:vpk-grab` and ship it, so VPK moves to this release.",
+);
