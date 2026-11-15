@@ -1,4 +1,4 @@
-import type { PenColorOption } from "./types.js";
+import type { AnnotationColorOption } from "./types.js";
 import { overlayColor } from "./utils/overlay-color.js";
 
 export const VERSION = process.env.VERSION as string;
@@ -425,7 +425,7 @@ export const ANNOTATION_INPUT_ATTRIBUTE = "data-react-grab-annotation-input";
 export const INSPECT_ACCENT_COLOR = "#f24822";
 export const INSPECT_ACCENT_CONTRAST_COLOR = "#ffffff";
 
-export const PEN_COLOR_OPTIONS: PenColorOption[] = [
+export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Red", value: INSPECT_ACCENT_COLOR },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },

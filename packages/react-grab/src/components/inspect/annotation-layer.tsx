@@ -32,6 +32,7 @@ interface AnnotationLayerProps {
   draftStroke: AnnotationStroke | null;
   texts: AnnotationText[];
   textDraftPosition: Position | null;
+  annotationColor: string;
   isEditing: boolean;
   selectedAnnotationIds: string[];
   marqueeRect: Rect | null;
@@ -48,7 +49,6 @@ const textBaseStyle = {
   "font-size": `${ANNOTATION_TEXT_FONT_SIZE_PX}px`,
   "line-height": `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
   "font-weight": "600",
-  color: INSPECT_ACCENT_COLOR,
 };
 
 const stopKeyPropagation = (event: KeyboardEvent) => event.stopPropagation();
@@ -178,6 +178,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 ...editingStyle("auto"),
                 left: `${annotationText.x}px`,
                 top: textTop(annotationText.y),
+                color: annotationText.color,
                 "text-shadow": TEXT_HALO,
                 outline: isSelected(annotationText.id)
                   ? `1px dashed ${INSPECT_ACCENT_COLOR}`
@@ -226,9 +227,10 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 padding: `0 ${TEXT_DRAFT_PADDING_X_PX}px`,
                 "min-width": "80px",
                 "field-sizing": "content",
+                color: props.annotationColor,
                 "background-color": INSPECT_ACCENT_CONTRAST_COLOR,
-                outline: `1.5px solid ${INSPECT_ACCENT_COLOR}`,
-                "caret-color": INSPECT_ACCENT_COLOR,
+                outline: `1.5px solid ${props.annotationColor}`,
+                "caret-color": props.annotationColor,
               }}
               onInput={(event) => props.onTextDraftChange(event.currentTarget.value)}
               onBlur={() => props.onTextDraftCommit(draftPosition)}

@@ -25,7 +25,7 @@ import {
   SELECT_ICON_NATURAL_POINT_ANGLE_DEG,
   SELECT_ICON_POINT_MIN_DISTANCE_PX,
   DEFAULT_ACTION_ID,
-  PEN_COLOR_OPTIONS,
+  ANNOTATION_COLOR_OPTIONS,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -64,13 +64,13 @@ interface ToolbarProps {
   isSpecsEnabled?: boolean;
   isRedlinesEnabled?: boolean;
   annotationTool?: AnnotationTool;
-  penColor?: string;
+  annotationColor?: string;
   hasAnnotations?: boolean;
   hasSelectedAnnotation?: boolean;
   onToggleSpecs?: () => void;
   onToggleRedlines?: () => void;
   onSelectAnnotationTool?: (tool: AnnotationTool) => void;
-  onSelectPenColor?: (color: string) => void;
+  onSelectAnnotationColor?: (color: string) => void;
   onClearAnnotations?: () => void;
   styleChangeCount?: number;
   onToggleChangesMenu?: () => void;
@@ -83,7 +83,7 @@ const TEXT_ACTION_ID = "annotate-text";
 const EDIT_ACTION_ID = "annotate-edit";
 const CLEAR_ACTION_ID = "annotate-clear";
 const CHANGES_ACTION_ID = "style-changes";
-const PEN_COLOR_ACTION_ID_PREFIX = "pen-color-";
+const ANNOTATION_COLOR_ACTION_ID_PREFIX = "annotation-color-";
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
@@ -350,7 +350,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   );
   const handleClearAnnotations = drag.createDragAwareHandler(() => props.onClearAnnotations?.());
   const handleToggleChangesMenu = drag.createDragAwareHandler(() => props.onToggleChangesMenu?.());
-  const isPenTool = () => props.annotationTool === "pen";
+  const isColorTool = () => props.annotationTool === "pen" || props.annotationTool === "text";
   // Move and Clear act on annotations, so they join the toolbar with the first
   // one and leave with the last. Changes does the same with style overrides.
   const hasAnnotationActions = () => Boolean(props.hasAnnotations);
@@ -518,10 +518,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         { defer: true },
       ),
     );
-  let penColorsRef: HTMLDivElement | undefined;
+  let annotationColorsRef: HTMLDivElement | undefined;
   let annotationActionsRef: HTMLDivElement | undefined;
   let changesActionsRef: HTMLDivElement | undefined;
-  trackRevealGroup(isPenTool, () => penColorsRef);
+  trackRevealGroup(isColorTool, () => annotationColorsRef);
   trackRevealGroup(hasAnnotationActions, () => annotationActionsRef);
   trackRevealGroup(hasStyleChanges, () => changesActionsRef);
 
@@ -946,26 +946,26 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltip="Text"
             />
             <ToolbarRevealGroup
-              ref={(element) => (penColorsRef = element)}
-              dataAttribute="data-react-grab-toolbar-pen-colors"
-              isRevealed={isPenTool()}
+              ref={(element) => (annotationColorsRef = element)}
+              dataAttribute="data-react-grab-toolbar-annotation-colors"
+              isRevealed={isColorTool()}
               isVertical={isVertical()}
             >
               <span aria-hidden="true" class={separatorClass()} />
-              <For each={PEN_COLOR_OPTIONS}>
+              <For each={ANNOTATION_COLOR_OPTIONS}>
                 {(colorOption) => {
-                  const actionId = `${PEN_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
-                  const isSelected = () => props.penColor === colorOption.value;
+                  const actionId = `${ANNOTATION_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
+                  const isSelected = () => props.annotationColor === colorOption.value;
                   return (
                     <ToolbarActionButton
                       actionId={actionId}
                       keepsPageFocus
-                      label={`${colorOption.label} pen`}
+                      label={`${colorOption.label} annotation color`}
                       isActive={isSelected()}
                       class={actionButtonClass}
                       wrapperClass={actionButtonWrapperClass()}
                       onClick={drag.createDragAwareHandler(() =>
-                        props.onSelectPenColor?.(colorOption.value),
+                        props.onSelectAnnotationColor?.(colorOption.value),
                       )}
                       {...createFreezeHandlers(() => actionId)}
                       icon={

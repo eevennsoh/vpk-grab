@@ -8,10 +8,12 @@ const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
-const PEN_COLORS_SELECTOR = "[data-react-grab-toolbar-pen-colors]";
+const ANNOTATION_COLORS_SELECTOR = "[data-react-grab-toolbar-annotation-colors]";
 const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
-const DEFAULT_PEN_COLOR = "#f24822";
-const BLUE_PEN_COLOR = "#0d99ff";
+const DEFAULT_ANNOTATION_COLOR = "#f24822";
+const BLUE_ANNOTATION_COLOR = "#0d99ff";
+const DEFAULT_ANNOTATION_COLOR_RGB = "rgb(242, 72, 34)";
+const BLUE_ANNOTATION_COLOR_RGB = "rgb(13, 153, 255)";
 // The separator and the two buttons, less whatever a transition still holds.
 const ANNOTATION_ACTIONS_MIN_WIDTH_PX = 30;
 const LINE_START = { x: 300, y: 320 };
@@ -260,23 +262,53 @@ test.describe("Annotations", () => {
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
   });
 
-  test("pen colors join the toolbar only while the pen is in hand", async ({ page }) => {
-    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
-    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("inert");
-
-    await toolbarAction(page, "annotate-pen").click();
-    await expect(page.locator(PEN_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
-    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "true");
+  test("colors join the toolbar only while the pen or text tool is in hand", async ({ page }) => {
+    const colors = page.locator(ANNOTATION_COLORS_SELECTOR);
+    await expect(colors).toHaveAttribute("data-revealed", "");
 
     await toolbarAction(page, "annotate-text").click();
-    await expect(page.locator(PEN_COLORS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    await expect(colors).not.toHaveAttribute("data-revealed");
+    await expect(colors).toHaveAttribute("inert");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(colors).toHaveAttribute("data-revealed", "");
+    await expect(toolbarAction(page, "annotation-color-red")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("a new note takes the picked color and earlier notes keep theirs", async ({ page }) => {
+    await toolbarAction(page, "annotation-color-blue").click();
+    await expect(toolbarAction(page, "annotation-color-blue")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y + SECOND_LINE_OFFSET_Y);
+    const input = page.locator("[data-react-grab-annotation-input]");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveCSS("color", BLUE_ANNOTATION_COLOR_RGB);
+    await page.keyboard.type("Blue note");
+    await page.keyboard.press("Enter");
+
+    const notes = page.locator(TEXT_SELECTOR);
+    await expect(notes).toHaveCount(2);
+    await expect(notes.nth(0)).toHaveCSS("color", DEFAULT_ANNOTATION_COLOR_RGB);
+    await expect(notes.nth(1)).toHaveCSS("color", BLUE_ANNOTATION_COLOR_RGB);
   });
 
   test("a new stroke takes the picked color and earlier strokes keep theirs", async ({ page }) => {
     await toolbarAction(page, "annotate-pen").click();
-    await toolbarAction(page, "pen-color-blue").click();
-    await expect(toolbarAction(page, "pen-color-blue")).toHaveAttribute("aria-pressed", "true");
-    await expect(toolbarAction(page, "pen-color-red")).toHaveAttribute("aria-pressed", "false");
+    await toolbarAction(page, "annotation-color-blue").click();
+    await expect(toolbarAction(page, "annotation-color-blue")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(toolbarAction(page, "annotation-color-red")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
     const secondLineY = LINE_START.y + SECOND_LINE_OFFSET_Y;
     await page.keyboard.down("Shift");
@@ -288,8 +320,8 @@ test.describe("Annotations", () => {
 
     const strokes = page.locator(STROKE_SELECTOR);
     await expect(strokes).toHaveCount(2);
-    await expect(strokes.nth(0)).toHaveAttribute("fill", DEFAULT_PEN_COLOR);
-    await expect(strokes.nth(1)).toHaveAttribute("fill", BLUE_PEN_COLOR);
+    await expect(strokes.nth(0)).toHaveAttribute("fill", DEFAULT_ANNOTATION_COLOR);
+    await expect(strokes.nth(1)).toHaveAttribute("fill", BLUE_ANNOTATION_COLOR);
     await expect
       .poll(() =>
         page.evaluate(
@@ -297,6 +329,6 @@ test.describe("Annotations", () => {
           INSPECT_SETTINGS_STORAGE_KEY,
         ),
       )
-      .toContain(BLUE_PEN_COLOR);
+      .toContain(BLUE_ANNOTATION_COLOR);
   });
 });

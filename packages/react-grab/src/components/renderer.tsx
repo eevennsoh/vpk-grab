@@ -36,6 +36,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
               draftStroke={inspect().draftStroke()}
               texts={inspect().texts()}
               textDraftPosition={inspect().textDraftPosition()}
+              annotationColor={inspect().annotationColor()}
               isEditing={inspect().annotationTool() === "edit"}
               selectedAnnotationIds={inspect().selectedAnnotationIds()}
               marqueeRect={inspect().annotationMarqueeRect()}
@@ -183,13 +184,13 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           isSpecsEnabled={props.inspect?.isSpecsEnabled()}
           isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
           annotationTool={props.inspect?.annotationTool()}
-          penColor={props.inspect?.penColor()}
+          annotationColor={props.inspect?.annotationColor()}
           hasAnnotations={props.inspect?.hasAnnotations()}
           hasSelectedAnnotation={(props.inspect?.selectedAnnotationIds().length ?? 0) > 0}
           onToggleSpecs={props.inspect?.onToggleSpecs}
           onToggleRedlines={props.inspect?.onToggleRedlines}
           onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}
-          onSelectPenColor={props.inspect?.onSelectPenColor}
+          onSelectAnnotationColor={props.inspect?.onSelectAnnotationColor}
           onClearAnnotations={props.inspect?.onClearAnnotations}
           styleChangeCount={props.inspect?.styleChangeCount()}
           onToggleChangesMenu={props.inspect?.onToggleChangesMenu}
