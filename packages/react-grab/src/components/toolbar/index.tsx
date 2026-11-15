@@ -1,11 +1,19 @@
-import { createEffect, createSignal, For, on, onCleanup, onMount, type Component } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
 import type { AnnotationTool, Position } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } from "./state.js";
 import { IconSelect } from "../icons/icon-select.jsx";
 import { IconClear } from "../icons/icon-clear.jsx";
 import { IconMove } from "../icons/icon-move.jsx";
-import { IconChanges } from "../icons/icon-changes.jsx";
 import { ToolbarRevealGroup } from "./toolbar-reveal-group.jsx";
 import { IconPen } from "../icons/icon-pen.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
@@ -25,7 +33,7 @@ import {
   SELECT_ICON_NATURAL_POINT_ANGLE_DEG,
   SELECT_ICON_POINT_MIN_DISTANCE_PX,
   DEFAULT_ACTION_ID,
-  PEN_COLOR_OPTIONS,
+  ANNOTATION_COLOR_OPTIONS,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -64,13 +72,13 @@ interface ToolbarProps {
   isSpecsEnabled?: boolean;
   isRedlinesEnabled?: boolean;
   annotationTool?: AnnotationTool;
-  penColor?: string;
+  annotationColor?: string;
   hasAnnotations?: boolean;
   hasSelectedAnnotation?: boolean;
   onToggleSpecs?: () => void;
   onToggleRedlines?: () => void;
   onSelectAnnotationTool?: (tool: AnnotationTool) => void;
-  onSelectPenColor?: (color: string) => void;
+  onSelectAnnotationColor?: (color: string) => void;
   onClearAnnotations?: () => void;
   styleChangeCount?: number;
   onToggleChangesMenu?: () => void;
@@ -83,7 +91,7 @@ const TEXT_ACTION_ID = "annotate-text";
 const EDIT_ACTION_ID = "annotate-edit";
 const CLEAR_ACTION_ID = "annotate-clear";
 const CHANGES_ACTION_ID = "style-changes";
-const PEN_COLOR_ACTION_ID_PREFIX = "pen-color-";
+const ANNOTATION_COLOR_ACTION_ID_PREFIX = "annotation-color-";
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
@@ -350,7 +358,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   );
   const handleClearAnnotations = drag.createDragAwareHandler(() => props.onClearAnnotations?.());
   const handleToggleChangesMenu = drag.createDragAwareHandler(() => props.onToggleChangesMenu?.());
-  const isPenTool = () => props.annotationTool === "pen";
+  const isColorTool = () => props.annotationTool === "pen" || props.annotationTool === "text";
   // Move and Clear act on annotations, so they join the toolbar with the first
   // one and leave with the last. Changes does the same with style overrides.
   const hasAnnotationActions = () => Boolean(props.hasAnnotations);
@@ -488,10 +496,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const trackRevealGroup = (
     isRevealed: () => boolean,
     getGroupElement: () => HTMLDivElement | undefined,
-  ) =>
+  ) => {
+    // Memoized so a change that leaves the group as it was (Pen to Text, both
+    // showing the colors) does not count its length a second time.
+    const isGroupRevealedMemo = createMemo(isRevealed);
     createEffect(
       on(
-        isRevealed,
+        isGroupRevealedMemo,
         (isGroupRevealed) => {
           const content = getGroupElement()?.firstElementChild;
           if (!content) return;
@@ -518,10 +529,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         { defer: true },
       ),
     );
-  let penColorsRef: HTMLDivElement | undefined;
+  };
+  let annotationColorsRef: HTMLDivElement | undefined;
   let annotationActionsRef: HTMLDivElement | undefined;
   let changesActionsRef: HTMLDivElement | undefined;
-  trackRevealGroup(isPenTool, () => penColorsRef);
+  trackRevealGroup(isColorTool, () => annotationColorsRef);
   trackRevealGroup(hasAnnotationActions, () => annotationActionsRef);
   trackRevealGroup(hasStyleChanges, () => changesActionsRef);
 
@@ -767,7 +779,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     isCollapseAnimating() ||
     isChevronPressed();
 
-  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting();
+  // Drawing and writing keep the toolbar at full strength: its colors and
+  // tools are what the pen and text work from.
+  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting() && !isColorTool();
 
   const getTransitionClass = (): string => {
     // Drag must follow the pointer frame-to-frame; any transform transition
@@ -946,26 +960,26 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltip="Text"
             />
             <ToolbarRevealGroup
-              ref={(element) => (penColorsRef = element)}
-              dataAttribute="data-react-grab-toolbar-pen-colors"
-              isRevealed={isPenTool()}
+              ref={(element) => (annotationColorsRef = element)}
+              dataAttribute="data-react-grab-toolbar-annotation-colors"
+              isRevealed={isColorTool()}
               isVertical={isVertical()}
             >
               <span aria-hidden="true" class={separatorClass()} />
-              <For each={PEN_COLOR_OPTIONS}>
+              <For each={ANNOTATION_COLOR_OPTIONS}>
                 {(colorOption) => {
-                  const actionId = `${PEN_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
-                  const isSelected = () => props.penColor === colorOption.value;
+                  const actionId = `${ANNOTATION_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
+                  const isSelected = () => props.annotationColor === colorOption.value;
                   return (
                     <ToolbarActionButton
                       actionId={actionId}
                       keepsPageFocus
-                      label={`${colorOption.label} pen`}
+                      label={`${colorOption.label} annotation color`}
                       isActive={isSelected()}
                       class={actionButtonClass}
                       wrapperClass={actionButtonWrapperClass()}
                       onClick={drag.createDragAwareHandler(() =>
-                        props.onSelectPenColor?.(colorOption.value),
+                        props.onSelectAnnotationColor?.(colorOption.value),
                       )}
                       {...createFreezeHandlers(() => actionId)}
                       icon={
@@ -1048,14 +1062,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 onClick={handleToggleChangesMenu}
                 {...createFreezeHandlers(() => CHANGES_ACTION_ID)}
                 icon={
-                  <span class="relative flex">
-                    <IconChanges size={14} class={actionIconClass(false)} />
-                    <span
-                      data-react-grab-changes-count
-                      class="absolute -top-1.5 -right-2 min-w-[13px] h-[13px] px-[3px] rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[9px] leading-[13px] font-semibold tabular-nums text-center"
-                      textContent={String(props.styleChangeCount ?? 0)}
-                    />
-                  </span>
+                  <span
+                    data-react-grab-changes-count
+                    class="min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[10px] leading-[16px] font-semibold tabular-nums text-center"
+                    textContent={String(props.styleChangeCount ?? 0)}
+                  />
                 }
                 tooltipVisible={isActionHovered(CHANGES_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}

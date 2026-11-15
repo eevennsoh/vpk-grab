@@ -45,7 +45,8 @@ const FEATURES: Feature[] = [
     name: "Pen & Text",
     description: (
       <>
-        Draw or drop notes on the page. <Kbd>Shift</Kbd> for straight lines.
+        Draw or drop notes on the page. <Kbd>⌃</Kbd> toggles the pen, <Kbd>Shift</Kbd> draws
+        straight.
       </>
     ),
   },
@@ -101,7 +102,8 @@ const HomePage = () => (
 
       <section aria-label="Playground" className="flex min-w-0 flex-col gap-3">
         <p className="text-sm text-meta">
-          Try it here: hover the card and hold <Kbd>⌘C</Kbd> to freeze the page.
+          Try it here: hover <Kbd>⋯</Kbd> to open its menu, then hold <Kbd>⌘C</Kbd> to freeze it
+          open.
         </p>
         <PlaygroundCard />
       </section>

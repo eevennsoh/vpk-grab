@@ -536,6 +536,7 @@ export interface TagBadgeProps {
   onClick: (event: MouseEvent) => void;
   onHoverChange?: (hovered: boolean) => void;
   shrink?: boolean;
+  sizeText?: string;
 }
 
 export interface BottomSectionProps {
@@ -598,6 +599,8 @@ export interface SelectionLabelProps {
   onShowContextMenu?: () => void;
   onHoverChange?: (isHovered: boolean) => void;
   hideArrow?: boolean;
+  sizeText?: string;
+  clearanceBelowPx?: number;
 }
 
 export interface SourceLocation extends SourceInfo {
@@ -636,7 +639,7 @@ export interface AnnotationStroke {
   color: string;
 }
 
-export interface PenColorOption {
+export interface AnnotationColorOption {
   label: string;
   value: string;
 }
@@ -644,12 +647,13 @@ export interface PenColorOption {
 export interface AnnotationText extends Position {
   id: string;
   text: string;
+  color: string;
 }
 
 export interface InspectSettings {
   isSpecsEnabled: boolean;
   isRedlinesEnabled: boolean;
-  penColor: string;
+  annotationColor: string;
 }
 
 export interface ElementSpecRow {
@@ -736,7 +740,7 @@ export interface InspectRendererState {
   viewportVersion: Accessor<number>;
   strokes: Accessor<AnnotationStroke[]>;
   draftStroke: Accessor<AnnotationStroke | null>;
-  penColor: Accessor<string>;
+  annotationColor: Accessor<string>;
   texts: Accessor<AnnotationText[]>;
   textDraftPosition: Accessor<Position | null>;
   hasAnnotations: Accessor<boolean>;
@@ -757,7 +761,7 @@ export interface InspectRendererState {
   onToggleSpecs: () => void;
   onToggleRedlines: () => void;
   onSelectAnnotationTool: (tool: AnnotationTool) => void;
-  onSelectPenColor: (color: string) => void;
+  onSelectAnnotationColor: (color: string) => void;
   onClearAnnotations: () => void;
   onTextDraftChange: (text: string) => void;
   onTextDraftCommit: (draftPosition: Position) => void;

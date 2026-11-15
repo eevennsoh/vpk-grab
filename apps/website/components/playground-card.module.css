@@ -28,6 +28,9 @@
   --ds-background-information: #e9f2fe;
   --ds-text-information: #1558bc;
   --ds-background-accent-purple-subtle: #d8a0f7;
+  --ds-surface-overlay: #ffffff;
+  --ds-shadow-overlay: 0 8px 12px #1e1f2126, 0 0 1px #1e1f214f;
+  --ds-text-danger: #ae2e24;
 
   display: flex;
   flex-direction: column;
@@ -54,6 +57,9 @@
   --ds-background-information: #1c2b42;
   --ds-text-information: #8fb8f6;
   --ds-background-accent-purple-subtle: #803fa5;
+  --ds-surface-overlay: #2b2c2f;
+  --ds-shadow-overlay: 0 0 0 1px #bdbdbd1f, 0 8px 12px #0104045c;
+  --ds-text-danger: #fd9891;
 }
 
 .header {
@@ -165,4 +171,85 @@
 
 .primaryButton:hover {
   background-color: var(--ds-background-brand-bold-hovered);
+}
+
+.moreActions {
+  position: relative;
+}
+
+.moreButton {
+  display: grid;
+  place-items: center;
+  width: calc(var(--ds-space-100) * 4);
+  height: calc(var(--ds-space-100) * 4);
+  border-radius: var(--ds-radius-medium);
+  color: var(--ds-text-subtle);
+  transition: background-color 120ms ease-out;
+  cursor: pointer;
+}
+
+.moreActions:hover .moreButton {
+  background-color: var(--ds-background-neutral-hovered);
+  color: var(--ds-text);
+}
+
+.menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: calc(var(--ds-space-100) * 20);
+  margin-top: var(--ds-space-050);
+  padding: var(--ds-space-050) 0;
+  border-radius: var(--ds-radius-medium);
+  background-color: var(--ds-surface-overlay);
+  box-shadow: var(--ds-shadow-overlay);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(calc(var(--ds-space-050) * -1));
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out,
+    visibility 0s linear 120ms;
+}
+
+/* Bridges the gap above the menu so the pointer can travel from the button
+   down into the menu without leaving the hover area and closing it. */
+.menu::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--ds-space-050) * -1) 0 auto;
+  height: var(--ds-space-050);
+}
+
+.moreActions:hover .menu {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+
+.menuItem {
+  padding: var(--ds-space-075) var(--ds-space-150);
+  color: var(--ds-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background-color: var(--ds-background-neutral);
+}
+
+.dangerMenuItem {
+  composes: menuItem;
+  color: var(--ds-text-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    transform: none;
+    transition: none;
+  }
 }

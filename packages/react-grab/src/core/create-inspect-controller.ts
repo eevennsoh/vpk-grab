@@ -105,7 +105,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const initialSettings = loadInspectSettings();
   const [isSpecsEnabled, setIsSpecsEnabled] = createSignal(initialSettings.isSpecsEnabled);
   const [isRedlinesEnabled, setIsRedlinesEnabled] = createSignal(initialSettings.isRedlinesEnabled);
-  const [penColor, setPenColor] = createSignal(initialSettings.penColor);
+  const [annotationColor, setAnnotationColor] = createSignal(initialSettings.annotationColor);
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
   const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
   const [texts, setTexts] = createSignal<AnnotationText[]>([]);
@@ -136,9 +136,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
           id: DRAFT_STROKE_ID,
           points: createStraightPoints(points),
           isStraight: true,
-          color: penColor(),
+          color: annotationColor(),
         }
-      : { id: DRAFT_STROKE_ID, points, isStraight: false, color: penColor() };
+      : { id: DRAFT_STROKE_ID, points, isStraight: false, color: annotationColor() };
   });
 
   const hasAnnotations = createMemo(() => strokes().length > 0 || texts().length > 0);
@@ -147,7 +147,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     saveInspectSettings({
       isSpecsEnabled: isSpecsEnabled(),
       isRedlinesEnabled: isRedlinesEnabled(),
-      penColor: penColor(),
+      annotationColor: annotationColor(),
     });
 
   const unpinSpecs = () => {
@@ -227,8 +227,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
     persistSettings();
   };
 
-  const selectPenColor = (color: string) => {
-    setPenColor(color);
+  const selectAnnotationColor = (color: string) => {
+    setAnnotationColor(color);
     persistSettings();
   };
 
@@ -268,7 +268,13 @@ export const createInspectController = (options: InspectControllerOptions) => {
     if (text) {
       setTexts((previousTexts) => [
         ...previousTexts,
-        { id: generateId("annotation-text"), x: currentPosition.x, y: currentPosition.y, text },
+        {
+          id: generateId("annotation-text"),
+          x: currentPosition.x,
+          y: currentPosition.y,
+          text,
+          color: annotationColor(),
+        },
       ]);
     }
     discardTextDraft();
@@ -483,7 +489,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     if (lengthPx >= ANNOTATION_MIN_STROKE_LENGTH_PX) {
       setStrokes((previousStrokes) => [
         ...previousStrokes,
-        { id: generateId("annotation-stroke"), points, isStraight, color: penColor() },
+        { id: generateId("annotation-stroke"), points, isStraight, color: annotationColor() },
       ]);
     }
     cancelPointerGesture();
@@ -496,8 +502,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
     strokes,
     texts,
     draftStroke,
-    penColor,
-    selectPenColor,
+    annotationColor,
+    selectAnnotationColor,
     textDraftPosition,
     hasAnnotations,
     selectedAnnotationIds,
