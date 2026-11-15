@@ -1,27 +1,18 @@
 import type { Component } from "solid-js";
+import { DELETE_ICON_PATHS } from "../../material-icon-paths.js";
+import { MaterialIcon } from "./material-icon.js";
 
 interface IconClearProps {
   size?: number;
   class?: string;
+  isFilled?: boolean;
 }
 
-export const IconClear: Component<IconClearProps> = (props) => {
-  const size = () => props.size ?? 14;
-
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size()}
-      height={size()}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={props.class}
-    >
-      <path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />
-    </svg>
-  );
-};
+export const IconClear: Component<IconClearProps> = (props) => (
+  <MaterialIcon
+    paths={DELETE_ICON_PATHS}
+    isFilled={props.isFilled}
+    size={props.size}
+    class={props.class}
+  />
+);

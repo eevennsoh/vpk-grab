@@ -898,6 +898,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 <IconSelect
                   size={14}
                   rotationDeg={selectIconRotationDeg()}
+                  isFilled={isCurrentActionActive() && isGrabTool()}
                   class={actionIconClass(isCurrentActionActive() && isGrabTool())}
                 />
               }
@@ -915,7 +916,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggleSpecs}
               {...createFreezeHandlers(() => SPECS_ACTION_ID)}
-              icon={<IconSpecs size={14} class={actionIconClass(Boolean(props.isSpecsEnabled))} />}
+              icon={
+                <IconSpecs
+                  size={14}
+                  isFilled={Boolean(props.isSpecsEnabled)}
+                  class={actionIconClass(Boolean(props.isSpecsEnabled))}
+                />
+              }
               tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Specs"
@@ -931,7 +938,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               onClick={handleToggleRedlines}
               {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
               icon={
-                <IconRedlines size={14} class={actionIconClass(Boolean(props.isRedlinesEnabled))} />
+                <IconRedlines
+                  size={14}
+                  isFilled={Boolean(props.isRedlinesEnabled)}
+                  class={actionIconClass(Boolean(props.isRedlinesEnabled))}
+                />
               }
               tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
@@ -947,7 +958,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleSelectPen}
               {...createFreezeHandlers(() => PEN_ACTION_ID)}
-              icon={<IconPen size={14} class={actionIconClass(props.annotationTool === "pen")} />}
+              icon={
+                <IconPen
+                  size={14}
+                  isFilled={props.annotationTool === "pen"}
+                  class={actionIconClass(props.annotationTool === "pen")}
+                />
+              }
               tooltipVisible={isActionHovered(PEN_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Pen"
@@ -962,7 +979,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleSelectText}
               {...createFreezeHandlers(() => TEXT_ACTION_ID)}
-              icon={<IconText size={14} class={actionIconClass(props.annotationTool === "text")} />}
+              icon={
+                <IconText
+                  size={14}
+                  isFilled={props.annotationTool === "text"}
+                  class={actionIconClass(props.annotationTool === "text")}
+                />
+              }
               tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
@@ -1029,7 +1052,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 onClick={handleSelectEdit}
                 {...createFreezeHandlers(() => EDIT_ACTION_ID)}
                 icon={
-                  <IconMove size={14} class={actionIconClass(props.annotationTool === "edit")} />
+                  <IconMove
+                    size={14}
+                    isFilled={props.annotationTool === "edit"}
+                    class={actionIconClass(props.annotationTool === "edit")}
+                  />
                 }
                 tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}

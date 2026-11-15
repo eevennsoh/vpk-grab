@@ -27,3 +27,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Material Symbols
+
+`src/material-icon-paths.ts` contains icon paths from [Material Symbols](https://github.com/google/material-design-icons) (Rounded, weight 300, grade -25) by Google, used under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

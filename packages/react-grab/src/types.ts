@@ -736,6 +736,11 @@ export interface SpecValueOption {
 
 export type RedlineSide = "top" | "right" | "bottom" | "left";
 
+export interface MaterialIconPaths {
+  outline: string;
+  filled: string;
+}
+
 export interface RedlineMeasurement {
   side: RedlineSide;
   distance: number;
