@@ -37,7 +37,8 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
               texts={inspect().texts()}
               textDraftPosition={inspect().textDraftPosition()}
               isEditing={inspect().annotationTool() === "edit"}
-              selectedAnnotationId={inspect().selectedAnnotationId()}
+              selectedAnnotationIds={inspect().selectedAnnotationIds()}
+              marqueeRect={inspect().annotationMarqueeRect()}
               onTextDraftChange={inspect().onTextDraftChange}
               onTextDraftCommit={inspect().onTextDraftCommit}
               onTextDraftCancel={inspect().onTextDraftCancel}
@@ -183,7 +184,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
           annotationTool={props.inspect?.annotationTool()}
           hasAnnotations={props.inspect?.hasAnnotations()}
-          hasSelectedAnnotation={Boolean(props.inspect?.selectedAnnotationId())}
+          hasSelectedAnnotation={(props.inspect?.selectedAnnotationIds().length ?? 0) > 0}
           onToggleSpecs={props.inspect?.onToggleSpecs}
           onToggleRedlines={props.inspect?.onToggleRedlines}
           onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}

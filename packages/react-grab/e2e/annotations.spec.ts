@@ -15,6 +15,9 @@ const LINE_END = { x: 520, y: 320 };
 const NOTE_POSITION = { x: 300, y: 420 };
 const EMPTY_POSITION = { x: 700, y: 520 };
 const DRAG_DELTA = { x: 60, y: 40 };
+const MARQUEE_START = { x: 260, y: 280 };
+const MARQUEE_END = { x: 620, y: 460 };
+const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
 
 const toolbarAction = (page: Page, actionId: string) =>
   page.locator(`[data-react-grab-toolbar-action="${actionId}"]`);
@@ -184,6 +187,61 @@ test.describe("Annotations", () => {
 
     await toolbarAction(page, "annotate-clear").click();
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+  });
+
+  test("a marquee selects everything it touches and the group moves together", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const strokeBefore = await getBox(page, STROKE_SELECTOR);
+    const noteBefore = await getBox(page, TEXT_SELECTOR);
+
+    await page.mouse.move(MARQUEE_START.x, MARQUEE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END.x, MARQUEE_END.y, { steps: 6 });
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(2);
+
+    await page.mouse.move(LINE_START.x + 100, LINE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(LINE_START.x + 100 + DRAG_DELTA.x, LINE_START.y + DRAG_DELTA.y, {
+      steps: 5,
+    });
+    await page.mouse.up();
+
+    const strokeAfter = await getBox(page, STROKE_SELECTOR);
+    const noteAfter = await getBox(page, TEXT_SELECTOR);
+    expect(strokeAfter.x - strokeBefore.x).toBeCloseTo(DRAG_DELTA.x, 0);
+    expect(strokeAfter.y - strokeBefore.y).toBeCloseTo(DRAG_DELTA.y, 0);
+    expect(noteAfter.x - noteBefore.x).toBeCloseTo(DRAG_DELTA.x, 0);
+    expect(noteAfter.y - noteBefore.y).toBeCloseTo(DRAG_DELTA.y, 0);
+
+    await page.keyboard.press("Delete");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+  });
+
+  test("a marquee only picks up what it touches", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    await page.mouse.move(LINE_START.x - 20, LINE_START.y - 20);
+    await page.mouse.down();
+    await page.mouse.move(LINE_START.x + 40, LINE_START.y + 20, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+  });
+
+  test("Shift-click adds to and removes from the selection", async ({ page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(note.x + 10, note.y + note.height / 2);
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(2);
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y);
+    await page.keyboard.up("Shift");
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(`${TEXT_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
   });
 
   test("leaving the move tool drops the selection", async ({ page }) => {

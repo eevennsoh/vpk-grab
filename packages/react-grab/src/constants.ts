@@ -454,3 +454,5 @@ export const CHANGES_MENU_MAX_HEIGHT_PX = 360;
 export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
 export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
+export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
+export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;

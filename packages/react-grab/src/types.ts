@@ -732,7 +732,8 @@ export interface InspectRendererState {
   texts: Accessor<AnnotationText[]>;
   textDraftPosition: Accessor<Position | null>;
   hasAnnotations: Accessor<boolean>;
-  selectedAnnotationId: Accessor<string | null>;
+  selectedAnnotationIds: Accessor<string[]>;
+  annotationMarqueeRect: Accessor<Rect | null>;
   isSpecsPinned: Accessor<boolean>;
   isSpecsPinLocked: Accessor<boolean>;
   styleOverridesVersion: Accessor<number>;
