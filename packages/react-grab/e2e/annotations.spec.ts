@@ -483,7 +483,7 @@ test.describe("Annotations", () => {
   });
 });
 
-test.describe("Control cycles Grab, Pen and Text on a Mac", () => {
+test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
@@ -493,35 +493,88 @@ test.describe("Control cycles Grab, Pen and Text on a Mac", () => {
     await reactGrab.activate();
   });
 
-  test("a bare Control press steps Grab, Pen, Text and back to Grab", async ({
-    reactGrab,
-    page,
-  }) => {
+  test("a bare Cmd tap steps Grab, Pen, Text and back to Grab", async ({ reactGrab, page }) => {
     const grab = toolbarAction(page, "copy");
     const pen = toolbarAction(page, "annotate-pen");
     const text = toolbarAction(page, "annotate-text");
     await expect(grab).toHaveAttribute("aria-pressed", "true");
 
-    await page.keyboard.press("Control");
+    await page.keyboard.press("Meta");
     await expect(pen).toHaveAttribute("aria-pressed", "true");
     await expect(grab).toHaveAttribute("aria-pressed", "false");
 
-    await page.keyboard.press("Control");
+    await page.keyboard.press("Meta");
     await expect(text).toHaveAttribute("aria-pressed", "true");
-    await expect(pen).toHaveAttribute("aria-pressed", "false");
 
-    await page.keyboard.press("Control");
+    await page.keyboard.press("Meta");
     await expect(grab).toHaveAttribute("aria-pressed", "true");
-    await expect(text).toHaveAttribute("aria-pressed", "false");
     expect(await reactGrab.isOverlayVisible()).toBe(true);
   });
 
-  test("Control hands the move tool back to Grab", async ({ page }) => {
+  test("Shift+Cmd steps the other way", async ({ page }) => {
+    await page.keyboard.down("Shift");
+    await page.keyboard.press("Meta");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Meta");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up("Shift");
+  });
+
+  test("from Move, Cmd lands on Grab and Shift+Cmd on Text", async ({ page }) => {
     await drawStraightLine(page);
     await toolbarAction(page, "annotate-edit").click();
-    await page.keyboard.press("Control");
+    await page.keyboard.press("Meta");
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
-    await expect(toolbarAction(page, "annotate-edit")).toHaveAttribute("aria-pressed", "false");
+
+    await toolbarAction(page, "annotate-edit").click();
+    await page.keyboard.press("Shift+Meta");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("Cmd held for a chord does not cycle", async ({ page }) => {
+    await drawStraightLine(page);
+    const pen = toolbarAction(page, "annotate-pen");
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Meta+z");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("tooltips name the key that reaches each tool from the one in hand", async ({ page }) => {
+    const readShortcut = async (actionId: string, name: string) => {
+      await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+      await toolbarAction(page, actionId).hover();
+      const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: name });
+      await expect(tooltip).toBeVisible();
+      const shortcut = tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR);
+      return (await shortcut.count()) === 0 ? null : shortcut.textContent();
+    };
+
+    expect(await readShortcut("annotate-pen", "Pen")).toBe("⌘");
+    expect(await readShortcut("annotate-text", "Text")).toBe("⇧⌘");
+    expect(await readShortcut("copy", "Grab")).toBeNull();
+
+    await toolbarAction(page, "annotate-pen").click();
+    expect(await readShortcut("annotate-text", "Text")).toBe("⌘");
+    expect(await readShortcut("copy", "Grab")).toBe("⇧⌘");
+    expect(await readShortcut("annotate-pen", "Pen")).toBeNull();
+  });
+
+  test("before activating, only Grab shows a key: the one that activates", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "copy").hover();
+    const grabTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
+    await expect(grabTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("⌘C");
+
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "annotate-pen").hover();
+    const penTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Pen" });
+    await expect(penTooltip).toBeVisible();
+    await expect(penTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveCount(0);
   });
 });
 
@@ -556,7 +609,7 @@ test.describe("Grab, Pen and Text are one choice", () => {
   }) => {
     await reactGrab.activate();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
-    await page.keyboard.press("3");
+    await toolbarAction(page, "annotate-pen").click();
     await page.keyboard.press("1");
     await page.keyboard.press("2");
     await toolbarAction(page, "copy").click();
@@ -642,20 +695,6 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect(spacing).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("3 and 4 pick up the pen and text tools and put them down", async ({ page }) => {
-    const pen = toolbarAction(page, "annotate-pen");
-    const text = toolbarAction(page, "annotate-text");
-
-    await page.keyboard.press("3");
-    await expect(pen).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("4");
-    await expect(text).toHaveAttribute("aria-pressed", "true");
-    await expect(pen).toHaveAttribute("aria-pressed", "false");
-
-    await page.keyboard.press("4");
-    await expect(text).toHaveAttribute("aria-pressed", "false");
-  });
-
   test("a tooltip shows the tool's name and its key", async ({ page }) => {
     await toolbarAction(page, "inspect-redlines").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Spacing" });
@@ -731,7 +770,7 @@ test.describe("Grab", () => {
 
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await expect(tooltip).toHaveCount(0);
-    await page.keyboard.press("3");
+    await toolbarAction(page, "annotate-pen").click();
     await grabButton.hover();
     await expect(tooltip).toBeVisible();
   });

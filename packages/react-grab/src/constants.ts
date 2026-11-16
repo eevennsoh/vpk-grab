@@ -1,4 +1,4 @@
-import type { AnnotationColorOption } from "./types.js";
+import type { AnnotationColorOption, SelectionTool } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
   NAVIGATION_ICON_PATHS,
@@ -481,8 +481,15 @@ export const EDIT_HISTORY_MAX_ENTRIES = 100;
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
-export const PEN_TOOL_KEY = "3";
-export const TEXT_TOOL_KEY = "4";
+export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "text"];
+// A press of the platform modifier on its own counts as a cycle only if let go
+// this soon: held any longer it is the start of a chord (Cmd+C, Cmd+Z) that
+// never got its key.
+export const TOOL_CYCLE_TAP_MAX_MS = 500;
+export const TOOL_CYCLE_FORWARD_LABEL_MAC = "⌘";
+export const TOOL_CYCLE_BACKWARD_LABEL_MAC = "⇧⌘";
+export const TOOL_CYCLE_FORWARD_LABEL = "Ctrl";
+export const TOOL_CYCLE_BACKWARD_LABEL = "Shift+Ctrl";
 // Leaned a quarter-turn left of upright so the arrow reads as a pointer; its
 // tip then lands at (7, 7) on the cursor's 24px grid.
 export const GRAB_TOOL_CURSOR = createSvgCursor(

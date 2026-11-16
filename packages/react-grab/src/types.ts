@@ -628,6 +628,8 @@ export interface ReactGrabEntry {
 }
 
 export type AnnotationTool = "grab" | "pen" | "text" | "edit";
+export type SelectionTool = Exclude<AnnotationTool, "edit">;
+export type ToolCycleDirection = "forward" | "backward";
 
 export interface AnnotationPoint extends Position {
   weight: number;

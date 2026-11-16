@@ -74,10 +74,9 @@ import {
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
   MOVE_TOOL_KEY,
-  PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
-  TEXT_TOOL_KEY,
+  TOOL_CYCLE_TAP_MAX_MS,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -149,6 +148,7 @@ import type {
   DragRect,
   ElementLabelVariant,
   AnnotationTool,
+  ToolCycleDirection,
   InspectRendererState,
 } from "../types.js";
 import { createPluginRegistry } from "./plugin-registry.js";
@@ -161,6 +161,7 @@ import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { isMac } from "../utils/is-mac.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
+import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -1971,26 +1972,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       didAnnotationToolActivate = false;
     };
 
-    // Grab, pen and text are one choice, so Control steps through them in the
-    // toolbar's order; Move hands back to Grab.
-    const cycleSelectionTool = () => {
-      const currentTool = inspect.annotationTool();
-      switch (currentTool) {
-        case "grab":
-          handleSelectAnnotationTool("pen");
-          return;
-        case "pen":
-          handleSelectAnnotationTool("text");
-          return;
-        case "text":
-        case "edit":
-          selectGrabTool();
-          return;
-        default: {
-          const unhandledTool: never = currentTool;
-          return unhandledTool;
-        }
+    // Grab, pen and text are one choice, so a tap of the platform modifier
+    // steps through them in the toolbar's order, and Shift steps back; Move
+    // sits just after Text.
+    const cycleSelectionTool = (direction: ToolCycleDirection) => {
+      const nextTool = getCycledSelectionTool(inspect.annotationTool(), direction);
+      if (nextTool === "grab") {
+        selectGrabTool();
+        return;
       }
+      handleSelectAnnotationTool(nextTool);
     };
 
     const handleToggleActive = () => {
@@ -2502,6 +2493,60 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const eventListenerManager = createEventListenerManager();
+
+    // The platform modifier (Cmd on the Mac, Ctrl elsewhere) tapped on its own
+    // steps through Grab, Pen and Text, and with Shift steps back. It is the
+    // key that starts every chord (Cmd+C, Cmd+Z, Cmd-click), so a press counts
+    // only if it is let go soon with nothing else in between. These listeners
+    // come first so they still see a chord's key when a later handler stops it.
+    let toolCycleTap: { startedAtMs: number; isBackward: boolean } | null = null;
+    const getToolCycleModifierKey = () => (isMac() ? "Meta" : "Control");
+    const canCycleTools = () =>
+      isActivated() &&
+      !isPromptMode() &&
+      !isCopying() &&
+      pluginRegistry.store.options.activationMode !== "hold";
+    const cancelToolCycleTap = () => {
+      toolCycleTap = null;
+    };
+
+    eventListenerManager.addWindowListener(
+      "keydown",
+      ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key === getToolCycleModifierKey()) {
+          if (event.repeat) return;
+          const isTypingIntoOverlay =
+            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) || isSpecsFieldEvent(event);
+          toolCycleTap =
+            canCycleTools() && !isTypingIntoOverlay
+              ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
+              : null;
+          return;
+        }
+        if (!toolCycleTap) return;
+        if (event.key === "Shift") {
+          toolCycleTap.isBackward = true;
+          return;
+        }
+        cancelToolCycleTap();
+      }),
+      { capture: true },
+    );
+
+    eventListenerManager.addWindowListener(
+      "keyup",
+      ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key !== getToolCycleModifierKey() || !toolCycleTap) return;
+        const tap = toolCycleTap;
+        cancelToolCycleTap();
+        if (Date.now() - tap.startedAtMs > TOOL_CYCLE_TAP_MAX_MS || !canCycleTools()) return;
+        cycleSelectionTool(tap.isBackward || event.shiftKey ? "backward" : "forward");
+      }),
+      { capture: true },
+    );
+
+    eventListenerManager.addWindowListener("pointerdown", cancelToolCycleTap, { capture: true });
+    eventListenerManager.addWindowListener("blur", cancelToolCycleTap);
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: () =>
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
@@ -2933,21 +2978,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.unpinSpecs();
           return;
         }
-        // Off the Mac, Control is half of the Ctrl+C activation itself, so the
-        // tool cycle only claims a bare Control press there.
-        if (
-          event.key === "Control" &&
-          !event.repeat &&
-          isMac() &&
-          isActivated() &&
-          !isPromptMode() &&
-          !isCopying()
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          cycleSelectionTool();
-          return;
-        }
         const canHandleEditShortcut =
           isActivated() &&
           !isPromptMode() &&
@@ -2980,12 +3010,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               case SPACING_TOOL_KEY:
                 if (isAnnotating()) return false;
                 inspect.toggleRedlines();
-                return true;
-              case PEN_TOOL_KEY:
-                handleSelectAnnotationTool("pen");
-                return true;
-              case TEXT_TOOL_KEY:
-                handleSelectAnnotationTool("text");
                 return true;
               case MOVE_TOOL_KEY:
                 if (!inspect.hasAnnotations()) return false;

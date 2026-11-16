@@ -8,7 +8,8 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import type { AnnotationTool, Position } from "../../types.js";
+import type { AnnotationTool, Position, SelectionTool } from "../../types.js";
+import { getSelectionToolShortcut } from "../../utils/get-selection-tool-shortcut.js";
 import { cn } from "../../utils/cn.js";
 import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } from "./state.js";
 import { IconSelect } from "../icons/icon-select.jsx";
@@ -35,10 +36,8 @@ import {
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
   MOVE_TOOL_KEY,
-  PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
-  TEXT_TOOL_KEY,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -182,6 +181,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   // Specs and Spacing describe what Grab hovers, so they join the toolbar
   // only while Grab is the tool in hand.
   const isGrabToolOn = () => isCurrentActionActive() && isGrabTool();
+  const getSelectionToolTooltipShortcut = (tool: SelectionTool) =>
+    getSelectionToolShortcut(
+      tool,
+      props.annotationTool ?? "grab",
+      Boolean(props.isActive),
+      props.grabShortcut,
+    );
   const tooltipPosition = (): "top" | "bottom" | "left" | "right" => {
     switch (snapEdge()) {
       case "top":
@@ -927,7 +933,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(currentActionId())}
               tooltipPosition={tooltipPosition()}
               tooltip="Grab"
-              tooltipShortcut={props.grabShortcut}
+              tooltipShortcut={getSelectionToolTooltipShortcut("grab")}
             />
             <ToolbarActionButton
               actionId={PEN_ACTION_ID}
@@ -948,7 +954,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(PEN_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Pen"
-              tooltipShortcut={PEN_TOOL_KEY}
+              tooltipShortcut={getSelectionToolTooltipShortcut("pen")}
             />
             <ToolbarActionButton
               actionId={TEXT_ACTION_ID}
@@ -969,7 +975,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
-              tooltipShortcut={TEXT_TOOL_KEY}
+              tooltipShortcut={getSelectionToolTooltipShortcut("text")}
             />
             <ToolbarRevealGroup
               ref={(element) => (inspectToolsRef = element)}
