@@ -324,21 +324,15 @@ test.describe("Combinatorial Interactions", () => {
   });
 
   test.describe("Arrow navigation crossed with other features", () => {
-    test("drag selection after discarding an arrow-frozen selection commits normally", async ({
-      reactGrab,
-    }) => {
+    test("drag selection after arrow focus commits normally", async ({ reactGrab }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child");
       await reactGrab.pressArrowUp();
       await reactGrab.waitForSelectionBox();
 
-      // Mouse movement over an arrow-frozen selection arms the discard
-      // prompt, which swallows the next pointerdown. Walk through the
-      // prompt deterministically before dragging — otherwise whether the
-      // drag starts depends on pointermove/pointerdown delivery order.
+      // Arrow keys only move focus, so moving the mouse hands it back to hover
+      // with no prompt in the way of the drag.
       await reactGrab.page.mouse.move(0, 0);
-      await expect.poll(() => reactGrab.isPendingDismissVisible()).toBe(true);
-      await reactGrab.pressEnter();
       await expect.poll(() => reactGrab.isPendingDismissVisible()).toBe(false);
 
       await reactGrab.dragSelect(

@@ -2696,7 +2696,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       event.preventDefault();
       event.stopPropagation();
-      selectAndFocusElement(elementToSelect, true);
+      // Arrow keys only move focus through the tree: nothing is picked until
+      // Enter or a click, so moving the mouse simply hands focus back to hover.
+      selectAndFocusElement(elementToSelect);
 
       return true;
     };
