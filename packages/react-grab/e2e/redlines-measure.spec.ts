@@ -68,9 +68,10 @@ test.describe("redlines measuring", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
     await installMeasureFixture(page);
-    await page.locator(REDLINES_TOGGLE_SELECTOR).click();
     await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
     await reactGrab.activate();
+    await page.locator(REDLINES_TOGGLE_SELECTOR).click();
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
     await hover(page, ANCHOR_TEST_ID);
     await expect
       .poll(() => reactGrab.getSelectionBoxBounds())

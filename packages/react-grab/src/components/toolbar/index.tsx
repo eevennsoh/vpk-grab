@@ -8,7 +8,8 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import type { AnnotationTool, Position } from "../../types.js";
+import type { AnnotationTool, Position, SelectionTool } from "../../types.js";
+import { getSelectionToolShortcut } from "../../utils/get-selection-tool-shortcut.js";
 import { cn } from "../../utils/cn.js";
 import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } from "./state.js";
 import { IconSelect } from "../icons/icon-select.jsx";
@@ -35,10 +36,8 @@ import {
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
   MOVE_TOOL_KEY,
-  PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
-  TEXT_TOOL_KEY,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -179,6 +178,16 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     !drag.isSnapping() &&
     !props.isContextMenuOpen;
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
+  // Specs and Spacing describe what Grab hovers, so they join the toolbar
+  // only while Grab is the tool in hand.
+  const isGrabToolOn = () => isCurrentActionActive() && isGrabTool();
+  const getSelectionToolTooltipShortcut = (tool: SelectionTool) =>
+    getSelectionToolShortcut(
+      tool,
+      props.annotationTool ?? "grab",
+      Boolean(props.isActive),
+      props.grabShortcut,
+    );
   const tooltipPosition = (): "top" | "bottom" | "left" | "right" => {
     switch (snapEdge()) {
       case "top":
@@ -552,9 +561,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       ),
     );
   };
+  let inspectToolsRef: HTMLDivElement | undefined;
   let annotationColorsRef: HTMLDivElement | undefined;
   let annotationActionsRef: HTMLDivElement | undefined;
   let changesActionsRef: HTMLDivElement | undefined;
+  trackRevealGroup(isGrabToolOn, () => inspectToolsRef);
   trackRevealGroup(isColorTool, () => annotationColorsRef);
   trackRevealGroup(hasAnnotationActions, () => annotationActionsRef);
   trackRevealGroup(hasStyleChanges, () => changesActionsRef);
@@ -900,7 +911,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                   ? "Stop selecting element"
                   : `${currentActionLabel()} element`
               }
-              isActive={isCurrentActionActive() && isGrabTool()}
+              isActive={isGrabToolOn()}
               class={actionButtonClass}
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggle}
@@ -915,57 +926,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 <IconSelect
                   size={14}
                   rotationDeg={selectIconRotationDeg()}
-                  isFilled={isCurrentActionActive() && isGrabTool()}
-                  class={actionIconClass(isCurrentActionActive() && isGrabTool())}
+                  isFilled={isGrabToolOn()}
+                  class={actionIconClass(isGrabToolOn())}
                 />
               }
               tooltipVisible={isActionHovered(currentActionId())}
               tooltipPosition={tooltipPosition()}
               tooltip="Grab"
-              tooltipShortcut={props.grabShortcut}
-            />
-            <span aria-hidden="true" class={separatorClass()} />
-            <ToolbarActionButton
-              actionId={SPECS_ACTION_ID}
-              keepsPageFocus
-              label="Show design specs on hover"
-              isActive={Boolean(props.isSpecsEnabled)}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleToggleSpecs}
-              {...createFreezeHandlers(() => SPECS_ACTION_ID)}
-              icon={
-                <IconSpecs
-                  size={14}
-                  isFilled={Boolean(props.isSpecsEnabled)}
-                  class={actionIconClass(Boolean(props.isSpecsEnabled))}
-                />
-              }
-              tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Specs"
-              tooltipShortcut={SPECS_TOOL_KEY}
-            />
-            <ToolbarActionButton
-              actionId={REDLINES_ACTION_ID}
-              keepsPageFocus
-              label="Show spacing on hover"
-              isActive={Boolean(props.isRedlinesEnabled)}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleToggleRedlines}
-              {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
-              icon={
-                <IconRedlines
-                  size={14}
-                  isFilled={Boolean(props.isRedlinesEnabled)}
-                  class={actionIconClass(Boolean(props.isRedlinesEnabled))}
-                />
-              }
-              tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Spacing"
-              tooltipShortcut={SPACING_TOOL_KEY}
+              tooltipShortcut={getSelectionToolTooltipShortcut("grab")}
             />
             <ToolbarActionButton
               actionId={PEN_ACTION_ID}
@@ -986,7 +954,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(PEN_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Pen"
-              tooltipShortcut={PEN_TOOL_KEY}
+              tooltipShortcut={getSelectionToolTooltipShortcut("pen")}
             />
             <ToolbarActionButton
               actionId={TEXT_ACTION_ID}
@@ -1007,8 +975,58 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
-              tooltipShortcut={TEXT_TOOL_KEY}
+              tooltipShortcut={getSelectionToolTooltipShortcut("text")}
             />
+            <ToolbarRevealGroup
+              ref={(element) => (inspectToolsRef = element)}
+              dataAttribute="data-react-grab-toolbar-inspect-tools"
+              isRevealed={isGrabToolOn()}
+              isVertical={isVertical()}
+            >
+              <span aria-hidden="true" class={separatorClass()} />
+              <ToolbarActionButton
+                actionId={SPECS_ACTION_ID}
+                keepsPageFocus
+                label="Show design specs on hover"
+                isActive={Boolean(props.isSpecsEnabled)}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleToggleSpecs}
+                {...createFreezeHandlers(() => SPECS_ACTION_ID)}
+                icon={
+                  <IconSpecs
+                    size={14}
+                    isFilled={Boolean(props.isSpecsEnabled)}
+                    class={actionIconClass(Boolean(props.isSpecsEnabled))}
+                  />
+                }
+                tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Specs"
+                tooltipShortcut={SPECS_TOOL_KEY}
+              />
+              <ToolbarActionButton
+                actionId={REDLINES_ACTION_ID}
+                keepsPageFocus
+                label="Show spacing on hover"
+                isActive={Boolean(props.isRedlinesEnabled)}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleToggleRedlines}
+                {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
+                icon={
+                  <IconRedlines
+                    size={14}
+                    isFilled={Boolean(props.isRedlinesEnabled)}
+                    class={actionIconClass(Boolean(props.isRedlinesEnabled))}
+                  />
+                }
+                tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Spacing"
+                tooltipShortcut={SPACING_TOOL_KEY}
+              />
+            </ToolbarRevealGroup>
             <ToolbarRevealGroup
               ref={(element) => (annotationColorsRef = element)}
               dataAttribute="data-react-grab-toolbar-annotation-colors"

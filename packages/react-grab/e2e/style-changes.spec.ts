@@ -8,6 +8,7 @@ import {
   clickInside,
   getStyle,
   installSpecsFixture,
+  switchOnSpecs,
   inspect,
   pinAndReach,
   specRow,
@@ -25,9 +26,9 @@ test.describe("style changes", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
     await installSpecsFixture(page);
-    await page.locator('[data-react-grab-toolbar-action="inspect-specs"]').click();
     await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
     await reactGrab.activate();
+    await switchOnSpecs(page);
   });
 
   const makeTwoChanges = async (page: Page) => {

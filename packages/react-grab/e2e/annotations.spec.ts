@@ -7,6 +7,9 @@ const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
 const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
+const TOOLBAR_SETTLE_POLL_INTERVAL_MS = 150;
+// Long enough for a tool switch to land if the tap had counted.
+const TOOL_CYCLE_SETTLE_MS = 300;
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
 const ANNOTATION_COLORS_SELECTOR = "[data-react-grab-toolbar-annotation-colors]";
 const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
@@ -25,6 +28,7 @@ const DRAG_DELTA = { x: 60, y: 40 };
 const MARQUEE_START = { x: 260, y: 280 };
 const MARQUEE_END = { x: 620, y: 460 };
 const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
+const INSPECT_TOOLS_SELECTOR = "[data-react-grab-toolbar-inspect-tools]";
 const TOOLTIP_SELECTOR = "[data-react-grab-tooltip]";
 const TOOLTIP_SHORTCUT_SELECTOR = "[data-react-grab-tooltip-shortcut]";
 // Longer than the toolbar's reveal animation, so its position has settled.
@@ -482,7 +486,7 @@ test.describe("Annotations", () => {
   });
 });
 
-test.describe("Control toggles the pen on a Mac", () => {
+test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
@@ -492,24 +496,165 @@ test.describe("Control toggles the pen on a Mac", () => {
     await reactGrab.activate();
   });
 
-  test("a bare Control press picks the pen up and puts it down", async ({ reactGrab, page }) => {
+  test("a bare Cmd tap steps Grab, Pen, Text and back to Grab", async ({ reactGrab, page }) => {
+    const grab = toolbarAction(page, "copy");
     const pen = toolbarAction(page, "annotate-pen");
-    await expect(pen).toHaveAttribute("aria-pressed", "false");
+    const text = toolbarAction(page, "annotate-text");
+    await expect(grab).toHaveAttribute("aria-pressed", "true");
 
-    await page.keyboard.press("Control");
+    await page.keyboard.press("Meta");
     await expect(pen).toHaveAttribute("aria-pressed", "true");
+    await expect(grab).toHaveAttribute("aria-pressed", "false");
 
-    await page.keyboard.press("Control");
-    await expect(pen).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("Meta");
+    await expect(text).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("Meta");
+    await expect(grab).toHaveAttribute("aria-pressed", "true");
     expect(await reactGrab.isOverlayVisible()).toBe(true);
   });
 
-  test("Control switches from the text tool to the pen", async ({ page }) => {
-    await toolbarAction(page, "annotate-text").click();
-    await page.keyboard.press("Control");
+  test("Shift+Cmd steps the other way", async ({ page }) => {
+    await page.keyboard.down("Shift");
+    await page.keyboard.press("Meta");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Meta");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
-    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.up("Shift");
   });
+
+  test("from Move, Cmd lands on Grab and Shift+Cmd on Text", async ({ page }) => {
+    await drawStraightLine(page);
+    await toolbarAction(page, "annotate-edit").click();
+    await page.keyboard.press("Meta");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "annotate-edit").click();
+    await page.keyboard.press("Shift+Meta");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("a Cmd tap while typing in a page field leaves the tool alone", async ({ page }) => {
+    await page.evaluate(() => {
+      const field = document.createElement("input");
+      field.setAttribute("data-testid", "cycle-page-field");
+      document.body.appendChild(field);
+      field.focus();
+    });
+    await expect(page.getByTestId("cycle-page-field")).toBeFocused();
+    await page.keyboard.press("Meta");
+    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("Cmd held for a chord does not cycle", async ({ page }) => {
+    await drawStraightLine(page);
+    const pen = toolbarAction(page, "annotate-pen");
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Meta+z");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(pen).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("tooltips name the key that reaches each tool from the one in hand", async ({ page }) => {
+    const readShortcut = async (actionId: string, name: string) => {
+      await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+      await toolbarAction(page, actionId).hover();
+      const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: name });
+      await expect(tooltip).toBeVisible();
+      const shortcut = tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR);
+      return (await shortcut.count()) === 0
+        ? null
+        : shortcut.getAttribute("data-react-grab-tooltip-shortcut");
+    };
+
+    expect(await readShortcut("annotate-pen", "Pen")).toBe("⌘");
+    expect(await readShortcut("annotate-text", "Text")).toBe("⇧⌘");
+    expect(await readShortcut("copy", "Grab")).toBeNull();
+
+    await toolbarAction(page, "annotate-pen").click();
+    expect(await readShortcut("annotate-text", "Text")).toBe("⌘");
+    expect(await readShortcut("copy", "Grab")).toBe("⇧⌘");
+    expect(await readShortcut("annotate-pen", "Pen")).toBeNull();
+  });
+
+  test("before activating, only Grab shows a key: the one that activates", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "copy").hover();
+    const grabTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
+    await expect(grabTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "⌘C",
+    );
+
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "annotate-pen").hover();
+    const penTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Pen" });
+    await expect(penTooltip).toBeVisible();
+    await expect(penTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveCount(0);
+  });
+});
+
+test.describe("Grab, Pen and Text are one choice", () => {
+  test.beforeEach(async ({ reactGrab }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+  });
+
+  test("Specs and Spacing show only while Grab is the tool in hand", async ({
+    reactGrab,
+    page,
+  }) => {
+    const inspectTools = page.locator(INSPECT_TOOLS_SELECTOR);
+    await expect(inspectTools).not.toHaveAttribute("data-revealed");
+    await expect(inspectTools).toHaveAttribute("inert");
+
+    await reactGrab.activate();
+    await expect(inspectTools).toHaveAttribute("data-revealed", "");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(inspectTools).not.toHaveAttribute("data-revealed");
+    await toolbarAction(page, "annotate-text").click();
+    await expect(inspectTools).not.toHaveAttribute("data-revealed");
+
+    await toolbarAction(page, "copy").click();
+    await expect(inspectTools).toHaveAttribute("data-revealed", "");
+  });
+
+  test("1 and 2 leave Specs and Spacing alone while the pen is in hand", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "annotate-pen").click();
+    await page.keyboard.press("1");
+    await page.keyboard.press("2");
+    await toolbarAction(page, "copy").click();
+    await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
+    await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  for (const toolActionId of ["annotate-pen", "annotate-text"]) {
+    test(`the activation shortcut takes ${toolActionId} back to Grab`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await reactGrab.activate();
+      await toolbarAction(page, toolActionId).click();
+      await expect(toolbarAction(page, toolActionId)).toHaveAttribute("aria-pressed", "true");
+      await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+
+      await page.keyboard.press(`${reactGrab.modifierKey}+c`);
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+      await expect(toolbarAction(page, toolActionId)).toHaveAttribute("aria-pressed", "false");
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
+    });
+  }
 });
 
 test.describe("Collapsing with the colors showing", () => {
@@ -520,11 +665,13 @@ test.describe("Collapsing with the colors showing", () => {
       const box = await getBox(page, TOOLBAR_SELECTOR);
       return Math.round(box.x + box.width / 2);
     };
-    // Settled: the toolbar slides into place on load and between steps.
+    // Settled: the toolbar slides into place on load and between steps, so
+    // readings are spaced out to be sure it has stopped, not caught mid-frame.
     const settledCentreX = async () => {
       let previousCentreX = await readCentreX();
       await expect
         .poll(async () => {
+          await page.waitForTimeout(TOOLBAR_SETTLE_POLL_INTERVAL_MS);
           const centreX = await readCentreX();
           const isSettled = centreX === previousCentreX;
           previousCentreX = centreX;
@@ -570,25 +717,14 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect(spacing).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("3 and 4 pick up the pen and text tools and put them down", async ({ page }) => {
-    const pen = toolbarAction(page, "annotate-pen");
-    const text = toolbarAction(page, "annotate-text");
-
-    await page.keyboard.press("3");
-    await expect(pen).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("4");
-    await expect(text).toHaveAttribute("aria-pressed", "true");
-    await expect(pen).toHaveAttribute("aria-pressed", "false");
-
-    await page.keyboard.press("4");
-    await expect(text).toHaveAttribute("aria-pressed", "false");
-  });
-
   test("a tooltip shows the tool's name and its key", async ({ page }) => {
     await toolbarAction(page, "inspect-redlines").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Spacing" });
     await expect(tooltip).toBeVisible();
-    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("2");
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "2",
+    );
   });
 
   test("Specs and Spacing start off and are remembered after a reload", async ({
@@ -605,6 +741,7 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect(spacing).toHaveAttribute("aria-pressed", "true");
     await page.reload();
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
     await expect(specs).toHaveAttribute("aria-pressed", "true");
     await expect(spacing).toHaveAttribute("aria-pressed", "true");
 
@@ -613,6 +750,7 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await expect(spacing).toHaveAttribute("aria-pressed", "false");
     await page.reload();
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
     await expect(specs).toHaveAttribute("aria-pressed", "false");
     await expect(spacing).toHaveAttribute("aria-pressed", "false");
   });
@@ -624,17 +762,20 @@ test.describe("Grab", () => {
     await toolbarAction(page, "copy").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
     await expect(tooltip).toBeVisible();
-    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText(/^(⌘C|Ctrl\+C)$/);
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      /^(⌘C|Ctrl\+C)$/,
+    );
   });
 
-  test("the Grab tooltip shows when the pointer glides over from Specs", async ({
+  test("the Grab tooltip shows when the pointer glides over from Pen", async ({
     reactGrab,
     page,
   }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
-    const specsBox = await getBox(page, '[data-react-grab-toolbar-action="inspect-specs"]');
+    const penBox = await getBox(page, '[data-react-grab-toolbar-action="annotate-pen"]');
     const grabBox = await getBox(page, '[data-react-grab-toolbar-action="copy"]');
-    await page.mouse.move(specsBox.x + specsBox.width / 2, specsBox.y + specsBox.height / 2, {
+    await page.mouse.move(penBox.x + penBox.width / 2, penBox.y + penBox.height / 2, {
       steps: 4,
     });
     await page.mouse.move(grabBox.x + grabBox.width / 2, grabBox.y + grabBox.height / 2, {
@@ -657,7 +798,7 @@ test.describe("Grab", () => {
 
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await expect(tooltip).toHaveCount(0);
-    await page.keyboard.press("3");
+    await toolbarAction(page, "annotate-pen").click();
     await grabButton.hover();
     await expect(tooltip).toBeVisible();
   });

@@ -74,10 +74,9 @@ import {
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
   MOVE_TOOL_KEY,
-  PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
-  TEXT_TOOL_KEY,
+  TOOL_CYCLE_TAP_MAX_MS,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -149,6 +148,7 @@ import type {
   DragRect,
   ElementLabelVariant,
   AnnotationTool,
+  ToolCycleDirection,
   InspectRendererState,
 } from "../types.js";
 import { createPluginRegistry } from "./plugin-registry.js";
@@ -161,6 +161,7 @@ import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { isMac } from "../utils/is-mac.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
+import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -1196,20 +1197,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (isPromptMode() || isShiftMultiSelecting() || isCopying()) return null;
       if (isAnyPopoverOpen()) return null;
       if (keyboardSelection.isPendingDismiss()) return null;
-      // Without Shift the tree only follows an active keyboard-navigation
-      // selection — not every frozen element, so it stays hidden during
-      // drag-marquee selection or after a non-deactivating mouse copy.
-      // With the specs panel on, Shift pins that panel instead (see
-      // inspectElement), so the two never compete for the same key.
-      if (!isShiftKeyHeld() || inspect.isSpecsEnabled()) {
-        return keyboardSelection.selectedElement();
-      }
-      // With Shift the tree reveals the element under the cursor. While frozen
-      // there is no live hover (pointer-move skips detection), so use the frozen
-      // selection; while hovering, prefer the freshly hovered element over any
-      // lingering frozenElement — cancelDrag / finishJustDragged return to the
-      // "hovering" phase without clearing it.
-      return isFrozenPhase() ? effectiveElement() : (targetElement() ?? store.frozenElement);
+      if (isAnnotating()) return null;
+      // The tree follows an arrow-key selection: Up and Down walk the element's
+      // ancestors and children with the tree open beside them. It is not shown
+      // for every frozen element, so it stays hidden during a drag-marquee
+      // selection or after a mouse copy that leaves the overlay up.
+      return keyboardSelection.selectedElement();
     });
 
     const hierarchyEntries = createMemo<HierarchyEntry[]>(() => {
@@ -1964,10 +1957,28 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       toggleActivate();
     };
 
+    // Grab stays active when it is picked back up: whatever activated the
+    // overlay for the pen or text tool, the page is now being inspected.
+    const selectGrabTool = () => {
+      inspect.selectTool("grab");
+      didAnnotationToolActivate = false;
+    };
+
+    // Grab, pen and text are one choice, so a tap of the platform modifier
+    // steps through them in the toolbar's order, and Shift steps back; Move
+    // sits just after Text.
+    const cycleSelectionTool = (direction: ToolCycleDirection) => {
+      const nextTool = getCycledSelectionTool(inspect.annotationTool(), direction);
+      if (nextTool === "grab") {
+        selectGrabTool();
+        return;
+      }
+      handleSelectAnnotationTool(nextTool);
+    };
+
     const handleToggleActive = () => {
       if (isAnnotating()) {
-        inspect.selectTool("grab");
-        didAnnotationToolActivate = false;
+        selectGrabTool();
         return;
       }
       handleActivateAction(currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID);
@@ -2474,6 +2485,62 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const eventListenerManager = createEventListenerManager();
+
+    // The platform modifier (Cmd on the Mac, Ctrl elsewhere) tapped on its own
+    // steps through Grab, Pen and Text, and with Shift steps back. It is the
+    // key that starts every chord (Cmd+C, Cmd+Z, Cmd-click), so a press counts
+    // only if it is let go soon with nothing else in between. These listeners
+    // come first so they still see a chord's key when a later handler stops it.
+    let toolCycleTap: { startedAtMs: number; isBackward: boolean } | null = null;
+    const getToolCycleModifierKey = () => (isMac() ? "Meta" : "Control");
+    const canCycleTools = () =>
+      isActivated() &&
+      !isPromptMode() &&
+      !isCopying() &&
+      pluginRegistry.store.options.activationMode !== "hold";
+    const cancelToolCycleTap = () => {
+      toolCycleTap = null;
+    };
+
+    eventListenerManager.addWindowListener(
+      "keydown",
+      ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key === getToolCycleModifierKey()) {
+          if (event.repeat) return;
+          const isTypingIntoField =
+            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) ||
+            isSpecsFieldEvent(event) ||
+            isKeyboardEventTriggeredByInput(event);
+          toolCycleTap =
+            canCycleTools() && !isTypingIntoField
+              ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
+              : null;
+          return;
+        }
+        if (!toolCycleTap) return;
+        if (event.key === "Shift") {
+          toolCycleTap.isBackward = true;
+          return;
+        }
+        cancelToolCycleTap();
+      }),
+      { capture: true },
+    );
+
+    eventListenerManager.addWindowListener(
+      "keyup",
+      ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key !== getToolCycleModifierKey() || !toolCycleTap) return;
+        const tap = toolCycleTap;
+        cancelToolCycleTap();
+        if (Date.now() - tap.startedAtMs > TOOL_CYCLE_TAP_MAX_MS || !canCycleTools()) return;
+        cycleSelectionTool(tap.isBackward || event.shiftKey ? "backward" : "forward");
+      }),
+      { capture: true },
+    );
+
+    eventListenerManager.addWindowListener("pointerdown", cancelToolCycleTap, { capture: true });
+    eventListenerManager.addWindowListener("blur", cancelToolCycleTap);
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: () =>
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
@@ -2592,6 +2659,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       options: { allowPendingKeyboardSelection?: boolean } = {},
     ): boolean => {
       if (!isActivated()) return false;
+      if (isAnnotating()) return false;
       if (isPromptMode()) return false;
       if (isShiftMultiSelecting()) return false;
       if (keyboardSelection.isPendingDismiss() && !options.allowPendingKeyboardSelection)
@@ -2630,7 +2698,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       event.preventDefault();
       event.stopPropagation();
-      selectAndFocusElement(elementToSelect, true);
+      // Arrow keys only move focus through the tree: nothing is picked until
+      // Enter or a click, so moving the mouse simply hands focus back to hover.
+      selectAndFocusElement(elementToSelect);
 
       return true;
     };
@@ -2790,6 +2860,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
       }
 
+      // The activation shortcut always means Grab: with the pen, text or move
+      // tool in hand the overlay is already active, so it would otherwise be
+      // swallowed and leave no way back to Grab from the keyboard.
+      if (
+        isAnnotating() &&
+        !isPromptMode() &&
+        isTargetKeyCombination(event, pluginRegistry.store.options)
+      ) {
+        event.preventDefault();
+        if (!event.repeat) selectGrabTool();
+        return;
+      }
+
       if ((isActivated() || isHoldingKeys()) && !isPromptMode()) {
         event.preventDefault();
         if (isEnterCode(event.code)) {
@@ -2892,21 +2975,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.unpinSpecs();
           return;
         }
-        // Off the Mac, Control is half of the Ctrl+C activation itself, so the
-        // pen toggle only claims a bare Control press there.
-        if (
-          event.key === "Control" &&
-          !event.repeat &&
-          isMac() &&
-          isActivated() &&
-          !isPromptMode() &&
-          !isCopying()
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          handleSelectAnnotationTool("pen");
-          return;
-        }
         const canHandleEditShortcut =
           isActivated() &&
           !isPromptMode() &&
@@ -2924,7 +2992,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         // Bare keys pick the toolbar's tools up and put them down, as in a
         // design tool, so a frozen hover state never needs a trip to the
-        // toolbar. V only means something once there is a drawing to move.
+        // toolbar. V only means something once there is a drawing to move,
+        // and Specs and Spacing only while Grab, which they serve, is in hand.
         const isBareKeyPress =
           !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
         if (canHandleEditShortcut && isBareKeyPress) {
@@ -2932,16 +3001,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           const runToolShortcut = (): boolean => {
             switch (pressedKey) {
               case SPECS_TOOL_KEY:
+                if (isAnnotating()) return false;
                 inspect.toggleSpecs();
                 return true;
               case SPACING_TOOL_KEY:
+                if (isAnnotating()) return false;
                 inspect.toggleRedlines();
-                return true;
-              case PEN_TOOL_KEY:
-                handleSelectAnnotationTool("pen");
-                return true;
-              case TEXT_TOOL_KEY:
-                handleSelectAnnotationTool("text");
                 return true;
               case MOVE_TOOL_KEY:
                 if (!inspect.hasAnnotations()) return false;

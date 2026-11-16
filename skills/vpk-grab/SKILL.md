@@ -110,8 +110,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   page, by element, with remove, reopen and reset all.
 - **Hold Alt** with Spacing on: anchors on the hovered element; moving to
   another element shows the distances between the two.
-- **Pen** (3), **Text** (4): draw and write on the page in one of five colors; on a
-  Mac, Control picks the pen up and puts it down. **Move** and **Clear** appear
+- **Pen**, **Text**: draw and write on the page in one of five colors; a tap of
+  Cmd (Ctrl off the Mac) steps Grab, Pen, Text and Shift+Cmd steps back. **Move** and **Clear** appear
   once something is drawn; Move box-selects and drags annotations together,
   and v picks it up or puts it down.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
