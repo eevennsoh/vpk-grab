@@ -512,6 +512,40 @@ test.describe("Control toggles the pen on a Mac", () => {
   });
 });
 
+test.describe("Collapsing with the colors showing", () => {
+  test("the toolbar keeps its place across collapse and expand", async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    const collapseButton = page.locator("[data-react-grab-toolbar-collapse]");
+    const readCentreX = async () => {
+      const box = await getBox(page, TOOLBAR_SELECTOR);
+      return Math.round(box.x + box.width / 2);
+    };
+    // Settled: the toolbar slides into place on load and between steps.
+    const settledCentreX = async () => {
+      let previousCentreX = await readCentreX();
+      await expect
+        .poll(async () => {
+          const centreX = await readCentreX();
+          const isSettled = centreX === previousCentreX;
+          previousCentreX = centreX;
+          return isSettled;
+        })
+        .toBe(true);
+      return previousCentreX;
+    };
+
+    const startCentreX = await settledCentreX();
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await toolbarAction(page, "annotate-pen").click();
+      await expect(page.locator(ANNOTATION_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
+      await collapseButton.click();
+      expect(Math.abs((await settledCentreX()) - startCentreX)).toBeLessThanOrEqual(1);
+      await collapseButton.click();
+      expect(Math.abs((await settledCentreX()) - startCentreX)).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 test.describe("Number keys pick up the toolbar's tools", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
