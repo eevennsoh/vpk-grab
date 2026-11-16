@@ -1,7 +1,9 @@
-import { createSignal, createEffect, on, onCleanup, Show } from "solid-js";
+import { createSignal, createEffect, For, on, onCleanup, Show } from "solid-js";
 import type { Component } from "solid-js";
 import { cn } from "../utils/cn.js";
+import { splitShortcutAtCommand } from "../utils/split-shortcut-at-command.js";
 import { TOOLTIP_DELAY_MS, TOOLTIP_GRACE_PERIOD_MS, Z_INDEX_OVERLAY } from "../constants.js";
+import { IconCommand } from "./icons/icon-command.jsx";
 
 let lastCloseTimestamp = 0;
 
@@ -75,9 +77,6 @@ export const Tooltip: Component<TooltipProps> = (props) => {
         data-react-grab-tooltip
         class={cn(
           "absolute flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-sans font-medium leading-4 pointer-events-none",
-          // A 14px key cap in the 20px-tall tooltip leaves 3px above and below
-          // it; the same 3px on its right keeps the circle evenly inset.
-          props.shortcut && "pr-[3px]",
           "bg-[var(--rg-panel-bg)] text-[var(--rg-text-primary)] [box-shadow:var(--rg-shadow)]",
           props.position === "top" && "bottom-full mb-2.5",
           props.position === "bottom" && "top-full mt-2.5",
@@ -91,10 +90,23 @@ export const Tooltip: Component<TooltipProps> = (props) => {
         <Show when={props.shortcut}>
           {(shortcut) => (
             <kbd
-              data-react-grab-tooltip-shortcut
-              class="flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-full px-[3px] bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-none text-[var(--rg-text-secondary)]"
-              textContent={shortcut()}
-            />
+              data-react-grab-tooltip-shortcut={shortcut()}
+              aria-label={shortcut()}
+              class="inline-flex shrink-0 items-center gap-[2px] font-sans text-[10px] leading-none text-[var(--rg-text-secondary)]"
+            >
+              <For each={splitShortcutAtCommand(shortcut())}>
+                {(part, partIndex) => (
+                  <>
+                    <Show when={partIndex() > 0}>
+                      <IconCommand size={8} />
+                    </Show>
+                    <Show when={part}>
+                      <span textContent={part} />
+                    </Show>
+                  </>
+                )}
+              </For>
+            </kbd>
           )}
         </Show>
       </div>

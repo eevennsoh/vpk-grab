@@ -1197,20 +1197,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (isPromptMode() || isShiftMultiSelecting() || isCopying()) return null;
       if (isAnyPopoverOpen()) return null;
       if (keyboardSelection.isPendingDismiss()) return null;
-      // Without Shift the tree only follows an active keyboard-navigation
-      // selection — not every frozen element, so it stays hidden during
-      // drag-marquee selection or after a non-deactivating mouse copy.
-      // With the specs panel on, Shift pins that panel instead (see
-      // inspectElement), so the two never compete for the same key.
-      if (!isShiftKeyHeld() || inspect.isSpecsEnabled()) {
-        return keyboardSelection.selectedElement();
-      }
-      // With Shift the tree reveals the element under the cursor. While frozen
-      // there is no live hover (pointer-move skips detection), so use the frozen
-      // selection; while hovering, prefer the freshly hovered element over any
-      // lingering frozenElement — cancelDrag / finishJustDragged return to the
-      // "hovering" phase without clearing it.
-      return isFrozenPhase() ? effectiveElement() : (targetElement() ?? store.frozenElement);
+      if (isAnnotating()) return null;
+      // The tree follows an arrow-key selection: Up and Down walk the element's
+      // ancestors and children with the tree open beside them. It is not shown
+      // for every frozen element, so it stays hidden during a drag-marquee
+      // selection or after a mouse copy that leaves the overlay up.
+      return keyboardSelection.selectedElement();
     });
 
     const hierarchyEntries = createMemo<HierarchyEntry[]>(() => {
@@ -2665,6 +2657,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       options: { allowPendingKeyboardSelection?: boolean } = {},
     ): boolean => {
       if (!isActivated()) return false;
+      if (isAnnotating()) return false;
       if (isPromptMode()) return false;
       if (isShiftMultiSelecting()) return false;
       if (keyboardSelection.isPendingDismiss() && !options.allowPendingKeyboardSelection)

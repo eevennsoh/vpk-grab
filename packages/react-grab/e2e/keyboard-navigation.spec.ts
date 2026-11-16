@@ -140,7 +140,7 @@ test.describe("Keyboard Navigation", () => {
     expect(labelInfo.tagName).toBe("li");
   });
 
-  test("holding Shift reveals the hierarchy dropdown on hover", async ({ reactGrab }) => {
+  test("arrow keys reveal the hierarchy dropdown without Shift", async ({ reactGrab }) => {
     const isHierarchyMenuVisible = () =>
       reactGrab.page.evaluate(
         (attrName) =>
@@ -155,14 +155,15 @@ test.describe("Keyboard Navigation", () => {
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child");
 
-    // Not shown on plain hover.
     expect(await isHierarchyMenuVisible()).toBe(false);
 
     await reactGrab.page.keyboard.down("Shift");
-    await expect.poll(isHierarchyMenuVisible, { timeout: 1000 }).toBe(true);
-
+    await reactGrab.page.waitForTimeout(200);
+    expect(await isHierarchyMenuVisible()).toBe(false);
     await reactGrab.page.keyboard.up("Shift");
-    await expect.poll(isHierarchyMenuVisible, { timeout: 1000 }).toBe(false);
+
+    await reactGrab.page.keyboard.press("ArrowDown");
+    await expect.poll(isHierarchyMenuVisible, { timeout: 1000 }).toBe(true);
   });
 
   test("should maintain activation during keyboard navigation", async ({ reactGrab }) => {

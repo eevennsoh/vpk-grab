@@ -547,7 +547,9 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
       const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: name });
       await expect(tooltip).toBeVisible();
       const shortcut = tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR);
-      return (await shortcut.count()) === 0 ? null : shortcut.textContent();
+      return (await shortcut.count()) === 0
+        ? null
+        : shortcut.getAttribute("data-react-grab-tooltip-shortcut");
     };
 
     expect(await readShortcut("annotate-pen", "Pen")).toBe("⌘");
@@ -568,7 +570,10 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await toolbarAction(page, "copy").hover();
     const grabTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
-    await expect(grabTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("⌘C");
+    await expect(grabTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "⌘C",
+    );
 
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await toolbarAction(page, "annotate-pen").hover();
@@ -699,7 +704,10 @@ test.describe("Number keys pick up the toolbar's tools", () => {
     await toolbarAction(page, "inspect-redlines").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Spacing" });
     await expect(tooltip).toBeVisible();
-    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("2");
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "2",
+    );
   });
 
   test("Specs and Spacing start off and are remembered after a reload", async ({
@@ -737,7 +745,10 @@ test.describe("Grab", () => {
     await toolbarAction(page, "copy").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
     await expect(tooltip).toBeVisible();
-    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText(/^(⌘C|Ctrl\+C)$/);
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      /^(⌘C|Ctrl\+C)$/,
+    );
   });
 
   test("the Grab tooltip shows when the pointer glides over from Pen", async ({
