@@ -31,6 +31,8 @@ const COMPLETION_SELECTOR = "[data-react-grab-completion]";
 const ERROR_SELECTOR = "[data-react-grab-error]";
 const RETRY_SELECTOR = "[data-react-grab-retry]";
 const THUMBNAIL_SELECTOR = "[data-react-grab-screenshot-thumbnail]";
+const TOOLBAR_TOGGLE_SELECTOR = "[data-react-grab-toolbar-toggle]";
+const CAMERA_CURSOR_HOTSPOT = "3 6, crosshair";
 const CAPTURE_START = { x: 250, y: 280 };
 const CAPTURE_END = { x: 610, y: 380 };
 const LINE_START = { x: 300, y: 320 };
@@ -104,6 +106,20 @@ const shiftDrag = async (
   await page.mouse.move(end.x, end.y, { steps: DRAG_STEPS });
   await page.mouse.up();
   await page.keyboard.up("Shift");
+};
+
+const getTodoItemCenter = async (page: Page, index: number) => {
+  const box = await getTodoItemBox(page, index);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+const isReactGrabActive = (page: Page) =>
+  page.evaluate(() => window.__REACT_GRAB__?.isActive() ?? false);
+
+const clickToolbarButton = async (page: Page) => {
+  const wasActive = await isReactGrabActive(page);
+  await page.locator(TOOLBAR_TOGGLE_SELECTOR).click();
+  await expect.poll(() => isReactGrabActive(page)).toBe(!wasActive);
 };
 
 const getTodoItemBox = async (page: Page, index: number) => {
@@ -621,5 +637,160 @@ test.describe("Screenshot capture", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
     await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
     expect(await getImageWrites(page)).toHaveLength(0);
+  });
+});
+
+test.describe("Screenshot capture after a real activation", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await installClipboardRecorder(page);
+  });
+
+  test("the keyboard shortcut session takes a Shift+drag screenshot", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activateViaKeyboard();
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    await expect(reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR)).toContainText(
+      "Image copied",
+    );
+    expect(await getCopyEventCount(page)).toBe(0);
+  });
+
+  test.describe("switched on from the toolbar button", () => {
+    test("Shift shows the camera cursor and Shift+drag copies an image", async ({
+      reactGrab,
+      page,
+    }) => {
+      await clickToolbarButton(page);
+      await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
+      await page.keyboard.down("Shift");
+      await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+      await page.keyboard.up("Shift");
+
+      await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      const [imageWrite] = await getImageWrites(page);
+      expect(imageWrite.types).toEqual(["image/png"]);
+      await expect(reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR)).toContainText(
+        "Image copied",
+      );
+      expect(await getCopyEventCount(page)).toBe(0);
+      expect(await reactGrab.getClipboardContent()).toBe("");
+    });
+
+    test("the capture switches Grab off cleanly so the next session copies", async ({
+      reactGrab,
+      page,
+    }) => {
+      await clickToolbarButton(page);
+      await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      await expect.poll(() => isReactGrabActive(page)).toBe(false);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(false);
+
+      await clickToolbarButton(page);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
+      const firstCenter = await getTodoItemCenter(page, 0);
+      await page.mouse.click(firstCenter.x, firstCenter.y);
+
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+      expect(await getImageWrites(page)).toHaveLength(1);
+    });
+
+    test("a pending Comment action does not run for a Shift+drag", async ({ reactGrab, page }) => {
+      await page.evaluate(() => {
+        window.__REACT_GRAB__?.setToolbarState({ defaultAction: "comment" });
+      });
+      await clickToolbarButton(page);
+      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+
+      await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      await expect.poll(() => isReactGrabActive(page)).toBe(false);
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
+      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(false);
+      expect(await getCopyEventCount(page)).toBe(0);
+    });
+
+    test("a capture that keeps Grab on leaves the Comment action pending", async ({
+      reactGrab,
+      page,
+    }) => {
+      await page.evaluate(() => {
+        window.__REACT_GRAB__?.setToolbarState({ defaultAction: "comment" });
+      });
+      await clickToolbarButton(page);
+
+      await page.keyboard.down("ControlOrMeta");
+      await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+      await page.keyboard.up("ControlOrMeta");
+
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      await expect(reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR)).toContainText(
+        "Image copied",
+      );
+      expect(await isReactGrabActive(page)).toBe(true);
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
+      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+
+      const firstCenter = await getTodoItemCenter(page, 0);
+      await page.mouse.click(firstCenter.x, firstCenter.y);
+      await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
+    });
+
+    test("releasing Shift mid-drag runs the pending action on the elements", async ({
+      reactGrab,
+      page,
+    }) => {
+      await clickToolbarButton(page);
+      const firstBox = await getTodoItemBox(page, 0);
+      const thirdBox = await getTodoItemBox(page, 2);
+
+      await page.keyboard.down("Shift");
+      await page.mouse.move(firstBox.x - DRAG_OUTSET_PX, firstBox.y - DRAG_OUTSET_PX);
+      await page.mouse.down();
+      await page.mouse.move(
+        thirdBox.x + thirdBox.width + DRAG_OUTSET_PX,
+        thirdBox.y + thirdBox.height + DRAG_OUTSET_PX,
+        { steps: DRAG_STEPS },
+      );
+      await page.keyboard.up("Shift");
+      await page.waitForTimeout(SHIFT_RELEASED_SETTLE_MS);
+      await page.mouse.up();
+
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+      await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+      expect(await getImageWrites(page)).toHaveLength(0);
+    });
+
+    test("a Shift+drag under the minimum size runs the pending action", async ({
+      reactGrab,
+      page,
+    }) => {
+      await clickToolbarButton(page);
+      const firstCenter = await getTodoItemCenter(page, 0);
+
+      await page.keyboard.down("Shift");
+      await page.mouse.move(firstCenter.x, firstCenter.y);
+      await page.mouse.down();
+      await page.mouse.move(
+        firstCenter.x + UNDERSIZED_DRAG_PX,
+        firstCenter.y + UNDERSIZED_DRAG_PX,
+        { steps: 2 },
+      );
+      await page.mouse.up();
+
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+      await page.keyboard.up("Shift");
+      await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+      expect(await getImageWrites(page)).toHaveLength(0);
+    });
   });
 });

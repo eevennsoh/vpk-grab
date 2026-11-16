@@ -657,14 +657,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const [isPendingContextMenuSelect, setIsPendingContextMenuSelect] = createSignal(false);
     // Holding Shift in Grab turns a drag into a screenshot of the dragged
     // area, unless Shift is already building a multi-selection or a pending
-    // comment / context-menu pick needs an element.
+    // comment needs an element. A pending toolbar action stays pending: the
+    // toolbar button arms one even for the default copy, and the screenshot
+    // has to work however Grab was switched on.
     const canTakeScreenshot = () =>
       isActivated() &&
       inspect.annotationTool() === "grab" &&
       !isPromptMode() &&
       !isShiftMultiSelecting() &&
-      !store.pendingCommentMode &&
-      !isPendingContextMenuSelect();
+      !store.pendingCommentMode;
     const isScreenshotMode = createMemo(() => isShiftKeyHeld() && canTakeScreenshot());
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
@@ -2576,7 +2577,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         performance.now() - lastShiftReleaseTimestampMs <= SCREENSHOT_SHIFT_RELEASE_GRACE_MS;
       const shouldCaptureScreenshot =
         canReleaseAsScreenshot && isScreenshotSized && (isShiftHeld || didReleaseShiftDuringGrace);
-      const isUndersizedScreenshot = canReleaseAsScreenshot && isShiftHeld && !isScreenshotSized;
+      // Only a Shift+click that toggles the multi-selection differs from a
+      // marquee; with a toolbar action pending both pick an element for it.
+      const isUndersizedScreenshot =
+        canReleaseAsScreenshot &&
+        isShiftHeld &&
+        !isScreenshotSized &&
+        !isPendingContextMenuSelect();
       const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
