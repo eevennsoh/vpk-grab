@@ -178,7 +178,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     !drag.isDragging() &&
     !drag.isSnapping() &&
     !props.isContextMenuOpen;
-  const isTooltipVisible = (actionId: string) => isActionHovered(actionId) && !props.isActive;
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
   const tooltipPosition = (): "top" | "bottom" | "left" | "right" => {
     switch (snapEdge()) {
@@ -916,7 +915,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                   class={actionIconClass(isCurrentActionActive() && isGrabTool())}
                 />
               }
-              tooltipVisible={isTooltipVisible(currentActionId())}
+              tooltipVisible={isActionHovered(currentActionId())}
               tooltipPosition={tooltipPosition()}
               tooltip="Grab"
               tooltipShortcut={props.grabShortcut}

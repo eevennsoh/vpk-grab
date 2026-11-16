@@ -560,4 +560,23 @@ test.describe("Grab", () => {
     await expect(tooltip).toBeVisible();
     await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText(/^(⌘C|Ctrl\+C)$/);
   });
+
+  test("the Grab tooltip also shows while active and with a tool in hand", async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+    const grabButton = toolbarAction(page, "copy");
+    const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
+
+    await grabButton.hover();
+    await expect(tooltip).toBeVisible();
+
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect(tooltip).toHaveCount(0);
+    await page.keyboard.press("3");
+    await grabButton.hover();
+    await expect(tooltip).toBeVisible();
+  });
 });
