@@ -2507,10 +2507,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: KeyboardEvent) => {
         if (event.key === getToolCycleModifierKey()) {
           if (event.repeat) return;
-          const isTypingIntoOverlay =
-            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) || isSpecsFieldEvent(event);
+          const isTypingIntoField =
+            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) ||
+            isSpecsFieldEvent(event) ||
+            isKeyboardEventTriggeredByInput(event);
           toolCycleTap =
-            canCycleTools() && !isTypingIntoOverlay
+            canCycleTools() && !isTypingIntoField
               ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
               : null;
           return;

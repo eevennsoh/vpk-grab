@@ -7,6 +7,9 @@ const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
 const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
+const TOOLBAR_SETTLE_POLL_INTERVAL_MS = 150;
+// Long enough for a tool switch to land if the tap had counted.
+const TOOL_CYCLE_SETTLE_MS = 300;
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
 const ANNOTATION_COLORS_SELECTOR = "[data-react-grab-toolbar-annotation-colors]";
 const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
@@ -531,6 +534,20 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
+  test("a Cmd tap while typing in a page field leaves the tool alone", async ({ page }) => {
+    await page.evaluate(() => {
+      const field = document.createElement("input");
+      field.setAttribute("data-testid", "cycle-page-field");
+      document.body.appendChild(field);
+      field.focus();
+    });
+    await expect(page.getByTestId("cycle-page-field")).toBeFocused();
+    await page.keyboard.press("Meta");
+    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "false");
+  });
+
   test("Cmd held for a chord does not cycle", async ({ page }) => {
     await drawStraightLine(page);
     const pen = toolbarAction(page, "annotate-pen");
@@ -654,7 +671,7 @@ test.describe("Collapsing with the colors showing", () => {
       let previousCentreX = await readCentreX();
       await expect
         .poll(async () => {
-          await page.waitForTimeout(150);
+          await page.waitForTimeout(TOOLBAR_SETTLE_POLL_INTERVAL_MS);
           const centreX = await readCentreX();
           const isSettled = centreX === previousCentreX;
           previousCentreX = centreX;
