@@ -20,10 +20,10 @@ test.describe("Toolbar Action Buttons", () => {
         );
       expect(actionIds).toEqual([
         "copy",
-        "inspect-specs",
-        "inspect-redlines",
         "annotate-pen",
         "annotate-text",
+        "inspect-specs",
+        "inspect-redlines",
         "annotation-color-red",
         "annotation-color-yellow",
         "annotation-color-green",

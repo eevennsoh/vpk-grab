@@ -71,9 +71,10 @@ test.describe("redlines on small elements", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
     await installCompactFixture(page);
-    await page.locator(REDLINES_TOGGLE_SELECTOR).click();
     await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
     await reactGrab.activate();
+    await page.locator(REDLINES_TOGGLE_SELECTOR).click();
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
   });
 
   test("a tiny element's distances sit outside it and never overlap", async ({

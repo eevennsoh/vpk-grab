@@ -10,6 +10,26 @@ export const PINNED_PANEL_SELECTOR = `${PANEL_SELECTOR}[data-pinned]`;
 export const HIERARCHY_MENU_SELECTOR = "[data-react-grab-hierarchy-menu]";
 export const RESET_SELECTOR = "[data-react-grab-specs-reset]";
 export const AWAY_POSITION = { x: 620, y: 520 };
+const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
+const SPECS_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-specs"]';
+
+// Specs only joins the toolbar once Grab is active, so it is switched on
+// after activating. Leaving the toolbar eases it back, and the panel keeps
+// clear of it, so measuring waits until the toolbar has settled.
+export const switchOnSpecs = async (page: Page) => {
+  await page.locator(SPECS_TOGGLE_SELECTOR).click();
+  await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+  const toolbar = page.locator(TOOLBAR_SELECTOR);
+  let previousBox = await toolbar.boundingBox();
+  await expect
+    .poll(async () => {
+      const box = await toolbar.boundingBox();
+      const isSettled = JSON.stringify(box) === JSON.stringify(previousBox);
+      previousBox = box;
+      return isSettled;
+    })
+    .toBe(true);
+};
 
 export const installSpecsFixture = (page: Page) =>
   page.evaluate(

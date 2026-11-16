@@ -9,6 +9,7 @@ import {
   RESET_SELECTOR,
   AWAY_POSITION,
   installSpecsFixture,
+  switchOnSpecs,
   specRow,
   specTokens,
   getStyle,
@@ -24,9 +25,9 @@ test.describe("specs panel", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
     await installSpecsFixture(page);
-    await page.locator('[data-react-grab-toolbar-action="inspect-specs"]').click();
     await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
     await reactGrab.activate();
+    await switchOnSpecs(page);
   });
 
   test("names the tokens behind applied properties", async ({ page }) => {
@@ -66,7 +67,19 @@ test.describe("specs panel", () => {
 
   test("a pinned panel holds its element while the pointer travels to it", async ({ page }) => {
     await inspect(page, "specs-token-button");
-    const panelBefore = await page.locator(PANEL_SELECTOR).boundingBox();
+    // The component name is looked up after the panel opens and makes its
+    // header a line taller, so measure once the panel has stopped resizing.
+    const panel = page.locator(PANEL_SELECTOR);
+    let panelBefore = await panel.boundingBox();
+    await expect
+      .poll(async () => {
+        await page.waitForTimeout(150);
+        const box = await panel.boundingBox();
+        const isSettled = JSON.stringify(box) === JSON.stringify(panelBefore);
+        panelBefore = box;
+        return isSettled;
+      })
+      .toBe(true);
 
     await pinAndReach(page, "padding");
 

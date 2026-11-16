@@ -1964,10 +1964,38 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       toggleActivate();
     };
 
+    // Grab stays active when it is picked back up: whatever activated the
+    // overlay for the pen or text tool, the page is now being inspected.
+    const selectGrabTool = () => {
+      inspect.selectTool("grab");
+      didAnnotationToolActivate = false;
+    };
+
+    // Grab, pen and text are one choice, so Control steps through them in the
+    // toolbar's order; Move hands back to Grab.
+    const cycleSelectionTool = () => {
+      const currentTool = inspect.annotationTool();
+      switch (currentTool) {
+        case "grab":
+          handleSelectAnnotationTool("pen");
+          return;
+        case "pen":
+          handleSelectAnnotationTool("text");
+          return;
+        case "text":
+        case "edit":
+          selectGrabTool();
+          return;
+        default: {
+          const unhandledTool: never = currentTool;
+          return unhandledTool;
+        }
+      }
+    };
+
     const handleToggleActive = () => {
       if (isAnnotating()) {
-        inspect.selectTool("grab");
-        didAnnotationToolActivate = false;
+        selectGrabTool();
         return;
       }
       handleActivateAction(currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID);
@@ -2790,6 +2818,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
       }
 
+      // The activation shortcut always means Grab: with the pen, text or move
+      // tool in hand the overlay is already active, so it would otherwise be
+      // swallowed and leave no way back to Grab from the keyboard.
+      if (
+        isAnnotating() &&
+        !isPromptMode() &&
+        isTargetKeyCombination(event, pluginRegistry.store.options)
+      ) {
+        event.preventDefault();
+        if (!event.repeat) selectGrabTool();
+        return;
+      }
+
       if ((isActivated() || isHoldingKeys()) && !isPromptMode()) {
         event.preventDefault();
         if (isEnterCode(event.code)) {
@@ -2893,7 +2934,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         // Off the Mac, Control is half of the Ctrl+C activation itself, so the
-        // pen toggle only claims a bare Control press there.
+        // tool cycle only claims a bare Control press there.
         if (
           event.key === "Control" &&
           !event.repeat &&
@@ -2904,7 +2945,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         ) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          handleSelectAnnotationTool("pen");
+          cycleSelectionTool();
           return;
         }
         const canHandleEditShortcut =
@@ -2924,7 +2965,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         // Bare keys pick the toolbar's tools up and put them down, as in a
         // design tool, so a frozen hover state never needs a trip to the
-        // toolbar. V only means something once there is a drawing to move.
+        // toolbar. V only means something once there is a drawing to move,
+        // and Specs and Spacing only while Grab, which they serve, is in hand.
         const isBareKeyPress =
           !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
         if (canHandleEditShortcut && isBareKeyPress) {
@@ -2932,9 +2974,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           const runToolShortcut = (): boolean => {
             switch (pressedKey) {
               case SPECS_TOOL_KEY:
+                if (isAnnotating()) return false;
                 inspect.toggleSpecs();
                 return true;
               case SPACING_TOOL_KEY:
+                if (isAnnotating()) return false;
                 inspect.toggleRedlines();
                 return true;
               case PEN_TOOL_KEY:
