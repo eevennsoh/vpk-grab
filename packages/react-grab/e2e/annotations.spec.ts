@@ -561,6 +561,22 @@ test.describe("Grab", () => {
     await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText(/^(⌘C|Ctrl\+C)$/);
   });
 
+  test("the Grab tooltip shows when the pointer glides over from Specs", async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    const specsBox = await getBox(page, '[data-react-grab-toolbar-action="inspect-specs"]');
+    const grabBox = await getBox(page, '[data-react-grab-toolbar-action="copy"]');
+    await page.mouse.move(specsBox.x + specsBox.width / 2, specsBox.y + specsBox.height / 2, {
+      steps: 4,
+    });
+    await page.mouse.move(grabBox.x + grabBox.width / 2, grabBox.y + grabBox.height / 2, {
+      steps: 8,
+    });
+    await expect(page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" })).toBeVisible();
+  });
+
   test("the Grab tooltip also shows while active and with a tool in hand", async ({
     reactGrab,
     page,

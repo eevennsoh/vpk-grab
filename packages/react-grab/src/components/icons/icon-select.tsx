@@ -14,9 +14,15 @@ interface IconSelectProps {
 export const IconSelect: Component<IconSelectProps> = (props) => {
   const rotationDeg = () => props.rotationDeg ?? 0;
 
+  // Pointer events pass through the rotating icon to the button: Chromium sends
+  // the button a mouseleave when the pointer moves onto this transformed,
+  // will-change layer, which dropped the button's hover (and its tooltip).
   return (
     <span
-      class={cn("inline-flex items-center justify-center will-change-transform", props.class)}
+      class={cn(
+        "inline-flex items-center justify-center will-change-transform pointer-events-none",
+        props.class,
+      )}
       style={{
         transform: `rotate(${rotationDeg()}deg)`,
         "transition-property": "transform",
