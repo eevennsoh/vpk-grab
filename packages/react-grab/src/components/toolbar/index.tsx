@@ -34,6 +34,11 @@ import {
   SELECT_ICON_POINT_MIN_DISTANCE_PX,
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
+  MOVE_TOOL_KEY,
+  PEN_TOOL_KEY,
+  SPACING_TOOL_KEY,
+  SPECS_TOOL_KEY,
+  TEXT_TOOL_KEY,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -62,6 +67,7 @@ interface ToolbarProps {
   activeActionId?: string | null;
   defaultActionId?: string;
   defaultActionLabel?: string;
+  grabShortcut?: string;
   enabled?: boolean;
   shakeCount?: number;
   onStateChange?: (state: ToolbarState) => void;
@@ -172,7 +178,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     !drag.isDragging() &&
     !drag.isSnapping() &&
     !props.isContextMenuOpen;
-  const isTooltipVisible = (actionId: string) => isActionHovered(actionId) && !props.isActive;
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
   const tooltipPosition = (): "top" | "bottom" | "left" | "right" => {
     switch (snapEdge()) {
@@ -374,8 +379,21 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     cn("relative contain-layout flex items-center justify-center", buttonSpacingClass());
   const actionIconClass = (isActive: boolean) =>
     isActive
-      ? "text-[var(--rg-text-primary)]"
+      ? "text-[var(--rg-accent)]"
       : "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)]";
+  // Only a swatch that would vanish into the dark panel gets an edge, drawn
+  // inside the dot so every swatch keeps the same size; the selection ring
+  // sits outside it.
+  const getColorSwatchShadowClass = (isSelected: boolean, hasInnerBorder?: boolean) => {
+    if (isSelected && hasInnerBorder) {
+      return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
+    }
+    if (isSelected) {
+      return "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
+    }
+    if (hasInnerBorder) return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button)]";
+    return "";
+  };
 
   const handleToggleCollapse = drag.createDragAwareHandler(() => {
     if (isCollapsed()) {
@@ -893,12 +911,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 <IconSelect
                   size={14}
                   rotationDeg={selectIconRotationDeg()}
+                  isFilled={isCurrentActionActive() && isGrabTool()}
                   class={actionIconClass(isCurrentActionActive() && isGrabTool())}
                 />
               }
-              tooltipVisible={isTooltipVisible(currentActionId())}
+              tooltipVisible={isActionHovered(currentActionId())}
               tooltipPosition={tooltipPosition()}
-              tooltip={currentActionLabel()}
+              tooltip="Grab"
+              tooltipShortcut={props.grabShortcut}
             />
             <span aria-hidden="true" class={separatorClass()} />
             <ToolbarActionButton
@@ -910,26 +930,38 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggleSpecs}
               {...createFreezeHandlers(() => SPECS_ACTION_ID)}
-              icon={<IconSpecs size={14} class={actionIconClass(Boolean(props.isSpecsEnabled))} />}
+              icon={
+                <IconSpecs
+                  size={14}
+                  isFilled={Boolean(props.isSpecsEnabled)}
+                  class={actionIconClass(Boolean(props.isSpecsEnabled))}
+                />
+              }
               tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Specs"
+              tooltipShortcut={SPECS_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={REDLINES_ACTION_ID}
               keepsPageFocus
-              label="Show spacing redlines on hover"
+              label="Show spacing on hover"
               isActive={Boolean(props.isRedlinesEnabled)}
               class={actionButtonClass}
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleToggleRedlines}
               {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
               icon={
-                <IconRedlines size={14} class={actionIconClass(Boolean(props.isRedlinesEnabled))} />
+                <IconRedlines
+                  size={14}
+                  isFilled={Boolean(props.isRedlinesEnabled)}
+                  class={actionIconClass(Boolean(props.isRedlinesEnabled))}
+                />
               }
               tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
-              tooltip="Redlines · hold Alt to measure to another element"
+              tooltip="Spacing"
+              tooltipShortcut={SPACING_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={PEN_ACTION_ID}
@@ -940,10 +972,17 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleSelectPen}
               {...createFreezeHandlers(() => PEN_ACTION_ID)}
-              icon={<IconPen size={14} class={actionIconClass(props.annotationTool === "pen")} />}
+              icon={
+                <IconPen
+                  size={14}
+                  isFilled={props.annotationTool === "pen"}
+                  class={actionIconClass(props.annotationTool === "pen")}
+                />
+              }
               tooltipVisible={isActionHovered(PEN_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
-              tooltip="Pen · hold Shift for a straight line"
+              tooltip="Pen"
+              tooltipShortcut={PEN_TOOL_KEY}
             />
             <ToolbarActionButton
               actionId={TEXT_ACTION_ID}
@@ -954,10 +993,17 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               wrapperClass={actionButtonWrapperClass()}
               onClick={handleSelectText}
               {...createFreezeHandlers(() => TEXT_ACTION_ID)}
-              icon={<IconText size={14} class={actionIconClass(props.annotationTool === "text")} />}
+              icon={
+                <IconText
+                  size={14}
+                  isFilled={props.annotationTool === "text"}
+                  class={actionIconClass(props.annotationTool === "text")}
+                />
+              }
               tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
               tooltipPosition={tooltipPosition()}
               tooltip="Text"
+              tooltipShortcut={TEXT_TOOL_KEY}
             />
             <ToolbarRevealGroup
               ref={(element) => (annotationColorsRef = element)}
@@ -987,9 +1033,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                           <span
                             class={cn(
                               "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
-                              isSelected()
-                                ? "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
-                                : "[box-shadow:0_0_0_1px_var(--rg-border-button)]",
+                              getColorSwatchShadowClass(isSelected(), colorOption.hasInnerBorder),
                             )}
                             style={{ "background-color": colorOption.value }}
                           />
@@ -1020,11 +1064,16 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 onClick={handleSelectEdit}
                 {...createFreezeHandlers(() => EDIT_ACTION_ID)}
                 icon={
-                  <IconMove size={14} class={actionIconClass(props.annotationTool === "edit")} />
+                  <IconMove
+                    size={14}
+                    isFilled={props.annotationTool === "edit"}
+                    class={actionIconClass(props.annotationTool === "edit")}
+                  />
                 }
                 tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
-                tooltip="Move (v) · drag to move or box-select, Delete to remove"
+                tooltip="Move"
+                tooltipShortcut={MOVE_TOOL_KEY}
               />
               <ToolbarActionButton
                 actionId={CLEAR_ACTION_ID}
@@ -1042,7 +1091,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 icon={<IconClear size={14} class={actionIconClass(false)} />}
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
-                tooltip={props.hasSelectedAnnotation ? "Delete selected" : "Clear annotations"}
+                tooltip="Clear"
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup

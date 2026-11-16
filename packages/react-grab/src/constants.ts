@@ -1,4 +1,11 @@
 import type { AnnotationColorOption } from "./types.js";
+import { createSvgCursor } from "./utils/create-svg-cursor.js";
+import {
+  NAVIGATION_ICON_PATHS,
+  PAN_TOOL_ICON_PATHS,
+  STYLUS_ICON_PATHS,
+  TITLE_ICON_PATHS,
+} from "./material-icon-paths.js";
 import { overlayColor } from "./utils/overlay-color.js";
 
 export const VERSION = process.env.VERSION as string;
@@ -261,7 +268,7 @@ export const MENU_HIGHLIGHT_CORNER_SHAPE = "superellipse(1.25)";
 // top-right corner of its viewBox, ~45° above the +x axis. Subtracting this
 // from the mouse-relative angle yields the rotation needed to aim the tip at
 // the cursor.
-export const SELECT_ICON_NATURAL_POINT_ANGLE_DEG = -45;
+export const SELECT_ICON_NATURAL_POINT_ANGLE_DEG = -90;
 export const SELECT_ICON_ROTATION_TRANSITION_MS = 180;
 export const SELECT_ICON_POINT_MIN_DISTANCE_PX = 4;
 
@@ -422,15 +429,18 @@ export const RELEVANT_CSS_PROPERTIES = new Set([
 
 export const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
 export const ANNOTATION_INPUT_ATTRIBUTE = "data-react-grab-annotation-input";
-export const INSPECT_ACCENT_COLOR = "#f24822";
-export const INSPECT_ACCENT_CONTRAST_COLOR = "#ffffff";
+// VPK's accent (vpk-html iso/accent.mjs, ADS orange) with the dark ink VPK
+// sets on it: selection, grab/copy and spacing marks all share it.
+export const INSPECT_ACCENT_COLOR = "#fca700";
+export const INSPECT_ACCENT_CONTRAST_COLOR = "#292a2e";
+export const ANNOTATION_RED_COLOR = "#f24822";
 
 export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
-  { label: "Red", value: INSPECT_ACCENT_COLOR },
+  { label: "Red", value: ANNOTATION_RED_COLOR },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
   { label: "Blue", value: "#0d99ff" },
-  { label: "Black", value: "#111827" },
+  { label: "Black", value: "#111827", hasInnerBorder: true },
 ];
 
 export const ANNOTATION_STROKE_WIDTH_PX = 3;
@@ -468,4 +478,27 @@ export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
 export const MOVE_TOOL_KEY = "v";
+export const SPECS_TOOL_KEY = "1";
+export const SPACING_TOOL_KEY = "2";
+export const PEN_TOOL_KEY = "3";
+export const TEXT_TOOL_KEY = "4";
+// Leaned a quarter-turn left of upright so the arrow reads as a pointer; its
+// tip then lands at (7, 7) on the cursor's 24px grid.
+export const GRAB_TOOL_CURSOR = createSvgCursor(
+  NAVIGATION_ICON_PATHS.filled,
+  { x: 7, y: 7 },
+  "pointer",
+  -45,
+);
+export const PEN_TOOL_CURSOR = createSvgCursor(
+  STYLUS_ICON_PATHS.filled,
+  { x: 4, y: 20 },
+  "crosshair",
+);
+export const TEXT_TOOL_CURSOR = createSvgCursor(TITLE_ICON_PATHS.filled, { x: 12, y: 12 }, "text");
+export const MOVE_TOOL_CURSOR = createSvgCursor(
+  PAN_TOOL_ICON_PATHS.filled,
+  { x: 12, y: 12 },
+  "move",
+);
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;

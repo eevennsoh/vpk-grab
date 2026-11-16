@@ -216,7 +216,7 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
               if (rowRef) props.onOpenMenu(rowRef.getBoundingClientRect());
             }}
           >
-            <IconChevron size={12} class="rotate-90" />
+            <IconChevron size={12} />
           </button>
           <Show when={hasOverride()}>
             <button

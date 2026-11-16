@@ -493,6 +493,7 @@ export interface ReactGrabRendererProps {
   toolbarMenuActions?: ContextMenuAction[];
   defaultActionId?: string;
   defaultActionLabel?: string;
+  grabShortcut?: string;
   onSetDefaultAction?: (actionId: string) => void;
   onToggleToolbarMenu?: () => void;
   onToolbarMenuDismiss?: () => void;
@@ -642,6 +643,7 @@ export interface AnnotationStroke {
 export interface AnnotationColorOption {
   label: string;
   value: string;
+  hasInnerBorder?: boolean;
 }
 
 export interface AnnotationText extends Position {
@@ -735,6 +737,11 @@ export interface SpecValueOption {
 }
 
 export type RedlineSide = "top" | "right" | "bottom" | "left";
+
+export interface MaterialIconPaths {
+  outline: string;
+  filled: string;
+}
 
 export interface RedlineMeasurement {
   side: RedlineSide;

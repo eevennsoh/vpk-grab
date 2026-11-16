@@ -13,6 +13,7 @@ interface TooltipProps {
   visible: boolean;
   position: "top" | "bottom" | "left" | "right";
   textContent: string;
+  shortcut?: string;
 }
 
 export const Tooltip: Component<TooltipProps> = (props) => {
@@ -71,8 +72,12 @@ export const Tooltip: Component<TooltipProps> = (props) => {
   return (
     <Show when={delayedVisible()}>
       <div
+        data-react-grab-tooltip
         class={cn(
-          "absolute whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-sans font-medium leading-4 pointer-events-none",
+          "absolute flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-sans font-medium leading-4 pointer-events-none",
+          // A 14px key cap in the 20px-tall tooltip leaves 3px above and below
+          // it; the same 3px on its right keeps the circle evenly inset.
+          props.shortcut && "pr-[3px]",
           "bg-[var(--rg-panel-bg)] text-[var(--rg-text-primary)] [box-shadow:var(--rg-shadow)]",
           props.position === "top" && "bottom-full mb-2.5",
           props.position === "bottom" && "top-full mt-2.5",
@@ -81,8 +86,18 @@ export const Tooltip: Component<TooltipProps> = (props) => {
           shouldAnimate() && "animate-tooltip-fade-in",
         )}
         style={positionStyle()}
-        textContent={props.textContent}
-      />
+      >
+        <span textContent={props.textContent} />
+        <Show when={props.shortcut}>
+          {(shortcut) => (
+            <kbd
+              data-react-grab-tooltip-shortcut
+              class="flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-full px-[3px] bg-[var(--rg-surface-hover)] font-mono text-[10px] leading-none text-[var(--rg-text-secondary)]"
+              textContent={shortcut()}
+            />
+          )}
+        </Show>
+      </div>
     </Show>
   );
 };

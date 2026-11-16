@@ -34,7 +34,7 @@ const FEATURES: Feature[] = [
     ),
   },
   {
-    name: "Redlines",
+    name: "Spacing",
     description: (
       <>
         Size and spacing to siblings. Hold <Kbd>Alt</Kbd> to measure between two elements.

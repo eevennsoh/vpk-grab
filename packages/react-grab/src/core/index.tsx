@@ -71,7 +71,15 @@ import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
+  MOVE_TOOL_CURSOR,
   MOVE_TOOL_KEY,
+  PEN_TOOL_KEY,
+  SPACING_TOOL_KEY,
+  SPECS_TOOL_KEY,
+  TEXT_TOOL_KEY,
+  PEN_TOOL_CURSOR,
+  GRAB_TOOL_CURSOR,
+  TEXT_TOOL_CURSOR,
   SPECS_INPUT_ATTRIBUTE,
   ARROW_KEYS,
   FADE_DURATION_MS,
@@ -111,6 +119,7 @@ import {
   getModifiersFromActivationKey,
   parseActivationKey,
 } from "../utils/parse-activation-key.js";
+import { formatActivationKey } from "../utils/format-activation-key.js";
 import { isEventFromOverlay } from "../utils/is-event-from-overlay.js";
 import { REACT_GRAB_ATTRIBUTE_NAME } from "../utils/react-grab-attribute-name.js";
 import { executeOpenFileAction } from "./open-file-action.js";
@@ -389,16 +398,18 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
     const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
+    // Each tool gets its own cursor, drawn from its toolbar icon, so the page
+    // shows which tool is in hand.
     const getAnnotationToolCursor = (tool: AnnotationTool): string => {
       switch (tool) {
         case "grab":
-          return "pointer";
+          return GRAB_TOOL_CURSOR;
         case "pen":
-          return "crosshair";
+          return PEN_TOOL_CURSOR;
         case "text":
-          return "text";
+          return TEXT_TOOL_CURSOR;
         case "edit":
-          return "default";
+          return MOVE_TOOL_CURSOR;
         default: {
           const unhandledTool: never = tool;
           return unhandledTool;
@@ -2903,22 +2914,40 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
         }
-        // V picks the move tool up and puts it down, as in a design tool, so
-        // drawings can be selected without a trip to the toolbar.
-        if (
-          canHandleEditShortcut &&
-          inspect.hasAnnotations() &&
-          event.key.toLowerCase() === MOVE_TOOL_KEY &&
-          !event.repeat &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !event.shiftKey
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          handleSelectAnnotationTool("edit");
-          return;
+        // Bare keys pick the toolbar's tools up and put them down, as in a
+        // design tool, so a frozen hover state never needs a trip to the
+        // toolbar. V only means something once there is a drawing to move.
+        const isBareKeyPress =
+          !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+        if (canHandleEditShortcut && isBareKeyPress) {
+          const pressedKey = event.key.toLowerCase();
+          const runToolShortcut = (): boolean => {
+            switch (pressedKey) {
+              case SPECS_TOOL_KEY:
+                inspect.toggleSpecs();
+                return true;
+              case SPACING_TOOL_KEY:
+                inspect.toggleRedlines();
+                return true;
+              case PEN_TOOL_KEY:
+                handleSelectAnnotationTool("pen");
+                return true;
+              case TEXT_TOOL_KEY:
+                handleSelectAnnotationTool("text");
+                return true;
+              case MOVE_TOOL_KEY:
+                if (!inspect.hasAnnotations()) return false;
+                handleSelectAnnotationTool("edit");
+                return true;
+              default:
+                return false;
+            }
+          };
+          if (runToolShortcut()) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+          }
         }
         if (
           isAnnotating() &&
@@ -4491,6 +4520,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 )}
                 defaultActionId={currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID}
                 defaultActionLabel={defaultToolbarActionLabel()}
+                grabShortcut={formatActivationKey(pluginRegistry.store.options.activationKey)}
                 onSetDefaultAction={handleSetDefaultAction}
                 onToggleToolbarMenu={handleToggleToolbarMenu}
                 onToolbarMenuDismiss={dismissToolbarMenu}
