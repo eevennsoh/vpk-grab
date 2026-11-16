@@ -32,7 +32,7 @@ While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal 
 
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.6`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.7`.
 
 ### Let your agent do it
 
@@ -48,7 +48,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.6/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.7/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -64,7 +64,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.6/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.7/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -81,7 +81,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.6/react-grab-0.2.0-vpk.6.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.7/react-grab-0.2.0-vpk.7.tgz
 ```
 
 Then load it at the top of the entry file:

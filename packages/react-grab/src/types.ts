@@ -780,6 +780,7 @@ export interface InspectRendererState {
   hasAnnotations: Accessor<boolean>;
   selectedAnnotationIds: Accessor<string[]>;
   annotationMarqueeRect: Accessor<Rect | null>;
+  isEditPressing: Accessor<boolean>;
   isSpecsPinned: Accessor<boolean>;
   isSpecsPinLocked: Accessor<boolean>;
   styleOverridesVersion: Accessor<number>;

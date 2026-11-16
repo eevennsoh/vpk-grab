@@ -17,6 +17,8 @@ import {
   ANNOTATION_TEXT_LINE_HEIGHT_PX,
   INSPECT_ACCENT_COLOR,
   INSPECT_ACCENT_CONTRAST_COLOR,
+  MOVE_TOOL_CURSOR,
+  MOVE_TOOL_PRESSED_CURSOR,
   Z_INDEX_OVERLAY,
   Z_INDEX_OVERLAY_CANVAS,
 } from "../../constants.js";
@@ -34,6 +36,7 @@ interface AnnotationLayerProps {
   textDraftPosition: Position | null;
   annotationColor: string;
   isEditing: boolean;
+  isEditPressing: boolean;
   selectedAnnotationIds: string[];
   marqueeRect: Rect | null;
   onTextDraftChange: (text: string) => void;
@@ -84,8 +87,15 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
 
   // Annotations only take the pointer while they are being rearranged; the
   // rest of the time the page underneath has to stay reachable through them.
+  // They sit in the shadow root, out of reach of the page's cursor override,
+  // so they carry the Move tool's hand themselves.
   const editingStyle = (hitArea: "all" | "auto"): JSX.CSSProperties =>
-    props.isEditing ? { "pointer-events": hitArea, cursor: "move" } : { "pointer-events": "none" };
+    props.isEditing
+      ? {
+          "pointer-events": hitArea,
+          cursor: props.isEditPressing ? MOVE_TOOL_PRESSED_CURSOR : MOVE_TOOL_CURSOR,
+        }
+      : { "pointer-events": "none" };
 
   const pageTransform = () => `translate(${-scrollOffset().x}px, ${-scrollOffset().y}px)`;
   const textTop = (pageY: number) => `${pageY - ANNOTATION_TEXT_LINE_HEIGHT_PX / 2}px`;

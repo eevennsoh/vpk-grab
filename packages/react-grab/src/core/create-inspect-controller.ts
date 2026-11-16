@@ -122,6 +122,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
   const [marqueeRect, setMarqueeRect] = createSignal<Rect | null>(null);
+  const [isEditPressing, setIsEditPressing] = createSignal(false);
   const [pinnedSpecsElement, setPinnedSpecsElement] = createSignal<Element | null>(null);
   const [isSpecsPanelHovered, setIsSpecsPanelHovered] = createSignal(false);
   const [isSpecsPanelEngaged, setIsSpecsPanelEngaged] = createSignal(false);
@@ -325,6 +326,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     activeDrawing = null;
     activeMove = null;
     activeMarquee = null;
+    setIsEditPressing(false);
     setDrawingPoints([]);
     setMarqueeRect(null);
   };
@@ -390,6 +392,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     const removedIds = new Set(selectedAnnotationIds());
     if (removedIds.size === 0) return;
     activeMove = null;
+    setIsEditPressing(false);
     const before = captureAnnotations();
     setSelectedAnnotationIds([]);
     setStrokes((previousStrokes) => previousStrokes.filter((stroke) => !removedIds.has(stroke.id)));
@@ -440,6 +443,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
       startSnapshot: captureAnnotations(),
       didMove: false,
     };
+    setIsEditPressing(true);
   };
 
   // A press on empty page deselects, as it does in a design tool, and a drag
@@ -453,6 +457,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
       baseSelectionIds,
       hitBoxes: measureAnnotationHitBoxes(options.getAnnotationElements()),
     };
+    setIsEditPressing(true);
   };
 
   const updateMarquee = (marquee: ActiveMarquee, event: PointerEvent) => {
@@ -563,11 +568,13 @@ export const createInspectController = (options: InspectControllerOptions) => {
     if (activeMove && activeMove.pointerId === event.pointerId) {
       if (activeMove.didMove) recordAnnotationChange(activeMove.startSnapshot);
       activeMove = null;
+      setIsEditPressing(false);
       return;
     }
     if (activeMarquee && activeMarquee.pointerId === event.pointerId) {
       activeMarquee = null;
       setMarqueeRect(null);
+      setIsEditPressing(false);
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
@@ -602,6 +609,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     hasAnnotations,
     selectedAnnotationIds,
     marqueeRect,
+    isEditPressing,
     pinnedSpecsElement,
     pinSpecs: setPinnedSpecsElement,
     unpinSpecs,

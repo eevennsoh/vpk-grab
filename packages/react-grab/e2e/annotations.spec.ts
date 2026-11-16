@@ -79,10 +79,42 @@ test.describe("Annotations", () => {
     await expect.poll(readPageCursor).toContain("12 12, text");
 
     await toolbarAction(page, "annotate-edit").click();
-    await expect.poll(readPageCursor).toContain("12 12, move");
+    await expect.poll(readPageCursor).toContain("12 12, grab");
 
     await toolbarAction(page, "annotate-edit").click();
     await expect.poll(readPageCursor).toContain("7 7, pointer");
+  });
+
+  test("Move keeps its hand over drawings and grips while pressed", async ({ page }) => {
+    const readPageCursor = () =>
+      page.evaluate(() => document.querySelector("[data-react-grab-cursor]")?.textContent ?? "");
+    const stroke = page.locator(STROKE_SELECTOR).first();
+    const readStrokeCursor = () => stroke.evaluate((element) => getComputedStyle(element).cursor);
+
+    await toolbarAction(page, "annotate-edit").click();
+    await expect.poll(readPageCursor).toContain("12 12, grab");
+    await expect.poll(readStrokeCursor).toContain("data:image/svg+xml");
+    expect(await readStrokeCursor()).toContain("grab");
+    expect(await readStrokeCursor()).not.toContain("grabbing");
+
+    const strokeMiddle = { x: (LINE_START.x + LINE_END.x) / 2, y: LINE_START.y };
+    await page.mouse.move(strokeMiddle.x, strokeMiddle.y);
+    await page.mouse.down();
+    await expect.poll(readPageCursor).toContain("12 12, grabbing");
+    await expect.poll(readStrokeCursor).toContain("grabbing");
+    await page.mouse.move(strokeMiddle.x + DRAG_DELTA.x, strokeMiddle.y + DRAG_DELTA.y, {
+      steps: 4,
+    });
+    await expect.poll(readPageCursor).toContain("12 12, grabbing");
+    await page.mouse.up();
+    await expect.poll(readPageCursor).not.toContain("grabbing");
+    expect(await readPageCursor()).toContain("12 12, grab");
+
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.mouse.down();
+    await expect.poll(readPageCursor).toContain("12 12, grabbing");
+    await page.mouse.up();
+    await expect.poll(readPageCursor).not.toContain("grabbing");
   });
 
   test("Move and Clear leave the toolbar with the last annotation", async ({ page }) => {
@@ -477,6 +509,40 @@ test.describe("Control toggles the pen on a Mac", () => {
     await page.keyboard.press("Control");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+test.describe("Collapsing with the colors showing", () => {
+  test("the toolbar keeps its place across collapse and expand", async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    const collapseButton = page.locator("[data-react-grab-toolbar-collapse]");
+    const readCentreX = async () => {
+      const box = await getBox(page, TOOLBAR_SELECTOR);
+      return Math.round(box.x + box.width / 2);
+    };
+    // Settled: the toolbar slides into place on load and between steps.
+    const settledCentreX = async () => {
+      let previousCentreX = await readCentreX();
+      await expect
+        .poll(async () => {
+          const centreX = await readCentreX();
+          const isSettled = centreX === previousCentreX;
+          previousCentreX = centreX;
+          return isSettled;
+        })
+        .toBe(true);
+      return previousCentreX;
+    };
+
+    const startCentreX = await settledCentreX();
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await toolbarAction(page, "annotate-pen").click();
+      await expect(page.locator(ANNOTATION_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
+      await collapseButton.click();
+      expect(Math.abs((await settledCentreX()) - startCentreX)).toBeLessThanOrEqual(1);
+      await collapseButton.click();
+      expect(Math.abs((await settledCentreX()) - startCentreX)).toBeLessThanOrEqual(1);
+    }
   });
 });
 

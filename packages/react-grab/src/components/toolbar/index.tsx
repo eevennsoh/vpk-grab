@@ -532,10 +532,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
             height: expandedDimensions.height + (isVertical() ? lengthChange : 0),
           };
           lastObservedExpandedSize = { ...expandedDimensions };
+          // Collapsed, the group changes without moving anything on screen, but
+          // the expanded position still has to follow the new length: the
+          // collapsed tab and the next expand are both placed from it, and a
+          // stale one walks the toolbar off its spot every collapse.
+          recalculatePosition();
           if (isCollapsed()) return;
 
           setRevealGroupMotion(isGroupRevealed ? "revealing" : "hiding");
-          recalculatePosition();
           clearTimeout(revealGroupMotionTimeout);
           revealGroupMotionTimeout = setTimeout(
             () => setRevealGroupMotion(null),
