@@ -1,6 +1,10 @@
 import { createSignal, onCleanup, Show, type Component } from "solid-js";
 import type { CompletionViewProps } from "../../types.js";
-import { FEEDBACK_DURATION_MS, FADE_DURATION_MS } from "../../constants.js";
+import {
+  FEEDBACK_DURATION_MS,
+  FADE_DURATION_MS,
+  SCREENSHOT_THUMBNAIL_SIZE_PX,
+} from "../../constants.js";
 import { createConfirmationKeyboard } from "../../utils/create-confirmation-keyboard.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
 import { IconReturn } from "../icons/icon-return.jsx";
@@ -141,11 +145,29 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
       </Show>
       <Show when={didCopy() || !props.onDismiss}>
         <div class="contain-layout shrink-0 flex items-center gap-0.5 py-1.5 px-2 w-full h-fit">
-          <IconCheck
-            size={14}
-            aria-hidden="true"
-            class="text-[var(--rg-text-primary-85)] shrink-0"
-          />
+          <Show
+            when={props.thumbnailUrl}
+            fallback={
+              <IconCheck
+                size={14}
+                aria-hidden="true"
+                class="text-[var(--rg-text-primary-85)] shrink-0"
+              />
+            }
+          >
+            {(thumbnailUrl) => (
+              <img
+                data-react-grab-screenshot-thumbnail
+                src={thumbnailUrl()}
+                alt=""
+                class="shrink-0 mr-1 rounded-[3px] object-cover border border-[var(--rg-border-subtle)]"
+                style={{
+                  width: `${SCREENSHOT_THUMBNAIL_SIZE_PX}px`,
+                  height: `${SCREENSHOT_THUMBNAIL_SIZE_PX}px`,
+                }}
+              />
+            )}
+          </Show>
           <span
             class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-sans font-medium h-fit tabular-nums overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
             textContent={displayStatusText()}

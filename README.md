@@ -19,12 +19,13 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 
 While active, press a control's number to switch it on or off without going back to the toolbar. **Specs** and **Spacing** appear only while Grab is the tool in hand; **⌘C** (**Ctrl+C**) picks Grab back up from Pen, Text or Move.
 
-Two keys work on whatever is hovered, without clicking:
+Holding a key changes what the pointer does:
 
 | Key            | With       | What it does                                                                                                                                                                                                                      |
 | -------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hold **Shift** | Specs on   | Pins the panel to the element so the pointer can reach it. Each row gets a checkbox to switch it off and on, a value to type into, a menu of tokens and keywords, and a reset. The pin button keeps it open; **Esc** releases it. |
 | Hold **Alt**   | Spacing on | Anchors the spacing to the element. Move to any other element to read the distances between the two.                                                                                                                              |
+| **Shift**+drag | Grab       | Copies a PNG of the dragged area, with your drawings and notes, instead of the elements in it. Let go of **Shift** before the mouse to select elements again. On an address without HTTPS the image downloads instead.            |
 
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 

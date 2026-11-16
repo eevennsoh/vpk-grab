@@ -51,7 +51,7 @@ const createDefine = (isDemo: boolean) => ({
   ),
 });
 
-const alwaysBundle = [/^solid-js/, /^bippy/];
+const alwaysBundle = [/^solid-js/, /^bippy/, /^@zumer\/snapdom/];
 const createSolidBabelPlugin = () =>
   solidBabelPlugin({
     plugins: shouldInstrumentSolidSources ? [solidSourceLocationBabelPlugin] : [],

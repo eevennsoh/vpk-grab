@@ -14,6 +14,8 @@ import {
   ANNOTATION_SELECTION_PADDING_PX,
   ANNOTATION_STROKE_WIDTH_PX,
   ANNOTATION_TEXT_FONT_SIZE_PX,
+  ANNOTATION_TEXT_FONT_WEIGHT,
+  ANNOTATION_TEXT_HALO_BLURS_PX,
   ANNOTATION_TEXT_LINE_HEIGHT_PX,
   INSPECT_ACCENT_COLOR,
   INSPECT_ACCENT_CONTRAST_COLOR,
@@ -45,13 +47,14 @@ interface AnnotationLayerProps {
 }
 
 const TEXT_DRAFT_PADDING_X_PX = 4;
-// A halo in the contrast colour keeps the note legible on any page background.
-const TEXT_HALO = `0 0 2px ${INSPECT_ACCENT_CONTRAST_COLOR}, 0 0 2px ${INSPECT_ACCENT_CONTRAST_COLOR}, 0 0 1px ${INSPECT_ACCENT_CONTRAST_COLOR}`;
+const TEXT_HALO = ANNOTATION_TEXT_HALO_BLURS_PX.map(
+  (blurPx) => `0 0 ${blurPx}px ${INSPECT_ACCENT_CONTRAST_COLOR}`,
+).join(", ");
 
 const textBaseStyle = {
   "font-size": `${ANNOTATION_TEXT_FONT_SIZE_PX}px`,
   "line-height": `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
-  "font-weight": "600",
+  "font-weight": String(ANNOTATION_TEXT_FONT_WEIGHT),
 };
 
 const stopKeyPropagation = (event: KeyboardEvent) => event.stopPropagation();

@@ -190,6 +190,7 @@ interface GrabActions {
     status: SelectionLabelInstance["status"],
     errorMessage?: string,
   ) => void;
+  setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
   removeLabelInstance: (instanceId: string) => void;
   clearLabelInstances: () => void;
   showContextMenu: (position: Position, element: Element) => void;
@@ -617,6 +618,15 @@ const createGrabStore = (input: GrabStoreInput) => {
           }
         });
       }
+    },
+
+    setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => {
+      const index = store.labelInstances.findIndex((instance) => instance.id === instanceId);
+      if (index === -1) return;
+      batch(() => {
+        setStore("labelInstances", index, "statusText", statusText);
+        setStore("labelInstances", index, "thumbnailUrl", thumbnailUrl);
+      });
     },
 
     removeLabelInstance: (instanceId: string) => {

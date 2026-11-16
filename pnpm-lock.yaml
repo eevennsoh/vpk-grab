@@ -401,6 +401,9 @@ importers:
       '@react-grab/cli':
         specifier: workspace:*
         version: link:../cli
+      '@zumer/snapdom':
+        specifier: ^3.7.6
+        version: 3.7.6
       bippy:
         specifier: ^0.7.2
         version: 0.7.2(@types/react@19.2.14)(react@19.2.6)
@@ -4117,6 +4120,9 @@ packages:
     resolution: {integrity: sha512-vzwAUSHR7TaJh62JoE+6UD/HVm8fJbmMGsMBBMcHrKBIL7MF8yevlPDWVdoaDaGOsgqVZYRv9KhdT8ari0I4mg==}
     deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
     hasBin: true
+
+  '@zumer/snapdom@3.7.6':
+    resolution: {integrity: sha512-w1q0HwSM1BF/vT2aF1tvgsYbktosFtfpjGIVrZkI1vUkKL7TLmLfBSIhCNp04c4DLfafHUXusz0UXsJC1bm03g==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -11816,6 +11822,8 @@ snapshots:
       '@zed-industries/codex-acp-linux-x64': 0.10.0
       '@zed-industries/codex-acp-win32-arm64': 0.10.0
       '@zed-industries/codex-acp-win32-x64': 0.10.0
+
+  '@zumer/snapdom@3.7.6': {}
 
   abort-controller@3.0.0:
     dependencies:

@@ -43,6 +43,8 @@ import { isNextProjectRuntime } from "../utils/is-next-project-runtime.js";
 import { createNoopApi } from "./noop-api.js";
 import { createEventListenerManager } from "./events.js";
 import { runCopyFlow, type CopyFlowResult } from "./copy.js";
+import { capturePageRect } from "../utils/capture-page-rect.js";
+import { deliverPngBlob } from "../utils/deliver-png-blob.js";
 import {
   clearElementPositionCache,
   getElementAtPosition,
@@ -81,6 +83,9 @@ import {
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
   SPECS_INPUT_ATTRIBUTE,
+  SCREENSHOT_MIN_SIZE_PX,
+  SCREENSHOT_SHIFT_RELEASE_GRACE_MS,
+  SCREENSHOT_TOOL_CURSOR,
   ARROW_KEYS,
   FADE_DURATION_MS,
   FEEDBACK_DURATION_MS,
@@ -147,6 +152,7 @@ import type {
   DropdownAnchor,
   DragRect,
   ElementLabelVariant,
+  ImageDeliveryResult,
   AnnotationTool,
   ToolCycleDirection,
   InspectRendererState,
@@ -649,6 +655,18 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let componentNameDebounceTimerId: number | null = null;
     let pendingDefaultActionId: string | null = null;
     const [isPendingContextMenuSelect, setIsPendingContextMenuSelect] = createSignal(false);
+    // Holding Shift in Grab turns a drag into a screenshot of the dragged
+    // area, unless Shift is already building a multi-selection or a pending
+    // comment / context-menu pick needs an element.
+    const canTakeScreenshot = () =>
+      isActivated() &&
+      inspect.annotationTool() === "grab" &&
+      !isPromptMode() &&
+      !isShiftMultiSelecting() &&
+      !store.pendingCommentMode &&
+      !isPendingContextMenuSelect();
+    const isScreenshotMode = createMemo(() => isShiftKeyHeld() && canTakeScreenshot());
+    let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     const [pendingToolbarActionId, setPendingToolbarActionId] = createSignal<string | null>(null);
     const [debouncedElementForComponentName, setDebouncedElementForComponentName] =
       createSignal<Element | null>(null);
@@ -1442,7 +1460,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const dragPreviewElements = createMemo((): Element[] => {
       void scrollVersion();
 
-      if (!isDraggingBeyondThreshold()) return [];
+      if (!isDraggingBeyondThreshold() || isScreenshotMode()) return [];
 
       const pointer = dragPreviewPointer();
       if (!pointer) return [];
@@ -1757,10 +1775,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             isPromptMode(),
             inspect.annotationTool(),
             inspect.isEditPressing(),
+            isScreenshotMode(),
           ] as const,
-        ([activated, copying, promptMode, annotationTool]) => {
+        ([activated, copying, promptMode, annotationTool, , screenshotMode]) => {
           if (copying) {
             setCursorOverride("progress");
+          } else if (screenshotMode) {
+            setCursorOverride(SCREENSHOT_TOOL_CURSOR);
           } else if (activated && !promptMode) {
             setCursorOverride(getAnnotationToolCursor(annotationTool));
           } else {
@@ -2321,6 +2342,82 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       });
     };
 
+    // The overlay stays active (not "copying") while the image renders:
+    // leaving the active state unfreezes the page's hover state and
+    // animations, and the capture has to show what was on screen.
+    const captureScreenshot = (dragSelectionRect: DragRect, hasModifierKeyHeld: boolean) => {
+      const pageRect = createPageRectFromBounds(dragSelectionRect);
+      const annotations = { strokes: inspect.strokes(), texts: inspect.texts() };
+      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
+      let capturedBlobPromise: Promise<Blob> | null = null;
+      const getCapturedBlob = () => {
+        if (!capturedBlobPromise) {
+          const blobPromise = capturePageRect(pageRect, annotations);
+          capturedBlobPromise = blobPromise;
+          blobPromise.catch(() => {
+            if (capturedBlobPromise === blobPromise) capturedBlobPromise = null;
+          });
+        }
+        return capturedBlobPromise;
+      };
+
+      const labelBounds = createBoundsFromDragRect(pageRect);
+      clearCopyFeedbackCooldown();
+      const labelInstanceId = labelController.createInstance(
+        labelBounds,
+        "",
+        undefined,
+        "copying",
+        {
+          mouseX: labelBounds.x + labelBounds.width / 2,
+          statusText: "Capturing…",
+        },
+      );
+
+      const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
+        const blobPromise = getCapturedBlob();
+        const deliveryPromise = deliverPngBlob(blobPromise);
+        let blob: Blob;
+        try {
+          blob = await blobPromise;
+        } catch (error) {
+          deliveryPromise.catch(() => {});
+          throw new Error("Couldn't capture image", { cause: error });
+        }
+        let deliveryResult: ImageDeliveryResult;
+        try {
+          deliveryResult = await deliveryPromise;
+        } catch (error) {
+          throw new Error("Couldn't copy image", { cause: error });
+        }
+        if (signal.aborted) return CANCELLED_COPY_RESULT;
+        labelController.setImage(
+          labelInstanceId,
+          deliveryResult === "saved" ? "Image saved" : "Image copied",
+          URL.createObjectURL(blob),
+        );
+        return { status: "succeeded" };
+      };
+
+      const signal = startCopyOperation();
+      void attemptClipboardAndLabel(copyScreenshotToClipboard, [labelInstanceId], signal).then(
+        (copyResult) => {
+          if (copyResult.status === "cancelled") {
+            dismissCopyingLabels([labelInstanceId]);
+            return;
+          }
+          const didSucceed = copyResult.status === "succeeded";
+          registerCopyRetry(
+            didSucceed,
+            copyScreenshotToClipboard,
+            [labelInstanceId],
+            shouldDeactivateAfter,
+          );
+          if (didSucceed && shouldDeactivateAfter) deactivateRenderer();
+        },
+      );
+    };
+
     const getFrozenElementAtPosition = (position: Position): Element | null => {
       for (const element of store.frozenElements) {
         if (!isElementConnected(element)) continue;
@@ -2453,17 +2550,28 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const dragDistance = calculateDragDistance(clientX, clientY);
       const wasDragGesture =
         dragDistance.x > DRAG_THRESHOLD_PX || dragDistance.y > DRAG_THRESHOLD_PX;
+      const isScreenshotRelease =
+        wasDragGesture &&
+        canTakeScreenshot() &&
+        (isShiftHeld ||
+          performance.now() - lastShiftReleaseTimestampMs <= SCREENSHOT_SHIFT_RELEASE_GRACE_MS);
+      const isScreenshotSized =
+        dragDistance.x >= SCREENSHOT_MIN_SIZE_PX && dragDistance.y >= SCREENSHOT_MIN_SIZE_PX;
+      const shouldCaptureScreenshot = isScreenshotRelease && isScreenshotSized;
+      const isUndersizedScreenshot = isScreenshotRelease && !isScreenshotSized;
+      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
       // resets dragStart in the store, which would zero out the rectangle.
-      const dragSelectionRect = wasDragGesture ? calculateDragRectangle(clientX, clientY) : null;
-      const dragSelectionElements = dragSelectionRect
-        ? resolveDragSelectionAtRelease(dragSelectionRect, clientX, clientY)
-        : [];
+      const dragSelectionRect = isMarqueeRelease ? calculateDragRectangle(clientX, clientY) : null;
+      const dragSelectionElements =
+        dragSelectionRect && !shouldCaptureScreenshot
+          ? resolveDragSelectionAtRelease(dragSelectionRect, clientX, clientY)
+          : [];
 
       clearDragPreview();
 
-      if (wasDragGesture) {
+      if (isMarqueeRelease) {
         actions.endDrag();
       } else {
         actions.cancelDrag();
@@ -2472,7 +2580,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       autoScroller.stop();
       restoreHostBodyStyle("userSelect");
 
-      if (dragSelectionRect) {
+      if (dragSelectionRect && shouldCaptureScreenshot) {
+        captureScreenshot(dragSelectionRect, hasModifierKeyHeld);
+      } else if (dragSelectionRect) {
         handleDragSelection(
           dragSelectionRect,
           dragSelectionElements,
@@ -2480,7 +2590,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           isShiftHeld,
         );
       } else {
-        handleSingleClick(clientX, clientY, hasModifierKeyHeld, isShiftHeld);
+        handleSingleClick(clientX, clientY, hasModifierKeyHeld, isShiftHeld || isScreenshotRelease);
       }
     };
 
@@ -3135,6 +3245,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         if (blockEnterIfNeeded(event)) return;
 
@@ -3280,6 +3391,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.trackMeasureTarget(event.clientX, event.clientY);
           return;
         }
+        // releaseSpecsPin would keep a pin Shift is still holding, so a
+        // screenshot drag that started under one drops it outright.
+        if (
+          isDragging() &&
+          inspect.pinnedSpecsElement() !== null &&
+          !inspect.isSpecsPinLocked() &&
+          isScreenshotMode()
+        ) {
+          const dragDistance = calculateDragDistance(event.clientX, event.clientY);
+          if (dragDistance.x > DRAG_THRESHOLD_PX || dragDistance.y > DRAG_THRESHOLD_PX) {
+            inspect.unpinSpecs();
+          }
+        }
         if (isElementDetectionBlocked()) return;
         if (isTouchPointer && !isHoldingKeys() && !isActivated()) return;
         const isActiveState = isTouchPointer ? isHoldingKeys() : isActivated();
@@ -3323,7 +3447,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         // must not start a drag or a Shift multi-select under the pin. While
         // measuring, the pointer is over the far end of the measurement, not
         // the selection, so a press there must not copy either of them.
-        if (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) {
+        // The exception is a pin Shift alone is holding: the press then
+        // starts a screenshot drag, which lets go of the pin once it moves.
+        const isPressingThroughShiftPin =
+          isScreenshotMode() &&
+          !inspect.isSpecsPinLocked() &&
+          inspect.measureAnchorElement() === null;
+        if (
+          (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) &&
+          !isPressingThroughShiftPin
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
           if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
@@ -3404,6 +3537,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
         if (isModalPopoverOpen()) return;
+        // A press that went through a Shift-held specs pin and never moved
+        // far enough to drop it is a Shift+click under the pin, which the
+        // pin swallows.
+        if (isDragging() && inspect.pinnedSpecsElement() !== null) {
+          cancelActiveDrag();
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         const isActive = isRendererActive() || isSelectionInteractionLocked() || isDragging();
         const hasModifierKeyHeld = event.metaKey || event.ctrlKey;
         handlePointerUp(event.clientX, event.clientY, hasModifierKeyHeld, event.shiftKey);
@@ -4518,8 +4660,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 hierarchyMenuPosition={hierarchyMenuPosition()}
                 labelInstances={computedLabelInstances()}
                 labelInstanceAccessors={labelInstanceAccessors()}
-                dragVisible={dragVisible()}
+                dragVisible={dragVisible() && !isScreenshotMode()}
                 dragBounds={dragBounds()}
+                screenshotMarqueeBounds={
+                  dragVisible() && isScreenshotMode() ? dragBounds() : undefined
+                }
                 grabbedBoxes={computedGrabbedBoxes()}
                 mouseX={
                   store.frozenElements.length > 1

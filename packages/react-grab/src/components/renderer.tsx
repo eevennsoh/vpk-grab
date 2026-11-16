@@ -8,6 +8,7 @@ import { getPairRedlines } from "../utils/get-pair-redlines.js";
 import { getRedlineLabelClearance } from "../utils/get-redline-label-clearance.js";
 import { OverlayCanvas } from "./overlay-canvas.js";
 import { FrozenGlow } from "./frozen-glow.js";
+import { ScreenshotMarquee } from "./screenshot-marquee.js";
 import { SelectionLabel } from "./selection-label/index.js";
 import { Toolbar } from "./toolbar/index.js";
 import { ContextMenu } from "./context-menu.js";
@@ -57,6 +58,9 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
         labelInstances={props.labelInstances}
       />
       <FrozenGlow visible={props.isFrozen ?? false} />
+      <Show when={props.screenshotMarqueeBounds}>
+        {(bounds) => <ScreenshotMarquee bounds={bounds()} />}
+      </Show>
       <Show when={props.inspect}>
         {(inspect) => (
           <AnnotationLayer
@@ -149,6 +153,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 inputValue={instance().inputValue}
                 error={instance().errorMessage}
                 hideArrow={instance().hideArrow}
+                thumbnailUrl={instance().thumbnailUrl}
                 onShowContextMenu={(() => {
                   const currentInstance = instance();
                   const hasCompletedStatus =

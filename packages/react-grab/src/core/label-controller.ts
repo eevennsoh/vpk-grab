@@ -11,6 +11,7 @@ interface LabelStoreBridge {
     status: SelectionLabelInstance["status"],
     errorMessage?: string,
   ) => void;
+  setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
   removeLabelInstance: (instanceId: string) => void;
 }
 
@@ -20,6 +21,7 @@ interface CreateLabelInstanceOptions {
   elements?: Element[];
   boundsMultiple?: OverlayBounds[];
   hideArrow?: boolean;
+  statusText?: string;
 }
 
 interface PerElementLabelEntry {
@@ -39,6 +41,7 @@ interface BuildLabelInstanceOptions {
   elements?: Element[];
   boundsMultiple?: OverlayBounds[];
   hideArrow?: boolean;
+  statusText?: string;
 }
 
 interface LabelController {
@@ -55,6 +58,7 @@ interface LabelController {
   ) => string[];
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
+  setImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
   dismissInstance: (instanceId: string) => void;
   cancelAllFades: () => void;
   clearAll: () => void;
@@ -82,6 +86,7 @@ const buildLabelInstance = (options: BuildLabelInstanceOptions): SelectionLabelI
         ? mouseXOffset / boundsHalfWidth
         : undefined,
     hideArrow: options.hideArrow,
+    statusText: options.statusText,
   };
 };
 
@@ -107,8 +112,21 @@ export const createLabelController = (
     fadeTimeouts.clear();
   };
 
+  const findInstance = (instanceId: string) =>
+    getLabelInstances().find((labelInstance) => labelInstance.id === instanceId);
+
+  const revokeThumbnail = (instance: SelectionLabelInstance | undefined) => {
+    if (instance?.thumbnailUrl) URL.revokeObjectURL(instance.thumbnailUrl);
+  };
+
+  const removeInstance = (instanceId: string) => {
+    revokeThumbnail(findInstance(instanceId));
+    store.removeLabelInstance(instanceId);
+  };
+
   const clearAll = () => {
     cancelAllFades();
+    for (const instance of getLabelInstances()) revokeThumbnail(instance);
     store.clearLabelInstances();
     onClearAll?.();
   };
@@ -119,7 +137,7 @@ export const createLabelController = (
       store.updateLabelInstance(instanceId, "fading");
       const removalTimeoutId = window.setTimeout(() => {
         fadeTimeouts.delete(instanceId);
-        store.removeLabelInstance(instanceId);
+        removeInstance(instanceId);
       }, FADE_COMPLETE_BUFFER_MS);
       fadeTimeouts.set(instanceId, removalTimeoutId);
     }, FEEDBACK_DURATION_MS);
@@ -144,6 +162,7 @@ export const createLabelController = (
       elements: options?.elements,
       boundsMultiple: options?.boundsMultiple,
       hideArrow: options?.hideArrow,
+      statusText: options?.statusText,
     });
     store.addLabelInstance(instance);
     return instance.id;
@@ -187,13 +206,18 @@ export const createLabelController = (
     store.updateLabelInstance(instanceId, "copying");
   };
 
+  const setImage = (instanceId: string, statusText: string, thumbnailUrl: string) => {
+    revokeThumbnail(findInstance(instanceId));
+    store.setLabelInstanceImage(instanceId, statusText, thumbnailUrl);
+  };
+
   const dismissInstance = (instanceId: string) => {
     cancelFade(instanceId);
-    store.removeLabelInstance(instanceId);
+    removeInstance(instanceId);
   };
 
   const handleHoverChange = (instanceId: string, isHovered: boolean) => {
-    const instance = getLabelInstances().find((labelInstance) => labelInstance.id === instanceId);
+    const instance = findInstance(instanceId);
     if (!instance) return;
 
     if (isHovered) {
@@ -215,6 +239,7 @@ export const createLabelController = (
     createPerElementInstances,
     updateAfterCopy,
     markRetrying,
+    setImage,
     dismissInstance,
     cancelAllFades,
     clearAll,

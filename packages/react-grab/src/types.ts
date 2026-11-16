@@ -415,6 +415,7 @@ export interface SelectionLabelInstance {
   mouseXOffsetRatio?: number;
   errorMessage?: string;
   hideArrow?: boolean;
+  thumbnailUrl?: string;
 }
 
 export interface FrozenLabelEntry {
@@ -451,6 +452,7 @@ export interface ReactGrabRendererProps {
   labelInstanceAccessors?: SelectionLabelInstanceAccessor[];
   dragVisible?: boolean;
   dragBounds?: OverlayBounds;
+  screenshotMarqueeBounds?: OverlayBounds;
   grabbedBoxes?: Array<{
     id: string;
     bounds: OverlayBounds;
@@ -514,6 +516,26 @@ export interface Rect {
   bottom: number;
 }
 
+export interface PageRect {
+  pageX: number;
+  pageY: number;
+  width: number;
+  height: number;
+}
+
+export interface ScreenshotSize {
+  scale: number;
+  pixelWidth: number;
+  pixelHeight: number;
+}
+
+export interface AnnotationSnapshotForCapture {
+  strokes: readonly AnnotationStroke[];
+  texts: readonly AnnotationText[];
+}
+
+export type ImageDeliveryResult = "copied" | "saved";
+
 export interface DragRect {
   x: number;
   y: number;
@@ -570,6 +592,7 @@ export interface ErrorViewProps {
 
 export interface CompletionViewProps {
   statusText: string;
+  thumbnailUrl?: string;
   onDismiss?: () => void;
   onFadingChange?: (isFading: boolean) => void;
   onShowContextMenu?: () => void;
@@ -602,6 +625,7 @@ export interface SelectionLabelProps {
   hideArrow?: boolean;
   sizeText?: string;
   clearanceBelowPx?: number;
+  thumbnailUrl?: string;
 }
 
 export interface SourceLocation extends SourceInfo {

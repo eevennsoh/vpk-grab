@@ -110,6 +110,7 @@
   },
   "dependencies": {
     "@react-grab/cli": "workspace:*",
+    "@zumer/snapdom": "^3.7.6",
     "bippy": "^0.7.2"
   },
   "devDependencies": {
