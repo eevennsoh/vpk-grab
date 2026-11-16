@@ -2,7 +2,7 @@
     leaderboard row, the 404). Same value in both themes. */
 export const REACT_GRAB_PINK = "#fc4efd";
 
-export const VPK_GRAB_VERSION = "0.2.0-vpk.7";
+export const VPK_GRAB_VERSION = "0.2.0-vpk.8";
 export const VPK_GRAB_REPOSITORY_URL = "https://github.com/eevennsoh/vpk-grab";
 export const VPK_GRAB_INSTALL_DOCS_URL = `${VPK_GRAB_REPOSITORY_URL}#install`;
 export const VPK_GRAB_AGENT_INSTALL_PROMPT =
