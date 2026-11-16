@@ -527,6 +527,8 @@ export interface ScreenshotSize {
   scale: number;
   pixelWidth: number;
   pixelHeight: number;
+  outputScaleX: number;
+  outputScaleY: number;
 }
 
 export interface AnnotationSnapshotForCapture {

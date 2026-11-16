@@ -10,6 +10,7 @@ import {
   SHIFT_LABEL_SETTLE_DELAY_MS,
   SHIFT_PENDING_HOVER_STEP_COUNT,
 } from "./constants.js";
+import { getImageWrites, installClipboardRecorder } from "./screenshot-fixture.js";
 
 test.describe("Shift Multi-Select", () => {
   test.describe.configure({ mode: "serial" });
@@ -788,7 +789,10 @@ test.describe("Shift Multi-Select", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
   });
 
-  test("should extend existing drag selection with shift+click", async ({ reactGrab }) => {
+  test("should not extend a shift+drag screenshot with a later shift+click", async ({
+    reactGrab,
+  }) => {
+    await installClipboardRecorder(reactGrab.page);
     await reactGrab.activate();
 
     const firstItem = reactGrab.page.locator("[data-testid='todo-list'] li span").nth(0);
@@ -812,13 +816,14 @@ test.describe("Shift Multi-Select", () => {
       { steps: 8 },
     );
     await reactGrab.page.mouse.up();
-    await reactGrab.page.waitForTimeout(150);
+
+    await expect.poll(() => getImageWrites(reactGrab.page)).toHaveLength(1);
+    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
 
     await reactGrab.page.mouse.click(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2);
-    await reactGrab.page.waitForTimeout(150);
-
     await reactGrab.page.keyboard.up("Shift");
 
-    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    expect(await reactGrab.getClipboardContent()).not.toContain("TodoItem");
+    expect((await reactGrab.getState()).isActive).toBe(false);
   });
 });

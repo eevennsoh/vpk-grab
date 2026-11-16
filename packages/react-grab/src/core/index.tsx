@@ -152,7 +152,6 @@ import type {
   DropdownAnchor,
   DragRect,
   ElementLabelVariant,
-  ImageDeliveryResult,
   AnnotationTool,
   ToolCycleDirection,
   InspectRendererState,
@@ -241,6 +240,7 @@ interface CopyRetryEntry {
   operation: (signal: AbortSignal) => Promise<CopyFlowResult>;
   siblingIds: Set<string>;
   shouldDeactivateAfter: boolean;
+  rerun?: () => void;
 }
 
 const CANCELLED_COPY_RESULT: CopyFlowResult = {
@@ -667,6 +667,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !isPendingContextMenuSelect();
     const isScreenshotMode = createMemo(() => isShiftKeyHeld() && canTakeScreenshot());
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
+    let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
     const [pendingToolbarActionId, setPendingToolbarActionId] = createSignal<string | null>(null);
     const [debouncedElementForComponentName, setDebouncedElementForComponentName] =
       createSignal<Element | null>(null);
@@ -856,6 +857,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[],
       shouldDeactivateAfter: boolean,
+      rerun?: () => void,
     ) => {
       if (didSucceed) {
         for (const labelInstanceId of labelInstanceIds) {
@@ -868,6 +870,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         operation: clipboardOperation,
         siblingIds: new Set(labelInstanceIds),
         shouldDeactivateAfter,
+        rerun,
       };
       for (const labelInstanceId of labelInstanceIds) {
         retryCopyByInstanceId.set(labelInstanceId, entry);
@@ -931,6 +934,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       for (const labelInstanceId of idsToRetry) {
         labelController.markRetrying(labelInstanceId);
         retryCopyByInstanceId.delete(labelInstanceId);
+      }
+      // A screenshot has to re-capture with the overlay still active and the
+      // page frozen, as its first attempt did, so it skips the copying state.
+      if (entry.rerun) {
+        entry.rerun();
+        return;
       }
       // Route through the full copy path (not just the clipboard attempt) so a
       // recovered copy runs the same completion side effects as a first-try
@@ -2178,6 +2187,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const shouldPreserveKeyboardSelection = keyboardSelection.selectedElement() !== null;
       actions.startDrag({ x: clientX, y: clientY }, isShiftHeld || shouldPreserveKeyboardSelection);
+      dragStartTimestampMs = performance.now();
       actions.setPointer({ x: clientX, y: clientY });
       setHostBodyStyle("userSelect", "none");
 
@@ -2376,46 +2386,54 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
         const blobPromise = getCapturedBlob();
-        const deliveryPromise = deliverPngBlob(blobPromise);
-        let blob: Blob;
-        try {
-          blob = await blobPromise;
-        } catch (error) {
-          deliveryPromise.catch(() => {});
-          throw new Error("Couldn't capture image", { cause: error });
+        const [blobOutcome, deliveryOutcome] = await Promise.allSettled([
+          blobPromise,
+          deliverPngBlob(blobPromise),
+        ]);
+        if (blobOutcome.status === "rejected") {
+          throw new Error("Couldn't capture image", { cause: blobOutcome.reason });
         }
-        let deliveryResult: ImageDeliveryResult;
-        try {
-          deliveryResult = await deliveryPromise;
-        } catch (error) {
-          throw new Error("Couldn't copy image", { cause: error });
+        if (deliveryOutcome.status === "rejected") {
+          throw new Error("Couldn't copy image", { cause: deliveryOutcome.reason });
         }
         if (signal.aborted) return CANCELLED_COPY_RESULT;
         labelController.setImage(
           labelInstanceId,
-          deliveryResult === "saved" ? "Image saved" : "Image copied",
-          URL.createObjectURL(blob),
+          deliveryOutcome.value === "saved" ? "Image saved" : "Image copied",
+          blobOutcome.value,
         );
         return { status: "succeeded" };
       };
 
-      const signal = startCopyOperation();
-      void attemptClipboardAndLabel(copyScreenshotToClipboard, [labelInstanceId], signal).then(
-        (copyResult) => {
-          if (copyResult.status === "cancelled") {
-            dismissCopyingLabels([labelInstanceId]);
-            return;
-          }
-          const didSucceed = copyResult.status === "succeeded";
-          registerCopyRetry(
-            didSucceed,
-            copyScreenshotToClipboard,
-            [labelInstanceId],
-            shouldDeactivateAfter,
-          );
-          if (didSucceed && shouldDeactivateAfter) deactivateRenderer();
-        },
-      );
+      // A capture finishing late must not end something the user has started
+      // since releasing the pointer.
+      const hasNewerInteraction = (signal: AbortSignal) =>
+        signal.aborted || isDragging() || isShiftMultiSelecting() || isPromptMode();
+
+      const runScreenshotCopy = () => {
+        const signal = startCopyOperation();
+        void attemptClipboardAndLabel(copyScreenshotToClipboard, [labelInstanceId], signal).then(
+          (copyResult) => {
+            if (copyResult.status === "cancelled") {
+              dismissCopyingLabels([labelInstanceId]);
+              return;
+            }
+            const didSucceed = copyResult.status === "succeeded";
+            registerCopyRetry(
+              didSucceed,
+              copyScreenshotToClipboard,
+              [labelInstanceId],
+              shouldDeactivateAfter,
+              runScreenshotCopy,
+            );
+            if (didSucceed && shouldDeactivateAfter && !hasNewerInteraction(signal)) {
+              deactivateRenderer();
+            }
+          },
+        );
+      };
+
+      runScreenshotCopy();
     };
 
     const getFrozenElementAtPosition = (position: Position): Element | null => {
@@ -2550,15 +2568,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const dragDistance = calculateDragDistance(clientX, clientY);
       const wasDragGesture =
         dragDistance.x > DRAG_THRESHOLD_PX || dragDistance.y > DRAG_THRESHOLD_PX;
-      const isScreenshotRelease =
-        wasDragGesture &&
-        canTakeScreenshot() &&
-        (isShiftHeld ||
-          performance.now() - lastShiftReleaseTimestampMs <= SCREENSHOT_SHIFT_RELEASE_GRACE_MS);
+      const canReleaseAsScreenshot = wasDragGesture && canTakeScreenshot();
       const isScreenshotSized =
         dragDistance.x >= SCREENSHOT_MIN_SIZE_PX && dragDistance.y >= SCREENSHOT_MIN_SIZE_PX;
-      const shouldCaptureScreenshot = isScreenshotRelease && isScreenshotSized;
-      const isUndersizedScreenshot = isScreenshotRelease && !isScreenshotSized;
+      const didReleaseShiftDuringGrace =
+        lastShiftReleaseTimestampMs >= dragStartTimestampMs &&
+        performance.now() - lastShiftReleaseTimestampMs <= SCREENSHOT_SHIFT_RELEASE_GRACE_MS;
+      const shouldCaptureScreenshot =
+        canReleaseAsScreenshot && isScreenshotSized && (isShiftHeld || didReleaseShiftDuringGrace);
+      const isUndersizedScreenshot = canReleaseAsScreenshot && isShiftHeld && !isScreenshotSized;
       const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
@@ -2590,7 +2608,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           isShiftHeld,
         );
       } else {
-        handleSingleClick(clientX, clientY, hasModifierKeyHeld, isShiftHeld || isScreenshotRelease);
+        handleSingleClick(clientX, clientY, hasModifierKeyHeld, isShiftHeld);
       }
     };
 

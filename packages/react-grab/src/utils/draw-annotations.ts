@@ -14,7 +14,8 @@ export const drawAnnotations = (
   context: CanvasRenderingContext2D,
   annotations: AnnotationSnapshotForCapture,
   pageRect: Rect,
-  scale: number,
+  scaleX: number,
+  scaleY: number,
 ): void => {
   context.save();
   context.font = `${ANNOTATION_TEXT_FONT_WEIGHT} ${ANNOTATION_TEXT_FONT_SIZE_PX}px ${ANNOTATION_TEXT_FONT_FAMILY}`;
@@ -23,7 +24,7 @@ export const drawAnnotations = (
     pageRect,
     (annotationText) => context.measureText(annotationText.text).width,
   );
-  context.scale(scale, scale);
+  context.scale(scaleX, scaleY);
   context.translate(-pageRect.left, -pageRect.top);
 
   for (const stroke of visibleAnnotations.strokes) {
@@ -38,7 +39,7 @@ export const drawAnnotations = (
   for (const annotationText of visibleAnnotations.texts) {
     context.fillStyle = annotationText.color;
     for (const haloBlurPx of ANNOTATION_TEXT_HALO_BLURS_PX) {
-      context.shadowBlur = haloBlurPx * scale;
+      context.shadowBlur = haloBlurPx * Math.min(scaleX, scaleY);
       context.fillText(annotationText.text, annotationText.x, annotationText.y);
     }
     context.shadowBlur = 0;

@@ -8,9 +8,13 @@ export const getScreenshotSize = (
 ): ScreenshotSize => {
   const longestEdgePx = Math.max(widthPx, heightPx, 1);
   const scale = Math.min(Math.max(devicePixelRatio, 1), SCREENSHOT_MAX_EDGE_PX / longestEdgePx);
+  const pixelWidth = Math.max(1, Math.round(widthPx * scale));
+  const pixelHeight = Math.max(1, Math.round(heightPx * scale));
   return {
     scale,
-    pixelWidth: Math.max(1, Math.round(widthPx * scale)),
-    pixelHeight: Math.max(1, Math.round(heightPx * scale)),
+    pixelWidth,
+    pixelHeight,
+    outputScaleX: widthPx > 0 ? pixelWidth / widthPx : scale,
+    outputScaleY: heightPx > 0 ? pixelHeight / heightPx : scale,
   };
 };

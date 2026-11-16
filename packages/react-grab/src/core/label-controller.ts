@@ -58,7 +58,7 @@ interface LabelController {
   ) => string[];
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
-  setImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
+  setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
   dismissInstance: (instanceId: string) => void;
   cancelAllFades: () => void;
   clearAll: () => void;
@@ -206,9 +206,11 @@ export const createLabelController = (
     store.updateLabelInstance(instanceId, "copying");
   };
 
-  const setImage = (instanceId: string, statusText: string, thumbnailUrl: string) => {
-    revokeThumbnail(findInstance(instanceId));
-    store.setLabelInstanceImage(instanceId, statusText, thumbnailUrl);
+  const setImage = (instanceId: string, statusText: string, imageBlob: Blob) => {
+    const instance = findInstance(instanceId);
+    if (!instance) return;
+    revokeThumbnail(instance);
+    store.setLabelInstanceImage(instanceId, statusText, URL.createObjectURL(imageBlob));
   };
 
   const dismissInstance = (instanceId: string) => {

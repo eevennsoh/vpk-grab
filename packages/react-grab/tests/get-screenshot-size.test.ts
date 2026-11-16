@@ -4,7 +4,13 @@ import { getScreenshotSize } from "../src/utils/get-screenshot-size.js";
 
 describe("getScreenshotSize", () => {
   it("renders at the device pixel ratio while the longest edge fits", () => {
-    expect(getScreenshotSize(300, 200, 2)).toEqual({ scale: 2, pixelWidth: 600, pixelHeight: 400 });
+    expect(getScreenshotSize(300, 200, 2)).toEqual({
+      scale: 2,
+      pixelWidth: 600,
+      pixelHeight: 400,
+      outputScaleX: 2,
+      outputScaleY: 2,
+    });
   });
 
   it("never renders below one pixel per CSS pixel on low-density screens", () => {
@@ -12,6 +18,8 @@ describe("getScreenshotSize", () => {
       scale: 1,
       pixelWidth: 300,
       pixelHeight: 200,
+      outputScaleX: 1,
+      outputScaleY: 1,
     });
   });
 
@@ -33,6 +41,18 @@ describe("getScreenshotSize", () => {
       scale: 1.5,
       pixelWidth: 16,
       pixelHeight: 1,
+      outputScaleX: 16 / 10.4,
+      outputScaleY: 5,
     });
+  });
+
+  it("gives each axis its own output scale once rounding makes them differ", () => {
+    const size = getScreenshotSize(8, 5000, 1);
+    expect(size.pixelWidth).toBe(3);
+    expect(size.pixelHeight).toBe(SCREENSHOT_MAX_EDGE_PX);
+    expect(size.outputScaleX).toBe(3 / 8);
+    expect(size.outputScaleY).toBe(SCREENSHOT_MAX_EDGE_PX / 5000);
+    expect(size.outputScaleX * 8).toBe(size.pixelWidth);
+    expect(size.outputScaleY * 5000).toBe(size.pixelHeight);
   });
 });

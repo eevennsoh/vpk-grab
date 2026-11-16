@@ -1,8 +1,17 @@
 // Shift+drag in the Grab tool copies a PNG of the dragged page area instead
-// of the elements in it. Headless clipboards cannot be read back as images,
-// so the page's navigator.clipboard.write is recorded and the PNG decoded.
+// of the elements in it.
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
+import {
+  findColorInLastImage,
+  getClipboardWriteCallCount,
+  getCopyEventCount,
+  getImageWrites,
+  getUnhandledRejections,
+  installClipboardRecorder,
+  openClipboardGate,
+  sampleLastImagePixel,
+} from "./screenshot-fixture.js";
 import {
   PINNED_PANEL_SELECTOR,
   getCenter,
@@ -13,14 +22,21 @@ import {
 
 const TODO_ITEM_SELECTOR = "[data-testid='todo-list'] li span";
 const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
+const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
+const TEXT_INPUT_SELECTOR = "[data-react-grab-annotation-input]";
+const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
 const MARQUEE_SELECTOR = "[data-react-grab-screenshot-marquee]";
 const MARQUEE_SIZE_SELECTOR = "[data-react-grab-screenshot-size]";
 const COMPLETION_SELECTOR = "[data-react-grab-completion]";
+const ERROR_SELECTOR = "[data-react-grab-error]";
+const RETRY_SELECTOR = "[data-react-grab-retry]";
 const THUMBNAIL_SELECTOR = "[data-react-grab-screenshot-thumbnail]";
 const CAPTURE_START = { x: 250, y: 280 };
 const CAPTURE_END = { x: 610, y: 380 };
 const LINE_START = { x: 300, y: 320 };
 const LINE_END = { x: 520, y: 320 };
+const NOTE_POSITION = { x: 300, y: 330 };
+const NOTE_TEXT = "Check";
 const DRAG_STEPS = 8;
 const UNDERSIZED_DRAG_PX = 4;
 const DRAG_OUTSET_PX = 20;
@@ -30,86 +46,34 @@ const NO_IMAGE_SETTLE_MS = 600;
 const STROKE_RED_MIN = 180;
 const STROKE_GREEN_MAX = 140;
 const STROKE_BLUE_MAX = 110;
+// Below the overlay host's maximum z-index, above everything on the page.
+const INJECTED_BLOCK_Z_INDEX = "2147483000";
+const COLOR_BLOCK_PAGE_LEFT = 300;
+const COLOR_BLOCK_PAGE_TOP = 300;
+const COLOR_BLOCK_SIZE = { width: 240, height: 100 };
+const COLOR_BLOCK_INNER_OFFSET = { x: 60, y: 30 };
+const COLOR_BLOCK_INNER_SIZE = { width: 80, height: 40 };
+const COLOR_BLOCK_CAPTURE_OUTSET = { x: 20, y: 10 };
+const COLOR_BLOCK_OUTER_COLOR = { red: 20, green: 90, blue: 230 };
+const COLOR_BLOCK_INNER_COLOR = { red: 20, green: 200, blue: 90 };
+const TOOLBAR_COVER_COLOR = { red: 220, green: 0, blue: 200 };
+const TOOLBAR_COVER_OUTSET_PX = 60;
+const TOOLBAR_CAPTURE_OUTSET = { x: 35, y: 36 };
+const TOOLBAR_CAPTURE_END_OFFSET = { x: 15, y: 14 };
+const SCROLLED_PAGE_Y = 1200;
+// Samples sit this far inside or outside an edge, clear of antialiasing.
+const EDGE_SAMPLE_INSET_PX = 3;
+const SOLID_COLOR_TOLERANCE = 6;
+const NOTE_COLOR_TOLERANCE = 40;
+const NOTE_POSITION_TOLERANCE_PX = 4;
+const NOTE_MIN_MATCHING_PIXELS = 10;
 
-interface RecordedImageWrite {
-  types: string[];
+interface ClientBox {
+  x: number;
+  y: number;
   width: number;
   height: number;
 }
-
-interface ScreenshotRecorder {
-  imageWrites: RecordedImageWrite[];
-  imageBlobs: Blob[];
-  copyEventCount: number;
-}
-
-interface ScreenshotRecorderWindow extends Window {
-  __screenshotRecorder?: ScreenshotRecorder;
-}
-
-const installClipboardRecorder = (page: Page) =>
-  page.evaluate(() => {
-    const recorderWindow: ScreenshotRecorderWindow = window;
-    const recorder: ScreenshotRecorder = { imageWrites: [], imageBlobs: [], copyEventCount: 0 };
-    recorderWindow.__screenshotRecorder = recorder;
-    document.addEventListener(
-      "copy",
-      () => {
-        recorder.copyEventCount += 1;
-      },
-      { capture: true },
-    );
-    navigator.clipboard.write = async (items: ClipboardItem[]) => {
-      for (const item of items) {
-        const blob = await item.getType("image/png");
-        const bitmap = await createImageBitmap(blob);
-        recorder.imageBlobs.push(blob);
-        recorder.imageWrites.push({
-          types: [...item.types],
-          width: bitmap.width,
-          height: bitmap.height,
-        });
-      }
-    };
-  });
-
-const getImageWrites = (page: Page) =>
-  page.evaluate(() => {
-    const recorderWindow: ScreenshotRecorderWindow = window;
-    return recorderWindow.__screenshotRecorder?.imageWrites ?? [];
-  });
-
-const getCopyEventCount = (page: Page) =>
-  page.evaluate(() => {
-    const recorderWindow: ScreenshotRecorderWindow = window;
-    return recorderWindow.__screenshotRecorder?.copyEventCount ?? 0;
-  });
-
-const sampleLastImagePixel = (page: Page, cssX: number, cssY: number, cssWidth: number) =>
-  page.evaluate(
-    async ({ x, y, width }) => {
-      const recorderWindow: ScreenshotRecorderWindow = window;
-      const blobs = recorderWindow.__screenshotRecorder?.imageBlobs ?? [];
-      const blob = blobs[blobs.length - 1];
-      if (!blob) return null;
-      const bitmap = await createImageBitmap(blob);
-      const scale = bitmap.width / width;
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const context = canvas.getContext("2d");
-      if (!context) return null;
-      context.drawImage(bitmap, 0, 0);
-      const [red, green, blue] = context.getImageData(
-        Math.round(x * scale),
-        Math.round(y * scale),
-        1,
-        1,
-      ).data;
-      return { red, green, blue };
-    },
-    { x: cssX, y: cssY, width: cssWidth },
-  );
 
 const getExpectedPixelSize = (page: Page, width: number, height: number) =>
   page.evaluate(
@@ -146,6 +110,128 @@ const getTodoItemBox = async (page: Page, index: number) => {
   const box = await page.locator(TODO_ITEM_SELECTOR).nth(index).boundingBox();
   if (!box) throw new Error(`No box for todo item ${index}`);
   return box;
+};
+
+const injectColorBlock = (page: Page, pageTop: number) =>
+  page.evaluate(
+    ({ top, left, size, innerOffset, innerSize, outerColor, innerColor, zIndex }) => {
+      const toCss = (color: { red: number; green: number; blue: number }) =>
+        `rgb(${color.red}, ${color.green}, ${color.blue})`;
+      const outerBlock = document.createElement("div");
+      Object.assign(outerBlock.style, {
+        position: "absolute",
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
+        background: toCss(outerColor),
+        zIndex,
+      });
+      const innerBlock = document.createElement("div");
+      Object.assign(innerBlock.style, {
+        position: "absolute",
+        left: `${innerOffset.x}px`,
+        top: `${innerOffset.y}px`,
+        width: `${innerSize.width}px`,
+        height: `${innerSize.height}px`,
+        background: toCss(innerColor),
+      });
+      outerBlock.appendChild(innerBlock);
+      document.body.appendChild(outerBlock);
+      const toBox = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      };
+      return { outerBox: toBox(outerBlock), innerBox: toBox(innerBlock) };
+    },
+    {
+      top: pageTop,
+      left: COLOR_BLOCK_PAGE_LEFT,
+      size: COLOR_BLOCK_SIZE,
+      innerOffset: COLOR_BLOCK_INNER_OFFSET,
+      innerSize: COLOR_BLOCK_INNER_SIZE,
+      outerColor: COLOR_BLOCK_OUTER_COLOR,
+      innerColor: COLOR_BLOCK_INNER_COLOR,
+      zIndex: INJECTED_BLOCK_Z_INDEX,
+    },
+  );
+
+const injectFixedCover = (page: Page, box: ClientBox) =>
+  page.evaluate(
+    ({ coverBox, color, zIndex }) => {
+      const cover = document.createElement("div");
+      Object.assign(cover.style, {
+        position: "fixed",
+        left: `${coverBox.x}px`,
+        top: `${coverBox.y}px`,
+        width: `${coverBox.width}px`,
+        height: `${coverBox.height}px`,
+        background: `rgb(${color.red}, ${color.green}, ${color.blue})`,
+        zIndex,
+      });
+      document.body.appendChild(cover);
+    },
+    { coverBox: box, color: TOOLBAR_COVER_COLOR, zIndex: INJECTED_BLOCK_Z_INDEX },
+  );
+
+// The captured inner block must sit exactly where it is on screen, and the
+// pixels just past its corners must be the outer block's colour.
+const expectColorBlockInLastImage = async (
+  page: Page,
+  innerBox: ClientBox,
+  captureStart: { x: number; y: number },
+  captureWidth: number,
+) => {
+  const innerLeft = innerBox.x - captureStart.x;
+  const innerTop = innerBox.y - captureStart.y;
+  const innerRight = innerLeft + innerBox.width;
+  const innerBottom = innerTop + innerBox.height;
+  const samples = [
+    { x: innerLeft + EDGE_SAMPLE_INSET_PX, y: innerTop + EDGE_SAMPLE_INSET_PX, isInner: true },
+    { x: innerLeft - EDGE_SAMPLE_INSET_PX, y: innerTop - EDGE_SAMPLE_INSET_PX, isInner: false },
+    { x: innerRight - EDGE_SAMPLE_INSET_PX, y: innerBottom - EDGE_SAMPLE_INSET_PX, isInner: true },
+    { x: innerRight + EDGE_SAMPLE_INSET_PX, y: innerBottom + EDGE_SAMPLE_INSET_PX, isInner: false },
+  ];
+  for (const sample of samples) {
+    const pixel = await sampleLastImagePixel(page, sample.x, sample.y, captureWidth);
+    const expectedColor = sample.isInner ? COLOR_BLOCK_INNER_COLOR : COLOR_BLOCK_OUTER_COLOR;
+    expect(pixel).not.toBeNull();
+    expect(Math.abs(pixel!.red - expectedColor.red)).toBeLessThanOrEqual(SOLID_COLOR_TOLERANCE);
+    expect(Math.abs(pixel!.green - expectedColor.green)).toBeLessThanOrEqual(SOLID_COLOR_TOLERANCE);
+    expect(Math.abs(pixel!.blue - expectedColor.blue)).toBeLessThanOrEqual(SOLID_COLOR_TOLERANCE);
+  }
+
+  const innerMatch = await findColorInLastImage(
+    page,
+    { x: 0, y: 0, width: captureWidth, height: Number.MAX_SAFE_INTEGER },
+    COLOR_BLOCK_INNER_COLOR,
+    SOLID_COLOR_TOLERANCE,
+    captureWidth,
+  );
+  expect(innerMatch).not.toBeNull();
+  expect(innerMatch!.left).toBeCloseTo(innerLeft, 0);
+  expect(innerMatch!.top).toBeCloseTo(innerTop, 0);
+  expect(innerMatch!.right).toBeCloseTo(innerRight, 0);
+  expect(innerMatch!.bottom).toBeCloseTo(innerBottom, 0);
+};
+
+const captureAroundColorBlock = async (page: Page, outerBox: ClientBox) => {
+  const captureStart = {
+    x: outerBox.x - COLOR_BLOCK_CAPTURE_OUTSET.x,
+    y: outerBox.y - COLOR_BLOCK_CAPTURE_OUTSET.y,
+  };
+  const captureEnd = {
+    x: outerBox.x + outerBox.width + COLOR_BLOCK_CAPTURE_OUTSET.x,
+    y: outerBox.y + outerBox.height + COLOR_BLOCK_CAPTURE_OUTSET.y,
+  };
+  await shiftDrag(page, captureStart, captureEnd);
+  await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+  return { captureStart, captureWidth: captureEnd.x - captureStart.x };
+};
+
+const parseRgb = (cssColor: string) => {
+  const [red, green, blue] = (cssColor.match(/\d+/g) ?? []).map(Number);
+  return { red, green, blue };
 };
 
 test.describe("Screenshot capture", () => {
@@ -345,5 +431,195 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.up("Shift");
 
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+  });
+  test("the image shows page pixels at their on-screen position and scale", async ({ page }) => {
+    const { outerBox, innerBox } = await injectColorBlock(page, COLOR_BLOCK_PAGE_TOP);
+    const { captureStart, captureWidth } = await captureAroundColorBlock(page, outerBox);
+    await expectColorBlockInLastImage(page, innerBox, captureStart, captureWidth);
+  });
+
+  test("the image follows the page after it has been scrolled", async ({ page }) => {
+    await page.evaluate((scrollY) => window.scrollTo(0, scrollY), SCROLLED_PAGE_Y);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(SCROLLED_PAGE_Y);
+    const { outerBox, innerBox } = await injectColorBlock(
+      page,
+      SCROLLED_PAGE_Y + COLOR_BLOCK_PAGE_TOP,
+    );
+    expect(outerBox.y).toBe(COLOR_BLOCK_PAGE_TOP);
+
+    const { captureStart, captureWidth } = await captureAroundColorBlock(page, outerBox);
+    await expectColorBlockInLastImage(page, innerBox, captureStart, captureWidth);
+  });
+
+  test("the toolbar does not appear in the image", async ({ reactGrab, page }) => {
+    const toolbarBox = await reactGrab.getOverlayHost().locator(TOOLBAR_SELECTOR).boundingBox();
+    if (!toolbarBox) throw new Error("No toolbar box");
+    await injectFixedCover(page, {
+      x: toolbarBox.x - TOOLBAR_COVER_OUTSET_PX,
+      y: toolbarBox.y - TOOLBAR_COVER_OUTSET_PX,
+      width: toolbarBox.width + TOOLBAR_COVER_OUTSET_PX * 2,
+      height: toolbarBox.height + TOOLBAR_COVER_OUTSET_PX,
+    });
+    const captureStart = {
+      x: toolbarBox.x - TOOLBAR_CAPTURE_OUTSET.x,
+      y: toolbarBox.y - TOOLBAR_CAPTURE_OUTSET.y,
+    };
+    const captureEnd = {
+      x: toolbarBox.x + toolbarBox.width + TOOLBAR_CAPTURE_END_OFFSET.x,
+      y: toolbarBox.y + TOOLBAR_CAPTURE_END_OFFSET.y,
+    };
+    const captureWidth = captureEnd.x - captureStart.x;
+
+    await shiftDrag(page, captureStart, captureEnd);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+
+    const coveredToolbarMatch = await findColorInLastImage(
+      page,
+      {
+        x: toolbarBox.x - captureStart.x,
+        y: toolbarBox.y - captureStart.y,
+        width: toolbarBox.width,
+        height: captureEnd.y - toolbarBox.y,
+      },
+      TOOLBAR_COVER_COLOR,
+      SOLID_COLOR_TOLERANCE,
+      captureWidth,
+    );
+    expect(coveredToolbarMatch).not.toBeNull();
+    expect(coveredToolbarMatch!.pixelCount).toBeGreaterThan(0);
+    expect(coveredToolbarMatch!.matchCount).toBe(coveredToolbarMatch!.pixelCount);
+  });
+
+  test("a text note inside the area is drawn where it shows on screen", async ({
+    reactGrab,
+    page,
+  }) => {
+    const textButton = page.locator('[data-react-grab-toolbar-action="annotate-text"]');
+    await textButton.click();
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
+    await expect(page.locator(TEXT_INPUT_SELECTOR)).toBeFocused();
+    await page.keyboard.type(NOTE_TEXT);
+    await page.keyboard.press("Enter");
+    const note = reactGrab.getOverlayHost().locator(TEXT_SELECTOR);
+    await expect(note).toHaveText(NOTE_TEXT);
+    await textButton.click();
+
+    const noteBox = await note.boundingBox();
+    if (!noteBox) throw new Error("No note box");
+    const noteColor = parseRgb(
+      await note.evaluate((noteElement) => getComputedStyle(noteElement).color),
+    );
+    const captureWidth = CAPTURE_END.x - CAPTURE_START.x;
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+
+    const noteMatch = await findColorInLastImage(
+      page,
+      { x: 0, y: 0, width: captureWidth, height: CAPTURE_END.y - CAPTURE_START.y },
+      noteColor,
+      NOTE_COLOR_TOLERANCE,
+      captureWidth,
+    );
+    expect(noteMatch).not.toBeNull();
+    expect(noteMatch!.matchCount).toBeGreaterThan(NOTE_MIN_MATCHING_PIXELS);
+    const noteLeft = noteBox.x - CAPTURE_START.x;
+    const noteTop = noteBox.y - CAPTURE_START.y;
+    expect(noteMatch!.left).toBeGreaterThanOrEqual(noteLeft - NOTE_POSITION_TOLERANCE_PX);
+    expect(noteMatch!.left).toBeLessThanOrEqual(noteLeft + NOTE_POSITION_TOLERANCE_PX);
+    expect(noteMatch!.top).toBeGreaterThanOrEqual(noteTop - NOTE_POSITION_TOLERANCE_PX);
+    expect(noteMatch!.right).toBeLessThanOrEqual(
+      noteLeft + noteBox.width + NOTE_POSITION_TOLERANCE_PX,
+    );
+    expect(noteMatch!.right).toBeGreaterThanOrEqual(
+      noteLeft + noteBox.width - NOTE_POSITION_TOLERANCE_PX * 2,
+    );
+    expect(noteMatch!.bottom).toBeLessThanOrEqual(
+      noteTop + noteBox.height + NOTE_POSITION_TOLERANCE_PX,
+    );
+  });
+
+  test("a rejected clipboard write shows the copy error without an unhandled rejection", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await installClipboardRecorder(page, { shouldReject: true });
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+    await expect(reactGrab.getOverlayHost().locator(ERROR_SELECTOR)).toContainText(
+      "Couldn't copy image",
+    );
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("retrying a failed screenshot keeps the overlay out of the copying state", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page, { shouldReject: true });
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    const overlayHost = reactGrab.getOverlayHost();
+    await expect(overlayHost.locator(ERROR_SELECTOR)).toContainText("Couldn't copy image");
+
+    await installClipboardRecorder(page, { isGated: true });
+    await overlayHost.locator(RETRY_SELECTOR).click();
+    await expect.poll(() => getClipboardWriteCallCount(page)).toBe(1);
+    const stateWhileRetrying = await reactGrab.getState();
+    expect(stateWhileRetrying.isActive).toBe(true);
+    expect(stateWhileRetrying.isCopying).toBe(false);
+
+    await openClipboardGate(page);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    await expect(overlayHost.locator(COMPLETION_SELECTOR)).toContainText("Image copied");
+  });
+
+  test("a Shift+click made while a capture is in flight survives the capture finishing", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page, { isGated: true });
+    const firstBox = await getTodoItemBox(page, 0);
+
+    await page.keyboard.down("Shift");
+    await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+    await page.mouse.up();
+    await expect.poll(() => getClipboardWriteCallCount(page)).toBe(1);
+
+    await page.mouse.click(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
+    await openClipboardGate(page);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    await expect(reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR)).toContainText(
+      "Image copied",
+    );
+    expect((await reactGrab.getState()).isActive).toBe(true);
+
+    await page.keyboard.up("Shift");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+  });
+
+  test("Shift let go just before an undersized drag ends copies it like a plain drag", async ({
+    reactGrab,
+    page,
+  }) => {
+    const firstBox = await getTodoItemBox(page, 0);
+    const pressX = firstBox.x + firstBox.width / 2;
+    const pressY = firstBox.y + firstBox.height / 2;
+
+    await page.keyboard.down("Shift");
+    await page.mouse.move(pressX, pressY);
+    await page.mouse.down();
+    await page.mouse.move(pressX + UNDERSIZED_DRAG_PX, pressY + UNDERSIZED_DRAG_PX, { steps: 2 });
+    await page.keyboard.up("Shift");
+    await page.mouse.up();
+
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
+    expect(await getImageWrites(page)).toHaveLength(0);
   });
 });

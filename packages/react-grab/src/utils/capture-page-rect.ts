@@ -1,23 +1,16 @@
 import { snapdom } from "@zumer/snapdom";
 import type { AnnotationSnapshotForCapture, PageRect } from "../types.js";
+import { canvasToPngBlob } from "./canvas-to-png-blob.js";
 import { drawAnnotations } from "./draw-annotations.js";
 import { getPageCanvasColor } from "./get-page-canvas-color.js";
 import { getScreenshotSize } from "./get-screenshot-size.js";
 import { isReactGrabHost } from "./is-react-grab-host.js";
 
-const canvasToPngBlob = (canvas: HTMLCanvasElement): Promise<Blob> =>
-  new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Couldn't encode image"));
-    }, "image/png");
-  });
-
 export const capturePageRect = async (
   pageRect: PageRect,
   annotations: AnnotationSnapshotForCapture,
 ): Promise<Blob> => {
-  const { scale, pixelWidth, pixelHeight } = getScreenshotSize(
+  const { scale, pixelWidth, pixelHeight, outputScaleX, outputScaleY } = getScreenshotSize(
     pageRect.width,
     pageRect.height,
     window.devicePixelRatio,
@@ -48,7 +41,8 @@ export const capturePageRect = async (
       right: pageRect.pageX + pageRect.width,
       bottom: pageRect.pageY + pageRect.height,
     },
-    pixelWidth / pageRect.width,
+    outputScaleX,
+    outputScaleY,
   );
   return canvasToPngBlob(outputCanvas);
 };

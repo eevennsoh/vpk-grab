@@ -80,8 +80,14 @@ describe("createLabelController", () => {
   });
 
   it("revokes an image label's thumbnail when the label goes away", () => {
+    let createdUrlCount = 0;
+    const createObjectURL = vi.fn(() => {
+      createdUrlCount += 1;
+      return `blob:${createdUrlCount}`;
+    });
     const revokeObjectURL = vi.fn();
-    vi.stubGlobal("URL", { revokeObjectURL });
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const imageBlob = new Blob();
     const labelInstances: SelectionLabelInstance[] = [];
     const controller = createLabelController(
       createLabelStore(labelInstances),
@@ -92,18 +98,37 @@ describe("createLabelController", () => {
     });
     expect(labelInstances[0]?.statusText).toBe("Capturing…");
 
-    controller.setImage(instanceId, "Image copied", "blob:first");
-    controller.setImage(instanceId, "Image copied", "blob:second");
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:first");
+    controller.setImage(instanceId, "Image copied", imageBlob);
+    controller.setImage(instanceId, "Image copied", imageBlob);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:1");
+    expect(labelInstances[0]?.thumbnailUrl).toBe("blob:2");
 
     controller.updateAfterCopy(instanceId, true);
     vi.advanceTimersByTime(FEEDBACK_DURATION_MS + FADE_COMPLETE_BUFFER_MS);
     expect(labelInstances).toHaveLength(0);
-    expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:second");
+    expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:2");
 
     const clearedInstanceId = controller.createInstance(LABEL_BOUNDS, "", undefined, "copying");
-    controller.setImage(clearedInstanceId, "Image saved", "blob:third");
+    controller.setImage(clearedInstanceId, "Image saved", imageBlob);
     controller.clearAll();
-    expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:third");
+    expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:3");
+  });
+
+  it("creates no thumbnail URL for a label that is already gone", () => {
+    const createObjectURL = vi.fn(() => "blob:orphan");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "", undefined, "copying");
+    controller.clearAll();
+
+    controller.setImage(instanceId, "Image copied", new Blob());
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(labelInstances).toHaveLength(0);
   });
 });
