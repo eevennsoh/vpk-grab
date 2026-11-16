@@ -72,6 +72,7 @@ import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_CURSOR,
+  MOVE_TOOL_PRESSED_CURSOR,
   MOVE_TOOL_KEY,
   PEN_TOOL_KEY,
   SPACING_TOOL_KEY,
@@ -409,7 +410,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         case "text":
           return TEXT_TOOL_CURSOR;
         case "edit":
-          return MOVE_TOOL_CURSOR;
+          return inspect.isEditPressing() ? MOVE_TOOL_PRESSED_CURSOR : MOVE_TOOL_CURSOR;
         default: {
           const unhandledTool: never = tool;
           return unhandledTool;
@@ -1756,7 +1757,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     createEffect(
       on(
-        () => [isActivated(), isCopying(), isPromptMode(), inspect.annotationTool()] as const,
+        () =>
+          [
+            isActivated(),
+            isCopying(),
+            isPromptMode(),
+            inspect.annotationTool(),
+            inspect.isEditPressing(),
+          ] as const,
         ([activated, copying, promptMode, annotationTool]) => {
           if (copying) {
             setCursorOverride("progress");
@@ -3825,6 +3833,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       hasAnnotations: inspect.hasAnnotations,
       selectedAnnotationIds: inspect.selectedAnnotationIds,
       annotationMarqueeRect: inspect.marqueeRect,
+      isEditPressing: inspect.isEditPressing,
       isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
       isSpecsPinLocked: inspect.isSpecsPinLocked,
       styleOverridesVersion: inspect.styleOverridesVersion,

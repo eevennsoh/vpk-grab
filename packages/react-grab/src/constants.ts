@@ -2,6 +2,7 @@ import type { AnnotationColorOption } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
   NAVIGATION_ICON_PATHS,
+  PAN_TOOL_ALT_ICON_PATHS,
   PAN_TOOL_ICON_PATHS,
   STYLUS_ICON_PATHS,
   TITLE_ICON_PATHS,
@@ -499,6 +500,11 @@ export const TEXT_TOOL_CURSOR = createSvgCursor(TITLE_ICON_PATHS.filled, { x: 12
 export const MOVE_TOOL_CURSOR = createSvgCursor(
   PAN_TOOL_ICON_PATHS.filled,
   { x: 12, y: 12 },
-  "move",
+  "grab",
+);
+export const MOVE_TOOL_PRESSED_CURSOR = createSvgCursor(
+  PAN_TOOL_ALT_ICON_PATHS.filled,
+  { x: 12, y: 12 },
+  "grabbing",
 );
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;
