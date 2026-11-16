@@ -435,6 +435,19 @@ test.describe("Copy Feedback Behavior", () => {
         .toBe(true);
     });
 
+    test("should use the Grab cursor, falling back to pointer, while selecting", async ({
+      reactGrab,
+    }) => {
+      await reactGrab.activate();
+
+      const readPageCursor = () =>
+        reactGrab.page.evaluate(
+          () => document.querySelector("[data-react-grab-cursor]")?.textContent ?? "",
+        );
+      await expect.poll(readPageCursor).toContain("data:image/svg+xml");
+      expect(await readPageCursor()).toContain("7 7, pointer");
+    });
+
     test("should set progress cursor during copy", async ({ reactGrab }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");

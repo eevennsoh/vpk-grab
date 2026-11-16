@@ -487,7 +487,7 @@ export const TEXT_TOOL_KEY = "4";
 export const GRAB_TOOL_CURSOR = createSvgCursor(
   NAVIGATION_ICON_PATHS.filled,
   { x: 7, y: 7 },
-  "crosshair",
+  "pointer",
   -45,
 );
 export const PEN_TOOL_CURSOR = createSvgCursor(

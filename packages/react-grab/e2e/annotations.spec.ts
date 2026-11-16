@@ -82,7 +82,7 @@ test.describe("Annotations", () => {
     await expect.poll(readPageCursor).toContain("12 12, move");
 
     await toolbarAction(page, "annotate-edit").click();
-    await expect.poll(readPageCursor).toContain("7 7, crosshair");
+    await expect.poll(readPageCursor).toContain("7 7, pointer");
   });
 
   test("Move and Clear leave the toolbar with the last annotation", async ({ page }) => {
