@@ -1,7 +1,7 @@
 // Shift+drag in the Grab tool copies a PNG of the dragged page area instead
 // of the elements in it.
 import type { Page } from "@playwright/test";
-import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
+import { test, expect, type ReactGrabPageObject, type ReactGrabState } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
   MARQUEE_SCREENSHOT_MOVE_PX,
@@ -855,13 +855,14 @@ test.describe("Screenshot capture after a real activation", () => {
     page,
   }) => {
     await reactGrab.activateViaKeyboard();
+    const copyEventCountAfterActivation = await getCopyEventCount(page);
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
 
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     await expect(reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR)).toContainText(
       "Image copied",
     );
-    expect(await getCopyEventCount(page)).toBe(0);
+    expect(await getCopyEventCount(page)).toBe(copyEventCountAfterActivation);
   });
 
   test.describe("switched on from the toolbar button", () => {
@@ -1001,9 +1002,20 @@ interface CopiedPillGrab {
   copiedHtml: string;
 }
 
-const getGrabbedBoxesUnion = async (reactGrab: ReactGrabPageObject): Promise<ClientBox> => {
-  const { grabbedBoxes } = await reactGrab.getState();
-  if (grabbedBoxes.length === 0) throw new Error("No grabbed boxes");
+const waitForGrabbedBoxes = async (
+  reactGrab: ReactGrabPageObject,
+): Promise<ReactGrabState["grabbedBoxes"]> => {
+  let grabbedBoxes: ReactGrabState["grabbedBoxes"] = [];
+  await expect
+    .poll(async () => {
+      ({ grabbedBoxes } = await reactGrab.getState());
+      return grabbedBoxes.length;
+    })
+    .toBeGreaterThan(0);
+  return grabbedBoxes;
+};
+
+const getGrabbedBoxesUnion = (grabbedBoxes: ReactGrabState["grabbedBoxes"]): ClientBox => {
   const left = Math.min(...grabbedBoxes.map((box) => box.bounds.x));
   const top = Math.min(...grabbedBoxes.map((box) => box.bounds.y));
   const right = Math.max(...grabbedBoxes.map((box) => box.bounds.x + box.bounds.width));
@@ -1172,11 +1184,14 @@ const grabFirstTodo = async (
   const copyPayloadPromise = reactGrab.captureNextClipboardWrites();
   await page.mouse.down();
   await page.mouse.up();
+  // Grabbed boxes leave the state once their feedback fades, timed from the
+  // start of the copy, which a slow runner can outlast before the pill lands.
+  const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
   const copyPayload = await copyPayloadPromise;
   const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
   await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
   return {
-    captureRect: padBox(await getGrabbedBoxesUnion(reactGrab)),
+    captureRect: padBox(getGrabbedBoxesUnion(grabbedBoxes)),
     copiedText: copyPayload["text/plain"],
     copiedHtml: copyPayload["text/html"],
   };
@@ -1578,13 +1593,13 @@ test.describe("Copied pill", () => {
     await page.mouse.down();
     await page.mouse.move(dragEnd.x, dragEnd.y, { steps: DRAG_STEPS });
     await page.mouse.up();
+    const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
 
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
-    const { grabbedBoxes } = await reactGrab.getState();
     expect(grabbedBoxes.length).toBeGreaterThan(1);
     const captureRect = padBox(
-      unionBoxes(await getGrabbedBoxesUnion(reactGrab), {
+      unionBoxes(getGrabbedBoxesUnion(grabbedBoxes), {
         x: dragStart.x,
         y: dragStart.y,
         width: dragEnd.x - dragStart.x,
