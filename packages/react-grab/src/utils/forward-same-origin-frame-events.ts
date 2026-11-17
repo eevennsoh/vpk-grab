@@ -8,6 +8,8 @@ interface FrameEventForwardingOptions {
   shouldForwardInteraction: () => boolean;
   shouldForwardKeyboardEvent: (event: KeyboardEvent) => boolean;
   shouldForwardViewportEvent: (frameDocument: Document) => boolean;
+  onFramePointerDown: (event: PointerEvent) => void;
+  onFrameKeyDown: (event: KeyboardEvent) => void;
 }
 
 const dispatchForwardedEvent = (sourceEvent: Event, forwardedEvent: Event): void => {
@@ -110,6 +112,8 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
       }
     };
 
+    frameWindow.addEventListener("pointerdown", options.onFramePointerDown, eventOptions);
+    frameWindow.addEventListener("keydown", options.onFrameKeyDown, eventOptions);
     frameWindow.addEventListener("pointermove", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointerdown", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointerup", forwardPointerEventWhenActive, eventOptions);

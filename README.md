@@ -6,7 +6,7 @@ It is a fork, and a drop-in one. The package is still named `react-grab` and the
 
 ## What it adds
 
-Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too.
+Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too. Tap the shortcut or click the toolbar button to keep Grab on: after each copy it is ready for the next element, until you press **Esc**, tap the shortcut again or click the toolbar button.
 
 | Toolbar control        | What it does                                                                                                                                                                                                                                                 |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -19,20 +19,25 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 
 While active, press a control's number to switch it on or off without going back to the toolbar. **Specs** and **Spacing** appear only while Grab is the tool in hand; **⌘C** (**Ctrl+C**) picks Grab back up from Pen, Text or Move.
 
-Two keys work on whatever is hovered, without clicking:
+Holding a key changes what the pointer does:
 
 | Key            | With       | What it does                                                                                                                                                                                                                      |
 | -------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hold **Shift** | Specs on   | Pins the panel to the element so the pointer can reach it. Each row gets a checkbox to switch it off and on, a value to type into, a menu of tokens and keywords, and a reset. The pin button keeps it open; **Esc** releases it. |
 | Hold **Alt**   | Spacing on | Anchors the spacing to the element. Move to any other element to read the distances between the two.                                                                                                                              |
+| **Shift**+drag | Grab       | Copies a PNG of the dragged area, with your drawings and notes, instead of the elements in it. Let go of **Shift** before the mouse to select elements again. On an address without HTTPS the image downloads instead.            |
+
+While drawing either marquee, hold **Space** to move the rectangle without changing its size. Release **Space** to resize it again.
 
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
 While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).
 
+After a grab, the **Copied** pill stays until you click anywhere else, press **Esc** or start Grab again. Its camera button copies the same element references again together with a PNG of the element and a little space around it, with your drawings and notes, so one paste brings both. On an address without HTTPS the image downloads instead and the references stay on the clipboard.
+
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.8`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.9`.
 
 ### Let your agent do it
 
@@ -48,7 +53,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.8/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.9/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -64,7 +69,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.8/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.9/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -81,7 +86,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.8/react-grab-0.2.0-vpk.8.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.9/react-grab-0.2.0-vpk.9.tgz
 ```
 
 Then load it at the top of the entry file:

@@ -1,6 +1,10 @@
-import { createSignal, onCleanup, Show, type Component } from "solid-js";
+import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } from "solid-js";
 import type { CompletionViewProps } from "../../types.js";
-import { FEEDBACK_DURATION_MS, FADE_DURATION_MS } from "../../constants.js";
+import {
+  FEEDBACK_DURATION_MS,
+  FADE_DURATION_MS,
+  SCREENSHOT_THUMBNAIL_SIZE_PX,
+} from "../../constants.js";
 import { createConfirmationKeyboard } from "../../utils/create-confirmation-keyboard.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
 import { IconReturn } from "../icons/icon-return.jsx";
@@ -9,18 +13,24 @@ import { cn } from "../../utils/cn.js";
 import { Button, buttonVariants } from "../ui/button.js";
 import { Surface } from "../ui/surface.js";
 import { IconCheck } from "../icons/icon-check.jsx";
+import { IconLoader } from "../icons/icon-loader.jsx";
+import { MaterialIcon } from "../icons/material-icon.jsx";
+import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 
-interface MoreOptionsButtonProps {
+interface CompletionActionButtonProps {
+  label: string;
   onClick: () => void;
+  children: JSX.Element;
 }
 
-const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => {
+const CompletionActionButton: Component<CompletionActionButtonProps> = (props) => {
+  const [local, attributes] = splitProps(props, ["label", "onClick", "children"]);
   return (
     <button
       type="button"
       data-react-grab-ignore-events
-      data-react-grab-more-options
-      aria-label="More options"
+      data-react-grab-completion-action
+      aria-label={local.label}
       class={cn(
         buttonVariants({ variant: "ghost" }),
         "group size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
@@ -33,17 +43,26 @@ const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => {
       }}
       on:click={(event) => {
         event.stopImmediatePropagation();
-        props.onClick();
+        local.onClick();
       }}
+      {...attributes}
     >
-      <IconEllipsis
-        size={14}
-        aria-hidden="true"
-        class="opacity-50 group-hover:opacity-100 transition-opacity"
-      />
+      {local.children}
     </button>
   );
 };
+
+const ACTION_ICON_CLASS = "opacity-50 group-hover:opacity-100 transition-opacity";
+
+interface MoreOptionsButtonProps {
+  onClick: () => void;
+}
+
+const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => (
+  <CompletionActionButton data-react-grab-more-options label="More options" onClick={props.onClick}>
+    <IconEllipsis size={14} aria-hidden="true" class={ACTION_ICON_CLASS} />
+  </CompletionActionButton>
+);
 
 export const CompletionView: Component<CompletionViewProps> = (props) => {
   let fadeTimeoutId: number | undefined;
@@ -72,23 +91,24 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
     }, FEEDBACK_DURATION_MS - FADE_DURATION_MS);
   };
 
+  // Without onDismiss the label only offers its action buttons, so Enter and
+  // Escape elsewhere are left to the page while the label stays on screen.
+  // Only one label owns this listener, so Enter on an action button is left to
+  // the button itself: handling it here would act on the owning label instead.
   const { claimFocus } = createConfirmationKeyboard({
     onEnter: (event) => {
-      if (isEventFromOverlay(event, "data-react-grab-more-options")) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleShowContextMenu();
-        return;
-      }
+      if (isEventFromOverlay(event, "data-react-grab-completion-action")) return;
+      if (!props.onDismiss) return;
       if (isEventFromOverlay(event, "data-react-grab-context-menu")) return;
       event.preventDefault();
       event.stopPropagation();
       handleAccept();
     },
     onEscape: (event) => {
+      if (!props.onDismiss) return;
       event.preventDefault();
       event.stopPropagation();
-      props.onDismiss?.();
+      props.onDismiss();
     },
   });
 
@@ -141,19 +161,86 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
       </Show>
       <Show when={didCopy() || !props.onDismiss}>
         <div class="contain-layout shrink-0 flex items-center gap-0.5 py-1.5 px-2 w-full h-fit">
-          <IconCheck
-            size={14}
-            aria-hidden="true"
-            class="text-[var(--rg-text-primary-85)] shrink-0"
-          />
+          <Show
+            when={props.thumbnailUrl}
+            fallback={
+              <IconCheck
+                size={14}
+                aria-hidden="true"
+                class="text-[var(--rg-text-primary-85)] shrink-0"
+              />
+            }
+          >
+            {(thumbnailUrl) => (
+              <img
+                data-react-grab-screenshot-thumbnail
+                src={thumbnailUrl()}
+                alt=""
+                class="shrink-0 mr-1 rounded-[3px] object-cover border border-[var(--rg-border-subtle)]"
+                style={{
+                  width: `${SCREENSHOT_THUMBNAIL_SIZE_PX}px`,
+                  height: `${SCREENSHOT_THUMBNAIL_SIZE_PX}px`,
+                }}
+              />
+            )}
+          </Show>
           <span
             class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-sans font-medium h-fit tabular-nums overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
             textContent={displayStatusText()}
           />
+          <Show when={props.onCopyScreenshot}>
+            {(onCopyScreenshot) => (
+              <>
+                <span
+                  aria-hidden="true"
+                  class="shrink-0 mx-1 w-px h-3 bg-[var(--rg-border-subtle)]"
+                />
+                <Show
+                  when={!props.isCapturingScreenshot}
+                  fallback={
+                    <span
+                      data-react-grab-screenshot-capturing
+                      role="img"
+                      aria-label="Capturing image"
+                      class="shrink-0 flex items-center justify-center size-4"
+                    >
+                      <IconLoader size={13} class="text-[var(--rg-text-secondary)]" />
+                    </span>
+                  }
+                >
+                  <CompletionActionButton
+                    data-react-grab-copy-screenshot
+                    label="Copy with screenshot"
+                    onClick={onCopyScreenshot()}
+                  >
+                    <MaterialIcon
+                      paths={PHOTO_CAMERA_ICON_PATHS}
+                      size={14}
+                      class={ACTION_ICON_CLASS}
+                    />
+                  </CompletionActionButton>
+                </Show>
+              </>
+            )}
+          </Show>
           <Show when={props.onShowContextMenu}>
             <MoreOptionsButton onClick={handleShowContextMenu} />
           </Show>
         </div>
+        <Show when={props.screenshotError}>
+          {(screenshotError) => (
+            <div
+              data-react-grab-screenshot-error
+              role="alert"
+              class="contain-layout shrink-0 flex items-start px-2 pb-1.5 w-full h-fit"
+            >
+              <span
+                class="text-[var(--rg-error-text)] text-[13px] leading-4 font-sans font-medium overflow-hidden line-clamp-5"
+                textContent={screenshotError()}
+              />
+            </div>
+          )}
+        </Show>
       </Show>
     </Surface>
   );

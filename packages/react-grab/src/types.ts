@@ -415,6 +415,19 @@ export interface SelectionLabelInstance {
   mouseXOffsetRatio?: number;
   errorMessage?: string;
   hideArrow?: boolean;
+  thumbnailUrl?: string;
+  selectionPageRect?: PageRect;
+  copiedContent?: string;
+  isCapturingScreenshot?: boolean;
+  screenshotErrorMessage?: string;
+}
+
+export interface SelectionLabelInstancePatch {
+  statusText?: string;
+  thumbnailUrl?: string;
+  copiedContent?: string;
+  isCapturingScreenshot?: boolean;
+  screenshotErrorMessage?: string;
 }
 
 export interface FrozenLabelEntry {
@@ -451,6 +464,7 @@ export interface ReactGrabRendererProps {
   labelInstanceAccessors?: SelectionLabelInstanceAccessor[];
   dragVisible?: boolean;
   dragBounds?: OverlayBounds;
+  screenshotMarqueeBounds?: OverlayBounds;
   grabbedBoxes?: Array<{
     id: string;
     bounds: OverlayBounds;
@@ -461,9 +475,9 @@ export interface ReactGrabRendererProps {
   inputValue?: string;
   isPromptMode?: boolean;
   onShowContextMenuInstance?: (instanceId: string) => void;
+  onCopyScreenshotInstance?: (instanceId: string) => void;
   onRetryInstance?: (instanceId: string) => void;
   onAcknowledgeErrorInstance?: (instanceId: string) => void;
-  onLabelInstanceHoverChange?: (instanceId: string, isHovered: boolean) => void;
   onInputChange?: (value: string) => void;
   onInputSubmit?: () => void;
   selectionLabelShakeCount?: number;
@@ -513,6 +527,28 @@ export interface Rect {
   right: number;
   bottom: number;
 }
+
+export interface PageRect {
+  pageX: number;
+  pageY: number;
+  width: number;
+  height: number;
+}
+
+export interface ScreenshotSize {
+  scale: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  outputScaleX: number;
+  outputScaleY: number;
+}
+
+export interface AnnotationSnapshotForCapture {
+  strokes: readonly AnnotationStroke[];
+  texts: readonly AnnotationText[];
+}
+
+export type ImageDeliveryResult = "copied" | "saved";
 
 export interface DragRect {
   x: number;
@@ -570,9 +606,13 @@ export interface ErrorViewProps {
 
 export interface CompletionViewProps {
   statusText: string;
+  thumbnailUrl?: string;
+  isCapturingScreenshot?: boolean;
+  screenshotError?: string;
   onDismiss?: () => void;
   onFadingChange?: (isFading: boolean) => void;
   onShowContextMenu?: () => void;
+  onCopyScreenshot?: () => void;
 }
 
 export interface SelectionLabelProps {
@@ -598,10 +638,14 @@ export interface SelectionLabelProps {
   onAcknowledgeError?: () => void;
   onRetry?: () => void;
   onShowContextMenu?: () => void;
+  onCopyScreenshot?: () => void;
   onHoverChange?: (isHovered: boolean) => void;
   hideArrow?: boolean;
   sizeText?: string;
   clearanceBelowPx?: number;
+  thumbnailUrl?: string;
+  isCapturingScreenshot?: boolean;
+  screenshotError?: string;
 }
 
 export interface SourceLocation extends SourceInfo {

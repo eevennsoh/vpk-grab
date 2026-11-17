@@ -4,6 +4,7 @@ import {
   NAVIGATION_ICON_PATHS,
   PAN_TOOL_ALT_ICON_PATHS,
   PAN_TOOL_ICON_PATHS,
+  PHOTO_CAMERA_ICON_PATHS,
   STYLUS_ICON_PATHS,
   TITLE_ICON_PATHS,
 } from "./material-icon-paths.js";
@@ -452,6 +453,12 @@ export const ANNOTATION_MIN_SAMPLE_DISTANCE_PX = 1;
 export const ANNOTATION_STRAIGHT_LINE_AXIS_SNAP_DEG = 4;
 export const ANNOTATION_TEXT_FONT_SIZE_PX = 14;
 export const ANNOTATION_TEXT_LINE_HEIGHT_PX = 20;
+export const ANNOTATION_TEXT_FONT_WEIGHT = 600;
+// Matches --font-sans in styles.css, for drawing notes onto a canvas where the
+// overlay's CSS variables do not reach.
+export const ANNOTATION_TEXT_FONT_FAMILY = '"Geist", ui-sans-serif, system-ui, sans-serif';
+// Three stacked glows in the contrast colour keep a note legible on any page.
+export const ANNOTATION_TEXT_HALO_BLURS_PX: readonly number[] = [2, 2, 1];
 
 // Below this a gap is sub-pixel layout rounding rather than spacing.
 export const REDLINE_MIN_DISTANCE_PX = 0.5;
@@ -514,4 +521,21 @@ export const MOVE_TOOL_PRESSED_CURSOR = createSvgCursor(
   { x: 12, y: 12 },
   "grabbing",
 );
+// The hotspot sits on the top-left corner of the camera body (not the
+// viewfinder bump above it), which is where the capture rectangle starts.
+export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
+  PHOTO_CAMERA_ICON_PATHS.filled,
+  { x: 3, y: 6 },
+  "crosshair",
+);
+// People often let go of Shift a moment before the mouse button, so a Shift
+// released this recently still counts as held when the drag ends.
+export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
+export const SCREENSHOT_MIN_SIZE_PX = 8;
+export const SCREENSHOT_SELECTION_PADDING_PX = 8;
+export const SCREENSHOT_MAX_EDGE_PX = 2000;
+export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
+export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
+export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
+export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;

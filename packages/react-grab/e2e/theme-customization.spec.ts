@@ -156,10 +156,7 @@ test.describe("Theme Customization", () => {
 
   test.describe("Toolbar", () => {
     test("should show toolbar by default", async ({ reactGrab }) => {
-      await reactGrab.page.waitForTimeout(600);
-
-      const isVisible = await reactGrab.isToolbarVisible();
-      expect(isVisible).toBe(true);
+      await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
     });
 
     test("should hide toolbar when disabled", async ({ reactGrab }) => {

@@ -28,6 +28,7 @@ interface CopyPayload {
 
 export interface CopyFlowResult {
   readonly status: "cancelled" | "failed" | "succeeded";
+  readonly copiedContent?: string;
 }
 
 const CANCELLED_COPY_FLOW_RESULT: CopyFlowResult = {
@@ -146,5 +147,5 @@ export const runCopyFlow = async (
   if (didCopy) hooks.onCopySuccess(elements, finalContent);
   hooks.onAfterCopy(elements, didCopy);
 
-  return { status: didCopy ? "succeeded" : "failed" };
+  return didCopy ? { status: "succeeded", copiedContent: finalContent } : { status: "failed" };
 };

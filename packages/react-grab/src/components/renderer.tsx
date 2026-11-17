@@ -1,13 +1,14 @@
 import { createMemo, For, Show, type Component } from "solid-js";
 import type { ReactGrabRendererProps } from "../types.js";
 import { DEFAULT_ACTION_ID } from "../constants.js";
-import { isElementConnected } from "../utils/is-element-connected.js";
+import { hasLabelCompletionActions } from "../utils/has-label-completion-actions.js";
 import { formatElementSize } from "../utils/format-element-size.js";
 import { getElementRedlines } from "../utils/get-element-redlines.js";
 import { getPairRedlines } from "../utils/get-pair-redlines.js";
 import { getRedlineLabelClearance } from "../utils/get-redline-label-clearance.js";
 import { OverlayCanvas } from "./overlay-canvas.js";
 import { FrozenGlow } from "./frozen-glow.js";
+import { ScreenshotMarquee } from "./screenshot-marquee.js";
 import { SelectionLabel } from "./selection-label/index.js";
 import { Toolbar } from "./toolbar/index.js";
 import { ContextMenu } from "./context-menu.js";
@@ -57,6 +58,9 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
         labelInstances={props.labelInstances}
       />
       <FrozenGlow visible={props.isFrozen ?? false} />
+      <Show when={props.screenshotMarqueeBounds}>
+        {(bounds) => <ScreenshotMarquee bounds={bounds()} />}
+      </Show>
       <Show when={props.inspect}>
         {(inspect) => (
           <AnnotationLayer
@@ -149,20 +153,27 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 inputValue={instance().inputValue}
                 error={instance().errorMessage}
                 hideArrow={instance().hideArrow}
+                thumbnailUrl={instance().thumbnailUrl}
+                isCapturingScreenshot={instance().isCapturingScreenshot}
+                screenshotError={instance().screenshotErrorMessage}
                 onShowContextMenu={(() => {
                   const currentInstance = instance();
-                  const hasCompletedStatus =
-                    currentInstance.status === "copied" || currentInstance.status === "fading";
-                  if (!hasCompletedStatus || !isElementConnected(currentInstance.element)) {
+                  if (!hasLabelCompletionActions(currentInstance)) return undefined;
+                  return () => props.onShowContextMenuInstance?.(currentInstance.id);
+                })()}
+                onCopyScreenshot={(() => {
+                  const currentInstance = instance();
+                  if (
+                    !hasLabelCompletionActions(currentInstance) ||
+                    currentInstance.copiedContent === undefined ||
+                    currentInstance.thumbnailUrl
+                  ) {
                     return undefined;
                   }
-                  return () => props.onShowContextMenuInstance?.(currentInstance.id);
+                  return () => props.onCopyScreenshotInstance?.(currentInstance.id);
                 })()}
                 onRetry={() => props.onRetryInstance?.(instance().id)}
                 onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
-                onHoverChange={(isHovered) =>
-                  props.onLabelInstanceHoverChange?.(instance().id, isHovered)
-                }
               />
             )}
           </Show>

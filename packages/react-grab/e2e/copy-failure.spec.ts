@@ -78,6 +78,36 @@ const forceCopyResult = (
   }, shouldSucceed);
 
 test.describe("Copy failure feedback", () => {
+  test("a failed context-menu copy in a hold session leaves no arrow-key selection for the next click", async ({
+    reactGrab,
+  }) => {
+    const { page } = reactGrab;
+    expect(await reactGrab.reinitialize({ activationKey: "F8", activationMode: "hold" })).toBe(
+      true,
+    );
+    await page.click("body");
+    await page.keyboard.down("F8");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+
+    await reactGrab.hoverUntilSelected("li:first-child span");
+    await reactGrab.clickElement("li:first-child span");
+    await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+    await reactGrab.pressArrowUp();
+    await clickErrorButton(reactGrab, "data-react-grab-more-options");
+    await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
+    await page.keyboard.up("F8");
+
+    await forceCopyResult(reactGrab, false);
+    await reactGrab.clickContextMenuItem("Copy");
+    await readErrorView(reactGrab);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.evaluate(() => Reflect.deleteProperty(document, "execCommand"));
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await reactGrab.clickElement("[data-testid='todo-list'] h1");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+  });
+
   test("renders the error view with the failure message and action buttons", async ({
     reactGrab,
   }) => {
@@ -92,6 +122,7 @@ test.describe("Copy failure feedback", () => {
     expect(snapshot?.text).toContain("Failed to copy");
     expect(snapshot?.hasRetry).toBe(true);
     expect(snapshot?.hasOk).toBe(true);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
   });
 
   test("Retry re-runs the copy and clears the error once it succeeds", async ({ reactGrab }) => {

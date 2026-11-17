@@ -80,9 +80,8 @@ test.describe("Touch Mode", () => {
 
       await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
 
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(false);
+      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(true);
 
-      await reactGrab.activate();
       await reactGrab.touchTap("li:nth-child(4)");
 
       await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
@@ -104,7 +103,8 @@ test.describe("Touch Mode", () => {
       await reactGrab.touchEnd(tapX, tapY);
 
       await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(false);
+      await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+      await reactGrab.deactivate();
 
       await reactGrab.activate();
 
@@ -172,9 +172,8 @@ test.describe("Touch Mode", () => {
 
       await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
 
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(false);
+      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(true);
 
-      await reactGrab.activate();
       await reactGrab.page.mouse.move(0, 0);
       await expect.poll(() => reactGrab.isTouchMode()).toBe(false);
       await reactGrab.hoverUntilSelected("li:nth-child(3)");

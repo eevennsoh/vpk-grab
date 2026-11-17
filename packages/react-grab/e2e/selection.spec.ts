@@ -1,5 +1,64 @@
-import { test, expect } from "./fixtures.js";
-import { ATTRIBUTE_NAME } from "./constants.js";
+import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
+import {
+  ATTRIBUTE_NAME,
+  MARQUEE_START_PX,
+  MARQUEE_END_PX,
+  MARQUEE_FIRST_MOVE_PX,
+  MARQUEE_RESIZE_PX,
+  MARQUEE_SECOND_MOVE_PX,
+  MARQUEE_SOURCE_BOX_PX,
+  MARQUEE_TARGET_BOX_PX,
+  MARQUEE_MOVE_STEP_COUNT,
+  MARQUEE_SCROLL_SETTLE_MS,
+  MARQUEE_PAGE_HEIGHT_PX,
+  MARQUEE_TARGET_Z_INDEX,
+  MARQUEE_EDGE_INSET_PX,
+} from "./constants.js";
+
+declare global {
+  interface Window {
+    __INTERCEPTED_ACTION_RUN_COUNT__?: number;
+  }
+}
+
+const armInterceptedToolbarAction = async (reactGrab: ReactGrabPageObject) => {
+  await reactGrab.page.evaluate(() => {
+    let hasInterceptedSelect = false;
+    window.__INTERCEPTED_ACTION_RUN_COUNT__ = 0;
+    window.__REACT_GRAB__?.registerPlugin({
+      name: "intercept-first-select",
+      actions: [
+        {
+          id: "intercepted-action",
+          label: "Intercepted",
+          showInToolbarMenu: true,
+          onAction: () => {
+            window.__INTERCEPTED_ACTION_RUN_COUNT__ =
+              (window.__INTERCEPTED_ACTION_RUN_COUNT__ ?? 0) + 1;
+          },
+        },
+      ],
+      hooks: {
+        onElementSelect: () => {
+          if (hasInterceptedSelect) return false;
+          hasInterceptedSelect = true;
+          return true;
+        },
+      },
+    });
+    window.__REACT_GRAB__?.setToolbarState({ defaultAction: "intercepted-action" });
+  });
+  await reactGrab.clickToolbarAction("intercepted-action");
+  expect(await reactGrab.getToolbarActionPressed("intercepted-action")).toBe(true);
+};
+
+const expectInterceptedPickClearedPendingAction = async (reactGrab: ReactGrabPageObject) => {
+  await expect.poll(() => reactGrab.getToolbarActionPressed("intercepted-action")).toBe(false);
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  expect(await reactGrab.page.evaluate(() => window.__INTERCEPTED_ACTION_RUN_COUNT__)).toBe(0);
+  expect(await reactGrab.isContextMenuVisible()).toBe(false);
+};
 
 test.describe("Element Selection", () => {
   test("should show selection box when hovering over element while active", async ({
@@ -137,12 +196,13 @@ test.describe("Element Selection", () => {
     expect(isVisible).toBe(true);
   });
 
-  test("should deactivate after successful copy in toggle mode", async ({ reactGrab }) => {
+  test("should stay active after successful copy in toggle mode", async ({ reactGrab }) => {
     await reactGrab.activate();
     await reactGrab.hoverElement("li");
     await reactGrab.clickElement("li");
 
-    await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(false);
+    await expect.poll(() => reactGrab.getClipboardContent()).toBeTruthy();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
   });
 
   test("should not show selection when inactive", async ({ reactGrab }) => {
@@ -275,4 +335,380 @@ test.describe("Selection Bounds and Mutations", () => {
     await reactGrab.clickElement("[data-testid='pe-outside-target']");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("outside the popover");
   });
+});
+
+test.describe("Persistent Grab sessions", () => {
+  test("shortcut tap keeps Grab on for consecutive copies until Escape", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activateViaKeyboard();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await reactGrab.clickElement("[data-testid='todo-list'] h1");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+    await reactGrab.clickElement("[data-testid='main-title']");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+    await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(0);
+  });
+
+  test("marquee and committed Shift selection keep Grab on", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await reactGrab.dragSelect(
+      "[data-testid='todo-list'] li:first-child span",
+      "[data-testid='todo-list'] li:nth-child(3) span",
+    );
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.keyboard.down("Shift");
+    await reactGrab.clickElement("[data-testid='todo-list'] li:first-child span");
+    await reactGrab.clickElement("[data-testid='todo-list'] li:nth-child(2) span");
+    await page.keyboard.up("Shift");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("h1");
+  });
+
+  test("context menu Copy keeps Grab on", async ({ reactGrab }) => {
+    await reactGrab.activate();
+    await reactGrab.rightClickElement("[data-testid='todo-list'] h1");
+    await reactGrab.clickContextMenuItem("Copy");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+  });
+
+  test("keyboard selection copy keeps Grab on", async ({ reactGrab, page }) => {
+    await page.evaluate(() => {
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "keyboard-copy-test",
+        actions: [
+          {
+            id: "keyboard-copy-test",
+            label: "Copy selection",
+            shortcut: "c",
+            shortcutModifier: false,
+            onAction: (context) => context.copy?.(),
+          },
+        ],
+      });
+    });
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await page.keyboard.press("ArrowUp");
+    await reactGrab.waitForSelectionBox();
+    await page.keyboard.press("c");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("[<div");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+    await reactGrab.clickElement("[data-testid='main-title']");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
+  });
+
+  test("prompt submission keeps Grab on and restores hover", async ({ reactGrab }) => {
+    await reactGrab.enterPromptMode("li:first-child");
+    await reactGrab.typeInInput("Update this element");
+    await reactGrab.submitInput();
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Update this element");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+    await reactGrab.hoverUntilSelected("h1");
+  });
+});
+
+test("a successful plugin copy with feedback keeps Grab on", async ({ reactGrab, page }) => {
+  await page.evaluate(() => {
+    window.__REACT_GRAB__?.registerPlugin({
+      name: "copy-tag-test",
+      actions: [
+        {
+          id: "copy-tag-test",
+          label: "Copy tag",
+          onAction: (context) =>
+            context.performWithFeedback(async () => {
+              await navigator.clipboard.writeText(context.element.tagName);
+              return true;
+            }),
+        },
+      ],
+    });
+  });
+  await reactGrab.activate();
+  await reactGrab.rightClickElement("[data-testid='todo-list'] h1");
+  await reactGrab.clickContextMenuItem("Copy tag");
+  await expect.poll(() => reactGrab.getClipboardContent()).toBe("H1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.hoverUntilSelected("li:first-child");
+});
+
+test("tapping the shortcut again after a copy switches Grab off", async ({ reactGrab, page }) => {
+  await reactGrab.activateViaKeyboard();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+  await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+  await page.keyboard.press(`${reactGrab.modifierKey}+c`);
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+});
+
+test.describe("Space marquee movement", () => {
+  test("normal marquee moves, resizes, and copies the moved targets", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(
+      ({ originalBox, movedBox, zIndex }) => {
+        for (const target of [
+          { label: "Original target", box: originalBox },
+          { label: "Moved target", box: movedBox },
+        ]) {
+          const button = document.createElement("button");
+          button.textContent = target.label;
+          button.dataset.marqueeTarget = target.label;
+          Object.assign(button.style, {
+            position: "fixed",
+            left: `${target.box.x}px`,
+            top: `${target.box.y}px`,
+            width: `${target.box.width}px`,
+            height: `${target.box.height}px`,
+            zIndex,
+          });
+          document.body.append(button);
+        }
+        document.body.dataset.marqueeSpaceEvents = "0";
+        for (const eventName of ["keydown", "keypress", "keyup"]) {
+          window.addEventListener(
+            eventName,
+            (event) => {
+              if (event instanceof KeyboardEvent && event.code === "Space") {
+                document.body.dataset.marqueeSpaceEvents = String(
+                  Number(document.body.dataset.marqueeSpaceEvents) + 1,
+                );
+              }
+            },
+            { capture: true },
+          );
+        }
+      },
+      {
+        originalBox: MARQUEE_SOURCE_BOX_PX,
+        movedBox: MARQUEE_TARGET_BOX_PX,
+        zIndex: MARQUEE_TARGET_Z_INDEX,
+      },
+    );
+    await reactGrab.activate();
+    await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+    const originalBounds = await reactGrab.getDragBoxBounds();
+    expect(originalBounds).not.toBeNull();
+    if (!originalBounds) throw new Error("Missing original marquee");
+    await page.keyboard.down("Space");
+    await page.mouse.move(
+      MARQUEE_END_PX.x + MARQUEE_FIRST_MOVE_PX.x,
+      MARQUEE_END_PX.y + MARQUEE_FIRST_MOVE_PX.y,
+      { steps: MARQUEE_MOVE_STEP_COUNT },
+    );
+    await expect
+      .poll(() => reactGrab.getDragBoxBounds())
+      .toMatchObject({
+        x: originalBounds.x + MARQUEE_FIRST_MOVE_PX.x,
+        y: originalBounds.y + MARQUEE_FIRST_MOVE_PX.y,
+        width: originalBounds.width,
+        height: originalBounds.height,
+      });
+    await page.keyboard.down("Space");
+    await page.keyboard.up("Space");
+    const resizedEnd = {
+      x: MARQUEE_END_PX.x + MARQUEE_FIRST_MOVE_PX.x + MARQUEE_RESIZE_PX.x,
+      y: MARQUEE_END_PX.y + MARQUEE_FIRST_MOVE_PX.y + MARQUEE_RESIZE_PX.y,
+    };
+    await page.mouse.move(resizedEnd.x, resizedEnd.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+    await expect
+      .poll(() => reactGrab.getDragBoxBounds())
+      .toMatchObject({
+        x: originalBounds.x + MARQUEE_FIRST_MOVE_PX.x,
+        y: originalBounds.y + MARQUEE_FIRST_MOVE_PX.y,
+        width: originalBounds.width + MARQUEE_RESIZE_PX.x,
+        height: originalBounds.height + MARQUEE_RESIZE_PX.y,
+      });
+    await page.keyboard.down("Space");
+    await page.mouse.move(
+      resizedEnd.x + MARQUEE_SECOND_MOVE_PX.x,
+      resizedEnd.y + MARQUEE_SECOND_MOVE_PX.y,
+      { steps: MARQUEE_MOVE_STEP_COUNT },
+    );
+    await expect
+      .poll(() => reactGrab.getDragBoxBounds())
+      .toMatchObject({
+        x: originalBounds.x + MARQUEE_FIRST_MOVE_PX.x + MARQUEE_SECOND_MOVE_PX.x,
+        y: originalBounds.y + MARQUEE_FIRST_MOVE_PX.y + MARQUEE_SECOND_MOVE_PX.y,
+        width: originalBounds.width + MARQUEE_RESIZE_PX.x,
+        height: originalBounds.height + MARQUEE_RESIZE_PX.y,
+      });
+    expect(await page.evaluate(() => document.body.dataset.marqueeSpaceEvents)).toBe("0");
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Moved target");
+    expect(await reactGrab.getClipboardContent()).not.toContain("Original target");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+  });
+
+  test("Space is claimed only during a drag and cannot activate a focused button", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(
+      ({ sourceBox, pageHeight }) => {
+        document.body.style.minHeight = `${pageHeight}px`;
+        const button = document.createElement("button");
+        button.id = "marquee-space-button";
+        button.textContent = "Page button";
+        Object.assign(button.style, {
+          position: "fixed",
+          left: `${sourceBox.x}px`,
+          top: `${sourceBox.y}px`,
+        });
+        button.dataset.clicks = "0";
+        button.addEventListener("click", () => {
+          button.dataset.clicks = String(Number(button.dataset.clicks) + 1);
+        });
+        document.body.append(button);
+        button.focus();
+      },
+      { sourceBox: MARQUEE_SOURCE_BOX_PX, pageHeight: MARQUEE_PAGE_HEIGHT_PX },
+    );
+    const button = page.locator("#marquee-space-button");
+    await reactGrab.activate();
+    await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    await page.keyboard.press("Space");
+    await page.waitForTimeout(MARQUEE_SCROLL_SETTLE_MS);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+    await expect(button).toHaveAttribute("data-clicks", "0");
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await button.focus();
+    await page.keyboard.press("Space");
+    await expect(button).toHaveAttribute("data-clicks", "1");
+    await button.evaluate((element) => element.blur());
+    await page.keyboard.press("Space");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBefore);
+  });
+
+  test("Space held before drawing does not move the fixed corner", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await page.keyboard.down("Space");
+    await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+    await page.keyboard.down("Space");
+    await page.mouse.move(
+      MARQUEE_END_PX.x + MARQUEE_RESIZE_PX.x,
+      MARQUEE_END_PX.y + MARQUEE_RESIZE_PX.y,
+      { steps: MARQUEE_MOVE_STEP_COUNT },
+    );
+    await expect
+      .poll(() => reactGrab.getDragBoxBounds())
+      .toMatchObject({
+        x: MARQUEE_START_PX.x,
+        y: MARQUEE_START_PX.y,
+        width: MARQUEE_END_PX.x - MARQUEE_START_PX.x + MARQUEE_RESIZE_PX.x,
+        height: MARQUEE_END_PX.y - MARQUEE_START_PX.y + MARQUEE_RESIZE_PX.y,
+      });
+    await page.keyboard.up("Space");
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+  });
+});
+
+test("Space marquee preserves size beyond the page edge and during auto-scroll", async ({
+  reactGrab,
+  page,
+}) => {
+  await reactGrab.activate();
+  await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+  await page.mouse.down();
+  await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+  const originalBounds = await reactGrab.getDragBoxBounds();
+  if (!originalBounds) throw new Error("Missing marquee");
+  await page.keyboard.down("Space");
+  await page.mouse.move(0, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
+  await expect
+    .poll(() => reactGrab.getDragBoxBounds())
+    .toMatchObject({
+      x: -originalBounds.width,
+      width: originalBounds.width,
+      height: originalBounds.height,
+    });
+  const viewport = await reactGrab.getViewportSize();
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(MARQUEE_END_PX.x, viewport.height - MARQUEE_EDGE_INSET_PX, {
+    steps: MARQUEE_MOVE_STEP_COUNT,
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBefore);
+  await expect
+    .poll(() => reactGrab.getDragBoxBounds())
+    .toMatchObject({ width: originalBounds.width, height: originalBounds.height });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+});
+
+test("Escape after copying allows immediate keyboard activation", async ({ reactGrab }) => {
+  await reactGrab.activate();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  await reactGrab.deactivate();
+  await reactGrab.activateViaKeyboard();
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+});
+
+test("custom shortcut switches Grab off with zero activation delay", async ({
+  reactGrab,
+  page,
+}) => {
+  expect(await reactGrab.reinitialize({ activationKey: "F8", keyHoldDuration: 0 })).toBe(true);
+  await reactGrab.activate();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  await page.keyboard.press("F8");
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+});
+
+test("a plugin intercepting a clicked pick for a pending toolbar action clears the pending pick", async ({
+  reactGrab,
+}) => {
+  await armInterceptedToolbarAction(reactGrab);
+  await reactGrab.hoverUntilSelected("li:first-child");
+  await reactGrab.clickElement("li:first-child");
+  await expectInterceptedPickClearedPendingAction(reactGrab);
+});
+
+test("a plugin intercepting a keyboard pick for a pending toolbar action clears the pending pick", async ({
+  reactGrab,
+}) => {
+  await armInterceptedToolbarAction(reactGrab);
+  await reactGrab.hoverUntilSelected("li:first-child span");
+  await reactGrab.pressArrowUp();
+  await reactGrab.waitForSelectionBox();
+  await reactGrab.clickElement("li:first-child span");
+  await expectInterceptedPickClearedPendingAction(reactGrab);
 });

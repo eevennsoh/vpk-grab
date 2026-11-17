@@ -68,7 +68,7 @@ interface ReinitializableWindow {
   initReactGrab?: (options?: Record<string, unknown>) => ReinitializableApi;
 }
 
-interface ReactGrabState {
+export interface ReactGrabState {
   isActive: boolean;
   isDragging: boolean;
   isCopying: boolean;

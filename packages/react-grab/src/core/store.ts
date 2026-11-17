@@ -1,6 +1,11 @@
 import { createStore, produce } from "solid-js/store";
 import { batch, createSignal } from "solid-js";
-import type { Position, GrabbedBox, SelectionLabelInstance } from "../types.js";
+import type {
+  Position,
+  GrabbedBox,
+  SelectionLabelInstance,
+  SelectionLabelInstancePatch,
+} from "../types.js";
 import { OFFSCREEN_POSITION } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
 import { getBoundsCenter } from "../utils/get-bounds-center.js";
@@ -65,6 +70,7 @@ interface GrabStore {
 
 interface GrabStoreInput {
   keyHoldDuration: number;
+  onActivate: () => void;
 }
 
 // Returns the live element for a tracked slot: keeps the recovery anchor fresh
@@ -152,7 +158,7 @@ interface GrabActions {
   startDrag: (position: Position, shouldPreserveFrozenElements?: boolean) => void;
   startDragReposition: () => void;
   stopDragReposition: () => void;
-  shiftDragStart: (delta: Position) => void;
+  shiftDragStart: (deltaX: number, deltaY: number) => void;
   endDrag: () => void;
   cancelDrag: () => void;
   finishJustDragged: () => void;
@@ -190,6 +196,7 @@ interface GrabActions {
     status: SelectionLabelInstance["status"],
     errorMessage?: string,
   ) => void;
+  patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => void;
   removeLabelInstance: (instanceId: string) => void;
   clearLabelInstances: () => void;
   showContextMenu: (position: Position, element: Element) => void;
@@ -230,6 +237,18 @@ const createGrabStore = (input: GrabStoreInput) => {
     setCurrent((prev) => (prev.state === "active" ? { ...prev, phase } : prev));
   };
 
+  const isInactive = () => {
+    const currentState = current().state;
+    return currentState === "idle" || currentState === "holding";
+  };
+
+  let pendingDragStartDeltaX = 0;
+  let pendingDragStartDeltaY = 0;
+  const applyDragStartShift = () => {
+    setStore("dragStart", "x", store.dragStart.x + pendingDragStartDeltaX);
+    setStore("dragStart", "y", store.dragStart.y + pendingDragStartDeltaY);
+  };
+
   const actions: GrabActions = {
     startHold: (duration?: number) => {
       if (duration !== undefined) {
@@ -245,6 +264,7 @@ const createGrabStore = (input: GrabStoreInput) => {
     },
 
     activate: () => {
+      const wasInactive = isInactive();
       batch(() => {
         setCurrent({
           state: "active",
@@ -255,6 +275,7 @@ const createGrabStore = (input: GrabStoreInput) => {
         setStore("activationTimestamp", Date.now());
         setStore("previouslyFocusedElement", document.activeElement);
       });
+      if (wasInactive) input.onActivate();
     },
 
     deactivate: () => {
@@ -350,13 +371,12 @@ const createGrabStore = (input: GrabStoreInput) => {
       }
     },
 
-    shiftDragStart: (delta: Position) => {
+    shiftDragStart: (deltaX: number, deltaY: number) => {
       const currentState = current();
       if (currentState.state === "active" && currentState.phase === "dragging-reposition") {
-        setStore("dragStart", (dragStart) => ({
-          x: dragStart.x + delta.x,
-          y: dragStart.y + delta.y,
-        }));
+        pendingDragStartDeltaX = deltaX;
+        pendingDragStartDeltaY = deltaY;
+        batch(applyDragStartShift);
       }
     },
 
@@ -404,7 +424,8 @@ const createGrabStore = (input: GrabStoreInput) => {
 
     completeCopy: () => {
       const currentState = current();
-      const wasActive = currentState.state === "copying" ? currentState.wasActive : false;
+      const wasActive =
+        currentState.state === "copying" ? currentState.wasActive : currentState.state === "active";
       setCurrent({
         state: "justCopied",
         copiedAt: Date.now(),
@@ -415,10 +436,10 @@ const createGrabStore = (input: GrabStoreInput) => {
     finishJustCopied: () => {
       const currentState = current();
       if (currentState.state === "justCopied") {
-        const shouldReturnToActive = currentState.wasActive && !store.wasActivatedByToggle;
-        if (shouldReturnToActive) {
+        if (currentState.wasActive) {
           batch(() => {
             clearFrozenElement();
+            setStore("dragStart", { x: OFFSCREEN_POSITION, y: OFFSCREEN_POSITION });
             setCurrent({
               state: "active",
               phase: "hovering",
@@ -436,6 +457,7 @@ const createGrabStore = (input: GrabStoreInput) => {
       const bounds = createElementBounds(element);
       const { x: selectionCenterX } = getBoundsCenter(bounds);
       trackElementAnchor(element);
+      const wasInactive = isInactive();
 
       batch(() => {
         setStore("copyStart", position);
@@ -459,6 +481,7 @@ const createGrabStore = (input: GrabStoreInput) => {
           );
         }
       });
+      if (wasInactive) input.onActivate();
     },
 
     exitPromptMode: () => {
@@ -617,6 +640,12 @@ const createGrabStore = (input: GrabStoreInput) => {
           }
         });
       }
+    },
+
+    patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => {
+      const index = store.labelInstances.findIndex((instance) => instance.id === instanceId);
+      if (index === -1) return;
+      setStore("labelInstances", index, patch);
     },
 
     removeLabelInstance: (instanceId: string) => {

@@ -43,6 +43,10 @@ import { isNextProjectRuntime } from "../utils/is-next-project-runtime.js";
 import { createNoopApi } from "./noop-api.js";
 import { createEventListenerManager } from "./events.js";
 import { runCopyFlow, type CopyFlowResult } from "./copy.js";
+import { capturePageRect } from "../utils/capture-page-rect.js";
+import { deliverPngBlob } from "../utils/deliver-png-blob.js";
+import { padPageRect } from "../utils/pad-page-rect.js";
+import { isKeyboardEventComposing } from "../utils/is-keyboard-event-composing.js";
 import {
   clearElementPositionCache,
   getElementAtPosition,
@@ -81,6 +85,10 @@ import {
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
   SPECS_INPUT_ATTRIBUTE,
+  SCREENSHOT_MIN_SIZE_PX,
+  SCREENSHOT_SELECTION_PADDING_PX,
+  SCREENSHOT_SHIFT_RELEASE_GRACE_MS,
+  SCREENSHOT_TOOL_CURSOR,
   ARROW_KEYS,
   FADE_DURATION_MS,
   FEEDBACK_DURATION_MS,
@@ -198,7 +206,7 @@ interface CopyWithLabelOptions {
   cursorX: number;
   selectedElements?: Element[];
   extraPrompt?: string;
-  shouldDeactivateAfter?: boolean;
+  shouldDeactivateOnFailure?: boolean;
   onComplete?: () => void;
   dragRect?: {
     pageX: number;
@@ -217,7 +225,6 @@ interface BuildActionContextOptions {
   position: Position;
   performWithFeedbackOptions?: PerformWithFeedbackOptions;
   shouldDeferHideContextMenu: boolean;
-  onBeforeCopy?: () => void;
   onBeforePrompt?: () => void;
   customEnterPromptMode?: () => void;
 }
@@ -227,14 +234,15 @@ interface LabeledCopyOptions {
   targetElements: Element[];
   labelInstanceIds: string[];
   extraPrompt?: string;
-  shouldDeactivateAfter?: boolean;
+  shouldDeactivateOnFailure?: boolean;
   onComplete?: () => void;
 }
 
 interface CopyRetryEntry {
   operation: (signal: AbortSignal) => Promise<CopyFlowResult>;
   siblingIds: Set<string>;
-  shouldDeactivateAfter: boolean;
+  shouldDeactivateOnFailure: boolean;
+  rerun?: () => void;
 }
 
 const CANCELLED_COPY_RESULT: CopyFlowResult = {
@@ -295,6 +303,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const { store, actions, pointer, viewportVersion, current } = createGrabStore({
       keyHoldDuration: pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS,
+      onActivate: () => labelController.dismissCompleted(),
     });
 
     const isHoldingKeys = createMemo(() => current().state === "holding");
@@ -615,13 +624,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void dragPreviewElements();
     };
     let keydownSpamTimerId: number | null = null;
+    let toggleShortcutPressTimestampMs: number | null = null;
     const activationHoldState = {
       timerId: null as number | null,
       startTimestamp: null as number | null,
       copyWaiting: false,
       holdTimerFired: false,
     };
-    let previousSpaceDragPointerPage: Position | null = null;
+    const previousSpaceDragPointerPage: Position = { x: 0, y: 0 };
     const [isShiftMultiSelecting, setIsShiftMultiSelecting] = createSignal(false);
     let lastWindowFocusTimestamp = 0;
     let isCopyFeedbackCooldownActive = false;
@@ -649,6 +659,20 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let componentNameDebounceTimerId: number | null = null;
     let pendingDefaultActionId: string | null = null;
     const [isPendingContextMenuSelect, setIsPendingContextMenuSelect] = createSignal(false);
+    // Holding Shift in Grab turns a drag into a screenshot of the dragged
+    // area, unless Shift is already building a multi-selection or a pending
+    // comment needs an element. A pending toolbar action stays pending: the
+    // toolbar button arms one even for the default copy, and the screenshot
+    // has to work however Grab was switched on.
+    const canTakeScreenshot = () =>
+      isActivated() &&
+      inspect.annotationTool() === "grab" &&
+      !isPromptMode() &&
+      !isShiftMultiSelecting() &&
+      !store.pendingCommentMode;
+    const isScreenshotMode = createMemo(() => isShiftKeyHeld() && canTakeScreenshot());
+    let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
+    let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
     const [pendingToolbarActionId, setPendingToolbarActionId] = createSignal<string | null>(null);
     const [debouncedElementForComponentName, setDebouncedElementForComponentName] =
       createSignal<Element | null>(null);
@@ -676,16 +700,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       () => isDragging(),
       (scrollDelta) => {
         if (isDragRepositioning()) {
-          actions.shiftDragStart(scrollDelta);
-          if (previousSpaceDragPointerPage) {
-            previousSpaceDragPointerPage = {
-              x: previousSpaceDragPointerPage.x + scrollDelta.x,
-              y: previousSpaceDragPointerPage.y + scrollDelta.y,
-            };
-            return;
-          }
-          const { pageX, pageY } = toPageCoordinates(pointer().x, pointer().y);
-          previousSpaceDragPointerPage = { x: pageX, y: pageY };
+          actions.shiftDragStart(scrollDelta.x, scrollDelta.y);
+          previousSpaceDragPointerPage.x += scrollDelta.x;
+          previousSpaceDragPointerPage.y += scrollDelta.y;
         }
       },
     );
@@ -759,11 +776,33 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // later Retry never resurrects a dismissed label.
     const retryCopyByInstanceId = new Map<string, CopyRetryEntry>();
 
+    const areLabelInstancesShown = () =>
+      Boolean(
+        pluginRegistry.store.theme.enabled && pluginRegistry.store.theme.grabbedBoxes.enabled,
+      );
+
     const labelController = createLabelController(
       actions,
       () => store.labelInstances,
       () => retryCopyByInstanceId.clear(),
+      areLabelInstancesShown,
     );
+
+    createEffect(
+      on(areLabelInstancesShown, (areLabelsShown) => {
+        if (!areLabelsShown) labelController.dismissCompleted();
+      }),
+    );
+
+    const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
+      if (isEventFromOverlay(event, "data-react-grab-completion")) return;
+      labelController.dismissCompleted();
+    };
+
+    const dismissCompletedLabelsOnEscape = (event: KeyboardEvent) => {
+      if (event.code !== "Escape" || isKeyboardEventComposing(event)) return;
+      labelController.dismissCompleted();
+    };
 
     const dismissCopyingLabels = (labelInstanceIds: string[]) => {
       for (const labelInstanceId of labelInstanceIds) {
@@ -822,6 +861,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (labelInstanceIds) {
         for (const labelInstanceId of labelInstanceIds) {
+          if (copyResult.copiedContent !== undefined) {
+            labelController.setCopiedContent(labelInstanceId, copyResult.copiedContent);
+          }
           labelController.updateAfterCopy(
             labelInstanceId,
             copyResult.status === "succeeded",
@@ -837,7 +879,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       didSucceed: boolean,
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[],
-      shouldDeactivateAfter: boolean,
+      shouldDeactivateOnFailure: boolean,
+      rerun?: () => void,
     ) => {
       if (didSucceed) {
         for (const labelInstanceId of labelInstanceIds) {
@@ -849,17 +892,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const entry: CopyRetryEntry = {
         operation: clipboardOperation,
         siblingIds: new Set(labelInstanceIds),
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
+        rerun,
       };
       for (const labelInstanceId of labelInstanceIds) {
         retryCopyByInstanceId.set(labelInstanceId, entry);
       }
     };
 
+    const completeSuccessfulCopy = () => {
+      stopShiftMultiSelecting();
+      clearKeyboardNavigation();
+      actions.completeCopy();
+      actions.finishJustCopied();
+    };
+
     const executeCopyOperation = async (
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[] | null,
-      shouldDeactivateAfter?: boolean,
+      shouldDeactivateOnFailure?: boolean,
       signal: AbortSignal = startCopyOperation(),
     ): Promise<boolean> => {
       if (signal.aborted) return false;
@@ -881,21 +932,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           didSucceed,
           clipboardOperation,
           labelInstanceIds,
-          Boolean(shouldDeactivateAfter),
+          Boolean(shouldDeactivateOnFailure),
         );
       }
 
       if (current().state !== "copying") return true;
 
       if (didSucceed) {
-        actions.completeCopy();
-      }
-
-      if (shouldDeactivateAfter) {
-        deactivateRenderer();
-      } else if (didSucceed) {
-        actions.activate();
+        completeSuccessfulCopy();
         startCopyFeedbackCooldown();
+      } else if (shouldDeactivateOnFailure) {
+        deactivateRenderer();
       } else {
         // Leave the copying state before clearing the selection: unfreeze is a
         // no-op outside the active state, and staying in copying strands the
@@ -914,10 +961,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         labelController.markRetrying(labelInstanceId);
         retryCopyByInstanceId.delete(labelInstanceId);
       }
+      // A screenshot has to re-capture with the overlay still active and the
+      // page frozen, as its first attempt did, so it skips the copying state.
+      if (entry.rerun) {
+        entry.rerun();
+        return;
+      }
       // Route through the full copy path (not just the clipboard attempt) so a
       // recovered copy runs the same completion side effects as a first-try
-      // success: completeCopy, re-activate or deactivate, and feedback cooldown.
-      void executeCopyOperation(entry.operation, idsToRetry, entry.shouldDeactivateAfter).then(
+      // success: clearing the copying state, resuming hover, and feedback cooldown.
+      void executeCopyOperation(entry.operation, idsToRetry, entry.shouldDeactivateOnFailure).then(
         (didComplete) => {
           if (!didComplete) dismissCopyingLabels(idsToRetry);
         },
@@ -942,6 +995,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const tagName = firstElement ? getTagName(firstElement) : null;
       const elementName = componentName ?? tagName ?? undefined;
 
+      labelController.cancelScreenshotCaptures();
       return runCopyFlow(
         {
           getContent: pluginRegistry.store.options.getContent,
@@ -1030,7 +1084,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 copySignal,
               ),
             copy.labelInstanceIds.length > 0 ? copy.labelInstanceIds : null,
-            copy.shouldDeactivateAfter,
+            copy.shouldDeactivateOnFailure,
             signal,
           );
           if (didComplete) {
@@ -1068,11 +1122,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                   );
                 }),
               copy.labelInstanceIds,
-              Boolean(copy.shouldDeactivateAfter),
+              Boolean(copy.shouldDeactivateOnFailure),
             );
           }
           if (current().state === "copying") {
-            if (copy.shouldDeactivateAfter) {
+            if (copy.shouldDeactivateOnFailure) {
               deactivateRenderer();
             } else {
               actions.activate();
@@ -1093,7 +1147,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         cursorX,
         selectedElements,
         extraPrompt,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
         dragRect: passedDragRect,
       } = options;
@@ -1127,6 +1181,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             element,
             mouseX: labelCursorX,
             elements: selectedElements,
+            selectionPageRect: dragRect && isMultiSelect ? { ...dragRect } : undefined,
           })
         : null;
 
@@ -1135,7 +1190,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         targetElements: allTargetElements,
         labelInstanceIds: labelInstanceId ? [labelInstanceId] : [],
         extraPrompt,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
       });
     };
@@ -1148,10 +1203,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         componentName?: string;
         mouseX?: number;
       }>;
-      shouldDeactivateAfter?: boolean;
+      shouldDeactivateOnFailure?: boolean;
       onComplete?: () => void;
     }) => {
-      const { elements, labelEntries, shouldDeactivateAfter, onComplete } = options;
+      const { elements, labelEntries, shouldDeactivateOnFailure, onComplete } = options;
       const primaryElement = elements[0];
 
       clearCopyFeedbackCooldown();
@@ -1163,7 +1218,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         primaryElement,
         targetElements: elements,
         labelInstanceIds,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
       });
     };
@@ -1411,15 +1466,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       event.code === "Space" || event.key === " ";
 
     const startSpaceDragRepositioning = () => {
-      if (!isDragging()) return;
+      if (!isDraggingBeyondThreshold() || isDragRepositioning()) return;
+      previousSpaceDragPointerPage.x = pointer().x + window.scrollX;
+      previousSpaceDragPointerPage.y = pointer().y + window.scrollY;
       actions.startDragReposition();
-      const { pageX, pageY } = toPageCoordinates(pointer().x, pointer().y);
-      previousSpaceDragPointerPage = { x: pageX, y: pageY };
     };
 
     const stopSpaceDragRepositioning = () => {
       actions.stopDragReposition();
-      previousSpaceDragPointerPage = null;
     };
 
     const dragBounds = createMemo((): OverlayBounds | undefined => {
@@ -1442,7 +1496,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const dragPreviewElements = createMemo((): Element[] => {
       void scrollVersion();
 
-      if (!isDraggingBeyondThreshold()) return [];
+      if (!isDraggingBeyondThreshold() || isScreenshotMode()) return [];
 
       const pointer = dragPreviewPointer();
       if (!pointer) return [];
@@ -1757,10 +1811,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             isPromptMode(),
             inspect.annotationTool(),
             inspect.isEditPressing(),
+            isScreenshotMode(),
           ] as const,
-        ([activated, copying, promptMode, annotationTool]) => {
+        ([activated, copying, promptMode, annotationTool, , screenshotMode]) => {
           if (copying) {
             setCursorOverride("progress");
+          } else if (screenshotMode) {
+            setCursorOverride(SCREENSHOT_TOOL_CURSOR);
           } else if (activated && !promptMode) {
             setCursorOverride(getAnnotationToolCursor(annotationTool));
           } else {
@@ -1779,7 +1836,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const deactivateRenderer = () => {
+      clearCopyFeedbackCooldown();
       cancelPendingCopies();
+      toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
       stopSpaceDragRepositioning();
@@ -1790,6 +1849,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       keyboardSelection.clear();
       setIsPendingContextMenuSelect(false);
       setPendingToolbarActionId(null);
+      pendingDefaultActionId = null;
       inspect.selectTool("grab");
       didAnnotationToolActivate = false;
       if (wasDragging) {
@@ -1861,7 +1921,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         cursorX: labelPositionX,
         selectedElements: elements,
         extraPrompt: prompt || undefined,
-        shouldDeactivateAfter: true,
+        shouldDeactivateOnFailure: true,
       });
     };
 
@@ -2030,14 +2090,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const runPendingDefaultAction = (element: Element, position: Position) => {
       const actionId = pendingDefaultActionId;
-      pendingDefaultActionId = null;
-      setPendingToolbarActionId(null);
       if (!actionId) return;
 
       const action = pluginRegistry.store.actions.find(
         (registeredAction) => registeredAction.id === actionId,
       );
       if (!action) {
+        clearPendingToolbarSelection();
         openContextMenu(element, position);
         return;
       }
@@ -2125,14 +2184,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (isDragging()) {
         if (isDragRepositioning()) {
-          const { pageX, pageY } = toPageCoordinates(clientX, clientY);
-          if (previousSpaceDragPointerPage) {
-            actions.shiftDragStart({
-              x: pageX - previousSpaceDragPointerPage.x,
-              y: pageY - previousSpaceDragPointerPage.y,
-            });
-          }
-          previousSpaceDragPointerPage = { x: pageX, y: pageY };
+          const pageX = clientX + window.scrollX;
+          const pageY = clientY + window.scrollY;
+          actions.shiftDragStart(
+            pageX - previousSpaceDragPointerPage.x,
+            pageY - previousSpaceDragPointerPage.y,
+          );
+          previousSpaceDragPointerPage.x = pageX;
+          previousSpaceDragPointerPage.y = pageY;
         }
 
         scheduleDragPreviewUpdate(clientX, clientY);
@@ -2157,6 +2216,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const shouldPreserveKeyboardSelection = keyboardSelection.selectedElement() !== null;
       actions.startDrag({ x: clientX, y: clientY }, isShiftHeld || shouldPreserveKeyboardSelection);
+      dragStartTimestampMs = performance.now();
+      toggleShortcutPressTimestampMs = null;
       actions.setPointer({ x: clientX, y: clientY });
       setHostBodyStyle("userSelect", "none");
 
@@ -2238,7 +2299,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           element: accumulatedElements[0],
           cursorX: perElementLabelEntries[0].mouseX,
           selectedElements: accumulatedElements,
-          shouldDeactivateAfter: store.wasActivatedByToggle,
+          shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
         return;
       }
@@ -2246,7 +2307,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithPerElementLabels({
         elements: accumulatedElements,
         labelEntries: perElementLabelEntries,
-        shouldDeactivateAfter: store.wasActivatedByToggle,
+        shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
 
@@ -2301,24 +2362,107 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isPendingContextMenuSelect()) {
-        setIsPendingContextMenuSelect(false);
         if (pendingDefaultActionId) {
           runPendingDefaultAction(firstElement, center);
         } else {
+          setIsPendingContextMenuSelect(false);
           openContextMenu(firstElement, center);
         }
         return;
       }
 
-      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
+      const shouldDeactivateOnFailure = store.wasActivatedByToggle && !hasModifierKeyHeld;
 
       performCopyWithLabel({
         element: firstElement,
         cursorX: center.x,
         selectedElements,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         dragRect,
       });
+    };
+
+    // The overlay stays active (not "copying") while the image renders:
+    // leaving the active state unfreezes the page's hover state and
+    // animations, and the capture has to show what was on screen.
+    const captureScreenshot = (dragSelectionRect: DragRect) => {
+      const pageRect = createPageRectFromBounds(dragSelectionRect);
+      const annotations = { strokes: inspect.strokes(), texts: inspect.texts() };
+      let capturedBlobPromise: Promise<Blob> | null = null;
+      const getCapturedBlob = () => {
+        if (!capturedBlobPromise) {
+          const blobPromise = capturePageRect(pageRect, annotations);
+          capturedBlobPromise = blobPromise;
+          blobPromise.catch(() => {
+            if (capturedBlobPromise === blobPromise) capturedBlobPromise = null;
+          });
+        }
+        return capturedBlobPromise;
+      };
+
+      const labelBounds = createBoundsFromDragRect(pageRect);
+      clearCopyFeedbackCooldown();
+      const labelInstanceId = labelController.createInstance(
+        labelBounds,
+        "",
+        undefined,
+        "copying",
+        {
+          mouseX: labelBounds.x + labelBounds.width / 2,
+          statusText: "Capturing…",
+        },
+      );
+
+      const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
+        labelController.cancelScreenshotCaptures();
+        const blobPromise = racePromiseWithAbort(getCapturedBlob(), signal).then(
+          (captureResult) => {
+            if (captureResult === ABORTED_PROMISE_RESULT) {
+              throw new Error("Screenshot capture cancelled");
+            }
+            return captureResult;
+          },
+        );
+        const [blobOutcome, deliveryOutcome] = await Promise.allSettled([
+          blobPromise,
+          deliverPngBlob(blobPromise),
+        ]);
+        if (signal.aborted) return CANCELLED_COPY_RESULT;
+        if (blobOutcome.status === "rejected") {
+          throw new Error("Couldn't capture image", { cause: blobOutcome.reason });
+        }
+        if (deliveryOutcome.status === "rejected") {
+          throw new Error("Couldn't copy image", { cause: deliveryOutcome.reason });
+        }
+        labelController.setImage(
+          labelInstanceId,
+          deliveryOutcome.value === "saved" ? "Image saved" : "Image copied",
+          blobOutcome.value,
+        );
+        return { status: "succeeded" };
+      };
+
+      const runScreenshotCopy = () => {
+        const signal = startCopyOperation();
+        void attemptClipboardAndLabel(copyScreenshotToClipboard, [labelInstanceId], signal).then(
+          (copyResult) => {
+            if (copyResult.status === "cancelled") {
+              dismissCopyingLabels([labelInstanceId]);
+              return;
+            }
+            const didSucceed = copyResult.status === "succeeded";
+            registerCopyRetry(
+              didSucceed,
+              copyScreenshotToClipboard,
+              [labelInstanceId],
+              false,
+              runScreenshotCopy,
+            );
+          },
+        );
+      };
+
+      runScreenshotCopy();
     };
 
     const getFrozenElementAtPosition = (position: Position): Element | null => {
@@ -2400,9 +2544,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isPendingContextMenuSelect()) {
-        setIsPendingContextMenuSelect(false);
         const { wasIntercepted } = pluginRegistry.hooks.onElementSelect(selectedElement);
-        if (wasIntercepted) return;
+        if (wasIntercepted) {
+          clearPendingToolbarSelection();
+          return;
+        }
         keyboardSelection.clear();
 
         freezeAllAnimations([selectedElement]);
@@ -2413,19 +2559,20 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (pendingDefaultActionId) {
           runPendingDefaultAction(selectedElement, position);
         } else {
+          setIsPendingContextMenuSelect(false);
           openContextMenu(selectedElement, position);
         }
         return;
       }
 
-      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
+      const shouldDeactivateOnFailure = store.wasActivatedByToggle && !hasModifierKeyHeld;
 
       actions.setLastGrabbed(selectedElement);
 
       performCopyWithLabel({
         element: selectedElement,
         cursorX: positionX,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
       });
       keyboardSelection.clear();
     };
@@ -2453,17 +2600,34 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const dragDistance = calculateDragDistance(clientX, clientY);
       const wasDragGesture =
         dragDistance.x > DRAG_THRESHOLD_PX || dragDistance.y > DRAG_THRESHOLD_PX;
+      const canReleaseAsScreenshot = wasDragGesture && canTakeScreenshot();
+      const isScreenshotSized =
+        dragDistance.x >= SCREENSHOT_MIN_SIZE_PX && dragDistance.y >= SCREENSHOT_MIN_SIZE_PX;
+      const didReleaseShiftDuringGrace =
+        lastShiftReleaseTimestampMs >= dragStartTimestampMs &&
+        performance.now() - lastShiftReleaseTimestampMs <= SCREENSHOT_SHIFT_RELEASE_GRACE_MS;
+      const shouldCaptureScreenshot =
+        canReleaseAsScreenshot && isScreenshotSized && (isShiftHeld || didReleaseShiftDuringGrace);
+      // Only a Shift+click that toggles the multi-selection differs from a
+      // marquee; with a toolbar action pending both pick an element for it.
+      const isUndersizedScreenshot =
+        canReleaseAsScreenshot &&
+        isShiftHeld &&
+        !isScreenshotSized &&
+        !isPendingContextMenuSelect();
+      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
       // resets dragStart in the store, which would zero out the rectangle.
-      const dragSelectionRect = wasDragGesture ? calculateDragRectangle(clientX, clientY) : null;
-      const dragSelectionElements = dragSelectionRect
-        ? resolveDragSelectionAtRelease(dragSelectionRect, clientX, clientY)
-        : [];
+      const dragSelectionRect = isMarqueeRelease ? calculateDragRectangle(clientX, clientY) : null;
+      const dragSelectionElements =
+        dragSelectionRect && !shouldCaptureScreenshot
+          ? resolveDragSelectionAtRelease(dragSelectionRect, clientX, clientY)
+          : [];
 
       clearDragPreview();
 
-      if (wasDragGesture) {
+      if (isMarqueeRelease) {
         actions.endDrag();
       } else {
         actions.cancelDrag();
@@ -2472,7 +2636,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       autoScroller.stop();
       restoreHostBodyStyle("userSelect");
 
-      if (dragSelectionRect) {
+      if (dragSelectionRect && shouldCaptureScreenshot) {
+        actions.unfreeze();
+        clearKeyboardNavigation();
+        captureScreenshot(dragSelectionRect);
+      } else if (dragSelectionRect) {
         handleDragSelection(
           dragSelectionRect,
           dragSelectionElements,
@@ -2546,6 +2714,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
       shouldForwardKeyboardEvent: (event) =>
         isTargetKeyCombination(event, pluginRegistry.store.options),
+      onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
+      onFrameKeyDown: ignoreRealInput(dismissCompletedLabelsOnEscape),
       shouldForwardViewportEvent: (frameDocument) => {
         const activeElement = store.frozenElement ?? targetElement();
         if (activeElement && isDocumentAncestorOfElement(frameDocument, activeElement)) return true;
@@ -2556,6 +2726,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     });
 
     const keyboardClaimer = setupKeyboardEventClaimer();
+
+    const claimMarqueeSpace = (event: KeyboardEvent) => {
+      if (!isDragging() || !isSpaceActivationKey(event)) return;
+      if (event.type === "keydown" && !event.repeat) startSpaceDragRepositioning();
+      if (event.type === "keyup") stopSpaceDragRepositioning();
+      keyboardClaimer.claimedEvents.add(event);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    eventListenerManager.addWindowListener("keydown", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keyup", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keypress", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
 
     const blockEnterIfNeeded = (event: KeyboardEvent) => {
       if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return false;
@@ -2579,6 +2768,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (shouldBlockEnter) {
         // The prompt input keeps Enter so its textarea handler can submit.
         if (isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE)) return false;
+        if (isEventFromOverlay(event, "data-react-grab-completion-action")) return false;
         keyboardClaimer.claimedEvents.add(event);
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -2642,7 +2832,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithLabel({
         element: selectedElement,
         cursorX: center.x,
-        shouldDeactivateAfter: store.wasActivatedByToggle,
+        shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
 
@@ -2881,8 +3071,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
-        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold")
+        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold") {
+          if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
           return;
+        }
         if (event.repeat) return;
 
         // If the overlay gets stuck active (e.g. the modifier keyup was lost
@@ -2964,6 +3156,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        dismissCompletedLabelsOnEscape(event);
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
         // being typed into the specs panel.
@@ -3095,15 +3288,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        if (isDragging() && isSpaceActivationKey(event)) {
-          if (!event.repeat) {
-            startSpaceDragRepositioning();
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
         if (event.key === "Escape") {
           if (isHoldingKeys() || store.wasActivatedByToggle) {
             deactivateRenderer();
@@ -3135,14 +3319,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         if (blockEnterIfNeeded(event)) return;
-
-        if (isSpaceActivationKey(event) && isDragRepositioning()) {
-          stopSpaceDragRepositioning();
-          event.preventDefault();
-          event.stopPropagation();
-        }
 
         if (event.key === "Shift" && isShiftMultiSelecting()) {
           // If shift is released mid-drag, abort the in-progress drag
@@ -3175,7 +3354,27 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
 
-        if (didJustCopy() || isCopyFeedbackCooldownActive) {
+        if (
+          toggleShortcutPressTimestampMs !== null &&
+          (isReleasingActivationKey || isReleasingModifier)
+        ) {
+          const shortcutPressDurationMs = performance.now() - toggleShortcutPressTimestampMs;
+          toggleShortcutPressTimestampMs = null;
+          const configuredKeyHoldDurationMs =
+            pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS;
+          if (
+            shortcutPressDurationMs <
+            Math.max(configuredKeyHoldDurationMs, DEFAULT_KEY_HOLD_DURATION_MS)
+          ) {
+            deactivateRenderer();
+            return;
+          }
+        }
+
+        if (
+          (didJustCopy() || isCopyFeedbackCooldownActive) &&
+          (!store.wasActivatedByToggle || pluginRegistry.store.options.activationMode === "hold")
+        ) {
           if (isReleasingActivationKey || isReleasingModifier) {
             clearCopyFeedbackCooldown();
             deactivateRenderer();
@@ -3280,6 +3479,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.trackMeasureTarget(event.clientX, event.clientY);
           return;
         }
+        // releaseSpecsPin would keep a pin Shift is still holding, so a
+        // screenshot drag that started under one drops it outright.
+        if (
+          isDragging() &&
+          inspect.pinnedSpecsElement() !== null &&
+          !inspect.isSpecsPinLocked() &&
+          isScreenshotMode()
+        ) {
+          const dragDistance = calculateDragDistance(event.clientX, event.clientY);
+          if (dragDistance.x > DRAG_THRESHOLD_PX || dragDistance.y > DRAG_THRESHOLD_PX) {
+            inspect.unpinSpecs();
+          }
+        }
         if (isElementDetectionBlocked()) return;
         if (isTouchPointer && !isHoldingKeys() && !isActivated()) return;
         const isActiveState = isTouchPointer ? isHoldingKeys() : isActivated();
@@ -3313,6 +3525,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "pointerdown",
       ignoreRealInput((event: PointerEvent) => {
+        dismissCompletedLabelsOnPress(event);
         if (event.button !== 0) return;
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
@@ -3323,7 +3536,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         // must not start a drag or a Shift multi-select under the pin. While
         // measuring, the pointer is over the far end of the measurement, not
         // the selection, so a press there must not copy either of them.
-        if (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) {
+        // The exception is a pin Shift alone is holding: the press then
+        // starts a screenshot drag, which lets go of the pin once it moves.
+        const isPressingThroughShiftPin =
+          isScreenshotMode() &&
+          !inspect.isSpecsPinLocked() &&
+          inspect.measureAnchorElement() === null;
+        if (
+          (inspect.pinnedSpecsElement() !== null || inspect.measureAnchorElement() !== null) &&
+          !isPressingThroughShiftPin
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
           if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
@@ -3404,6 +3626,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
         if (isModalPopoverOpen()) return;
+        // A press that went through a Shift-held specs pin and never moved
+        // far enough to drop it is a Shift+click under the pin, which the
+        // pin swallows.
+        if (isDragging() && inspect.pinnedSpecsElement() !== null) {
+          cancelActiveDrag();
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         const isActive = isRendererActive() || isSelectionInteractionLocked() || isDragging();
         const hasModifierKeyHeld = event.metaKey || event.ctrlKey;
         handlePointerUp(event.clientX, event.clientY, hasModifierKeyHeld, event.shiftKey);
@@ -3488,19 +3719,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (isRendererActive() || didJustDrag()) {
           event.preventDefault();
           event.stopImmediatePropagation();
-
-          // A click with the pen or text tool places ink or a note, and one
-          // made while measuring was swallowed at the press; neither is the
-          // element pick that ends a toggled session.
-          if (isAnnotating() || inspect.measureAnchorElement() !== null) return;
-
-          if (store.wasActivatedByToggle && !isPromptMode() && !event.shiftKey) {
-            if (!isHoldingKeys()) {
-              deactivateRenderer();
-            } else {
-              actions.setWasActivatedByToggle(false);
-            }
-          }
         }
       }),
       { capture: true },
@@ -3677,6 +3895,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         boundsRecalcIntervalId = window.setInterval(() => {
           actions.relinkLiveElements();
+          labelController.dismissCompletedIfAnchorDetached();
           scheduleBoundsSync();
         }, BOUNDS_RECALC_INTERVAL_MS);
         return;
@@ -4004,6 +4223,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         previousInstance &&
         previousInstance.status === instance.status &&
         previousInstance.errorMessage === instance.errorMessage &&
+        previousInstance.statusText === instance.statusText &&
+        previousInstance.thumbnailUrl === instance.thumbnailUrl &&
+        previousInstance.copiedContent === instance.copiedContent &&
+        previousInstance.isCapturingScreenshot === instance.isCapturingScreenshot &&
+        previousInstance.screenshotErrorMessage === instance.screenshotErrorMessage &&
         previousInstance.bounds.x === newBounds.x &&
         previousInstance.bounds.y === newBounds.y &&
         previousInstance.bounds.width === newBounds.width &&
@@ -4033,8 +4257,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const computedLabelInstances = createMemo(() => {
-      if (!isThemeEnabled()) return [];
-      if (!pluginRegistry.store.theme.grabbedBoxes.enabled) return [];
+      if (!areLabelInstancesShown()) return [];
       void viewportVersion();
       const currentIds = new Set(store.labelInstances.map((instance) => instance.id));
       for (const cachedId of labelInstanceCache.keys()) {
@@ -4178,7 +4401,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             ? createFlatOverlayBounds(combineBounds(frozenBounds))
             : singleElementBounds;
 
-          const shouldDeactivateAfter = store.wasActivatedByToggle;
+          const signal = startCopyOperation();
+          const shouldDeactivateOnFailure = store.wasActivatedByToggle;
+          let didSucceed = false;
           let selectionBoundsForLabel: OverlayBounds[];
           if (hasMultipleElements) {
             selectionBoundsForLabel = frozenBounds;
@@ -4208,7 +4433,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               },
             );
 
-            let didSucceed = false;
             let errorMessage: string | undefined;
 
             try {
@@ -4223,7 +4447,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             labelController.updateAfterCopy(labelInstanceId, didSucceed, errorMessage);
           } else {
             try {
-              await action();
+              didSucceed = await action();
             } catch (error) {
               reportRecoverableError(
                 new RecoverableError("Action failed without feedback bounds", error),
@@ -4231,7 +4455,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             }
           }
 
-          if (shouldDeactivateAfter) {
+          if (signal.aborted) return;
+          if (didSucceed) {
+            completeSuccessfulCopy();
+          } else if (shouldDeactivateOnFailure) {
             deactivateRenderer();
           } else {
             actions.unfreeze();
@@ -4258,7 +4485,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         position,
         performWithFeedbackOptions,
         shouldDeferHideContextMenu,
-        onBeforeCopy,
         onBeforePrompt,
         customEnterPromptMode,
       } = options;
@@ -4270,13 +4496,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         : actions.hideContextMenu;
 
       const copyAction = () => {
-        clearPendingToolbarSelection();
-        onBeforeCopy?.();
+        keyboardSelection.clear();
         performCopyWithLabel({
           element,
           cursorX: position.x,
           selectedElements: elements.length > 1 ? elements : undefined,
-          shouldDeactivateAfter: store.wasActivatedByToggle,
+          shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
         hideContextMenuAction();
       };
@@ -4344,9 +4569,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         componentName: contextMenuComponentName(),
         position,
         shouldDeferHideContextMenu: true,
-        onBeforeCopy: () => {
-          keyboardSelection.clear();
-        },
         customEnterPromptMode: () => {
           labelController.clearAll();
           clearPendingToolbarSelection();
@@ -4452,6 +4674,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (!instance?.element) return;
       if (!isElementConnected(instance.element)) return;
 
+      labelController.dismissCompleted();
       const contextMenuElement = instance.element;
       const center = getBoundsCenter(createElementBounds(contextMenuElement));
       const position = {
@@ -4479,6 +4702,73 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         actions.freeze();
         actions.showContextMenu(position, contextMenuElement);
       }, 0);
+    };
+
+    const getLabelCaptureRect = (instance: SelectionLabelInstance) => {
+      const anchorElements =
+        instance.elements && instance.elements.length > 0 ? instance.elements : [instance.element];
+      const liveBoundsList: OverlayBounds[] = anchorElements
+        .filter(isElementConnected)
+        .map(createElementBounds);
+      if (instance.selectionPageRect) {
+        liveBoundsList.push(createBoundsFromDragRect(instance.selectionPageRect));
+      }
+      const captureBounds =
+        liveBoundsList.length > 0 ? combineBounds(liveBoundsList) : instance.bounds;
+      return padPageRect(
+        createPageRectFromBounds(captureBounds),
+        SCREENSHOT_SELECTION_PADDING_PX,
+        document.documentElement.scrollWidth,
+        document.documentElement.scrollHeight,
+      );
+    };
+
+    // Called from the camera button's click: the clipboard write has to be
+    // issued in this call stack, before the image has rendered. A newer Grab
+    // clipboard write or the pill's removal cancels the capture, and the
+    // pending image then rejects so this write cannot overwrite the newer one.
+    const handleCopyScreenshotInstance = (instanceId: string) => {
+      const instance = store.labelInstances.find(
+        (labelInstance) => labelInstance.id === instanceId,
+      );
+      if (!instance || instance.status !== "copied" || instance.isCapturingScreenshot) return;
+      const copiedContent = instance.copiedContent;
+      if (copiedContent === undefined) return;
+
+      labelController.cancelScreenshotCaptures();
+      const captureSignal = labelController.startScreenshotCapture(instanceId);
+      const blobPromise = racePromiseWithAbort(
+        capturePageRect(getLabelCaptureRect(instance), {
+          strokes: inspect.strokes(),
+          texts: inspect.texts(),
+        }),
+        captureSignal,
+      ).then((captureResult) => {
+        if (captureResult === ABORTED_PROMISE_RESULT) {
+          throw new Error("Screenshot capture cancelled");
+        }
+        return captureResult;
+      });
+      const deliveryPromise = deliverPngBlob(blobPromise, copiedContent);
+
+      void Promise.allSettled([blobPromise, deliveryPromise]).then(
+        ([blobOutcome, deliveryOutcome]) => {
+          if (captureSignal.aborted) return;
+          if (blobOutcome.status === "rejected") {
+            labelController.failScreenshotCapture(instanceId, "Couldn't capture image");
+            return;
+          }
+          if (deliveryOutcome.status === "rejected") {
+            labelController.failScreenshotCapture(instanceId, "Couldn't copy image");
+            return;
+          }
+          labelController.setImage(
+            instanceId,
+            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image",
+            blobOutcome.value,
+          );
+        },
+      );
     };
 
     createEffect(() => {
@@ -4518,8 +4808,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 hierarchyMenuPosition={hierarchyMenuPosition()}
                 labelInstances={computedLabelInstances()}
                 labelInstanceAccessors={labelInstanceAccessors()}
-                dragVisible={dragVisible()}
+                dragVisible={dragVisible() && !isScreenshotMode()}
                 dragBounds={dragBounds()}
+                screenshotMarqueeBounds={
+                  dragVisible() && isScreenshotMode() ? dragBounds() : undefined
+                }
                 grabbedBoxes={computedGrabbedBoxes()}
                 mouseX={
                   store.frozenElements.length > 1
@@ -4530,9 +4823,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
                 onShowContextMenuInstance={handleShowContextMenuInstance}
+                onCopyScreenshotInstance={handleCopyScreenshotInstance}
                 onRetryInstance={handleRetryInstance}
                 onAcknowledgeErrorInstance={handleAcknowledgeErrorInstance}
-                onLabelInstanceHoverChange={labelController.handleHoverChange}
                 onInputChange={actions.setInputText}
                 onInputSubmit={() => void handleInputSubmit()}
                 selectionLabelShakeCount={selectionLabelShakeCount()}
