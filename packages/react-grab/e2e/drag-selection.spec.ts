@@ -330,7 +330,7 @@ test.describe("Drag Selection", () => {
     expect(clipboardContent).toBeTruthy();
   });
 
-  test("should deactivate after drag selection in toggle mode", async ({ reactGrab }) => {
+  test("should stay active after drag selection in toggle mode", async ({ reactGrab }) => {
     await reactGrab.activate();
 
     await reactGrab.dragSelect(
@@ -341,7 +341,7 @@ test.describe("Drag Selection", () => {
     await reactGrab.page.waitForTimeout(2000);
 
     const isVisible = await reactGrab.isOverlayVisible();
-    expect(isVisible).toBe(false);
+    expect(isVisible).toBe(true);
   });
 
   test("should handle drag across entire list", async ({ reactGrab }) => {

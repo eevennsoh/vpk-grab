@@ -92,6 +92,7 @@ test.describe("Copy failure feedback", () => {
     expect(snapshot?.text).toContain("Failed to copy");
     expect(snapshot?.hasRetry).toBe(true);
     expect(snapshot?.hasOk).toBe(true);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
   });
 
   test("Retry re-runs the copy and clears the error once it succeeds", async ({ reactGrab }) => {

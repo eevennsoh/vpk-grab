@@ -239,6 +239,8 @@ test.describe("Edge Cases", () => {
       await reactGrab.activate();
       await reactGrab.hoverElement("li:first-child");
       await reactGrab.clickElement("li:first-child");
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      await reactGrab.pressEscape();
 
       await expect
         .poll(

@@ -358,7 +358,9 @@ test.describe("Shift Multi-Select", () => {
     const copiedLabelCentersBeforeScroll = await reactGrab.page.evaluate(() => {
       const host = document.querySelector("[data-react-grab]");
       const shadowRoot = host?.shadowRoot;
-      const labels = shadowRoot?.querySelectorAll<HTMLElement>("[data-react-grab-selection-label]");
+      const labels = shadowRoot?.querySelectorAll<HTMLElement>(
+        "[data-react-grab-selection-label]:has([data-react-grab-completion])",
+      );
       return Array.from(labels ?? [])
         .map((label) => {
           const rect = label.getBoundingClientRect();
@@ -407,7 +409,9 @@ test.describe("Shift Multi-Select", () => {
     const labelCentersBeforeScroll = await reactGrab.page.evaluate(() => {
       const host = document.querySelector("[data-react-grab]");
       const shadowRoot = host?.shadowRoot;
-      const labels = shadowRoot?.querySelectorAll<HTMLElement>("[data-react-grab-selection-label]");
+      const labels = shadowRoot?.querySelectorAll<HTMLElement>(
+        "[data-react-grab-selection-label]:has([data-react-grab-completion])",
+      );
       return Array.from(labels ?? [])
         .map((label) => {
           const rect = label.getBoundingClientRect();
@@ -437,7 +441,9 @@ test.describe("Shift Multi-Select", () => {
     const labelCentersAfterScroll = await reactGrab.page.evaluate(() => {
       const host = document.querySelector("[data-react-grab]");
       const shadowRoot = host?.shadowRoot;
-      const labels = shadowRoot?.querySelectorAll<HTMLElement>("[data-react-grab-selection-label]");
+      const labels = shadowRoot?.querySelectorAll<HTMLElement>(
+        "[data-react-grab-selection-label]:has([data-react-grab-completion])",
+      );
       return Array.from(labels ?? [])
         .map((label) => {
           const rect = label.getBoundingClientRect();
@@ -789,9 +795,7 @@ test.describe("Shift Multi-Select", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
   });
 
-  test("should not extend a shift+drag screenshot with a later shift+click", async ({
-    reactGrab,
-  }) => {
+  test("should start a new selection after a shift+drag screenshot", async ({ reactGrab }) => {
     await installClipboardRecorder(reactGrab.page);
     await reactGrab.activate();
 
@@ -818,12 +822,13 @@ test.describe("Shift Multi-Select", () => {
     await reactGrab.page.mouse.up();
 
     await expect.poll(() => getImageWrites(reactGrab.page)).toHaveLength(1);
-    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
+    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(true);
 
     await reactGrab.page.mouse.click(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2);
     await reactGrab.page.keyboard.up("Shift");
 
-    expect(await reactGrab.getClipboardContent()).not.toContain("TodoItem");
-    expect((await reactGrab.getState()).isActive).toBe(false);
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect((await reactGrab.getState()).isActive).toBe(true);
   });
 });

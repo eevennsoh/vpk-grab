@@ -418,7 +418,8 @@ const createGrabStore = (input: GrabStoreInput) => {
 
     completeCopy: () => {
       const currentState = current();
-      const wasActive = currentState.state === "copying" ? currentState.wasActive : false;
+      const wasActive =
+        currentState.state === "copying" ? currentState.wasActive : currentState.state === "active";
       setCurrent({
         state: "justCopied",
         copiedAt: Date.now(),
@@ -429,10 +430,10 @@ const createGrabStore = (input: GrabStoreInput) => {
     finishJustCopied: () => {
       const currentState = current();
       if (currentState.state === "justCopied") {
-        const shouldReturnToActive = currentState.wasActive && !store.wasActivatedByToggle;
-        if (shouldReturnToActive) {
+        if (currentState.wasActive) {
           batch(() => {
             clearFrozenElement();
+            setStore("dragStart", { x: OFFSCREEN_POSITION, y: OFFSCREEN_POSITION });
             setCurrent({
               state: "active",
               phase: "hovering",

@@ -319,6 +319,15 @@ test.describe("Screenshot capture", () => {
     expect(await getCopyEventCount(page)).toBe(0);
   });
 
+  test("consecutive Shift+drag screenshots keep Grab on", async ({ reactGrab, page }) => {
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(2);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+  });
+
   test("draws the capture marquee with its size while Shift is held", async ({
     reactGrab,
     page,
@@ -725,7 +734,7 @@ test.describe("Screenshot capture", () => {
     await page.mouse.up();
 
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
-    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
+    await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(true);
     expect(await getImageWrites(page)).toHaveLength(0);
   });
 });
@@ -775,18 +784,14 @@ test.describe("Screenshot capture after a real activation", () => {
       expect(await reactGrab.getClipboardContent()).toBe("");
     });
 
-    test("the capture switches Grab off cleanly so the next session copies", async ({
-      reactGrab,
-      page,
-    }) => {
+    test("the capture keeps Grab on so the next click copies", async ({ reactGrab, page }) => {
       await clickToolbarButton(page);
       await shiftDrag(page, CAPTURE_START, CAPTURE_END);
 
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
-      await expect.poll(() => isReactGrabActive(page)).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(false);
+      await expect.poll(() => isReactGrabActive(page)).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
 
-      await clickToolbarButton(page);
       expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
       const firstCenter = await getTodoItemCenter(page, 0);
       await page.mouse.click(firstCenter.x, firstCenter.y);
@@ -805,9 +810,9 @@ test.describe("Screenshot capture after a real activation", () => {
       await shiftDrag(page, CAPTURE_START, CAPTURE_END);
 
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
-      await expect.poll(() => isReactGrabActive(page)).toBe(false);
+      await expect.poll(() => isReactGrabActive(page)).toBe(true);
       expect(await reactGrab.isPromptModeActive()).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(false);
+      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
       expect(await getCopyEventCount(page)).toBe(0);
     });
 
@@ -1181,6 +1186,7 @@ test.describe("Copied pill", () => {
   }) => {
     await injectPageButton(page);
     await grabFirstTodo(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
     await page.locator(`#${PAGE_BUTTON_ID}`).click();
@@ -1231,6 +1237,7 @@ test.describe("Copied pill", () => {
 
   test("activating with the keyboard shortcut dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
     await pressActivationShortcutInPlace(reactGrab, page);
@@ -1260,6 +1267,7 @@ test.describe("Copied pill", () => {
     page,
   }) => {
     await grabFirstTodo(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
     await getCompletion(reactGrab).locator(MORE_OPTIONS_SELECTOR).click();
@@ -1325,6 +1333,7 @@ test.describe("Copied pill", () => {
     await page.waitForTimeout(PILL_HIDDEN_LABEL_REMOVAL_WAIT_MS);
     expect(await getLabelInstanceCount(reactGrab)).toBe(0);
 
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await page.locator(`#${PAGE_BUTTON_ID}`).click();
     expect(await getPageButtonPointerDownCount(page)).toBe(1);
     expect(await getPageButtonClickCount(page)).toBe(1);
@@ -1332,6 +1341,7 @@ test.describe("Copied pill", () => {
 
   test("a press inside a same-origin frame dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
     const frameTarget = page
@@ -1350,6 +1360,7 @@ test.describe("Copied pill", () => {
 
   test("Escape inside a same-origin frame dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
     const frameTarget = page
       .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
@@ -1388,8 +1399,7 @@ test.describe("Copied pill", () => {
     await grabFirstTodo(reactGrab, page);
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
 
-    await reactGrab.activate();
-    await expect(completion).toHaveCount(0);
+    await expect(completion).toHaveCount(1);
     await reactGrab.hoverUntilSelected("[data-testid='main-title']");
     await page.mouse.down();
     await page.mouse.up();
@@ -1422,7 +1432,7 @@ test.describe("Copied pill", () => {
     await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
     await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
-    expect((await reactGrab.getState()).isActive).toBe(false);
+    expect((await reactGrab.getState()).isActive).toBe(true);
 
     await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toContainText("Copied with image");
@@ -1443,7 +1453,7 @@ test.describe("Copied pill", () => {
     await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
     await expect(completion).toContainText("Copied");
     await expect(completion).not.toContainText("Copied with image");
-    expect((await reactGrab.getState()).isActive).toBe(false);
+    expect((await reactGrab.getState()).isActive).toBe(true);
 
     await openClipboardGate(page);
     await expect(completion).toContainText("Copied with image");
@@ -1741,7 +1751,7 @@ test.describe("Copied pill camera after a real activation", () => {
       await page.keyboard.up("c");
       await page.keyboard.up(reactGrab.feedbackModifierKey);
     }
-    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+    await expect.poll(() => isReactGrabActive(page)).toBe(true);
 
     await expectCameraCaptureCompleted(reactGrab, page, pageErrors);
   });

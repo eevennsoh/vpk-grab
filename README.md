@@ -6,7 +6,7 @@ It is a fork, and a drop-in one. The package is still named `react-grab` and the
 
 ## What it adds
 
-Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too.
+Everything lives in React Grab's own toolbar and behind its one shortcut. Hover something, hold **⌘C** (**Ctrl+C** on Windows and Linux) and the page freezes with the hover state intact, so UI that only exists on hover can be inspected too. Tap the shortcut or click the toolbar button to keep Grab on: after each copy it is ready for the next element, until you press **Esc**, tap the shortcut again or click the toolbar button.
 
 | Toolbar control        | What it does                                                                                                                                                                                                                                                 |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

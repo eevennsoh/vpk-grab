@@ -206,7 +206,7 @@ interface CopyWithLabelOptions {
   cursorX: number;
   selectedElements?: Element[];
   extraPrompt?: string;
-  shouldDeactivateAfter?: boolean;
+  shouldDeactivateOnFailure?: boolean;
   onComplete?: () => void;
   dragRect?: {
     pageX: number;
@@ -235,14 +235,14 @@ interface LabeledCopyOptions {
   targetElements: Element[];
   labelInstanceIds: string[];
   extraPrompt?: string;
-  shouldDeactivateAfter?: boolean;
+  shouldDeactivateOnFailure?: boolean;
   onComplete?: () => void;
 }
 
 interface CopyRetryEntry {
   operation: (signal: AbortSignal) => Promise<CopyFlowResult>;
   siblingIds: Set<string>;
-  shouldDeactivateAfter: boolean;
+  shouldDeactivateOnFailure: boolean;
   rerun?: () => void;
 }
 
@@ -625,6 +625,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void dragPreviewElements();
     };
     let keydownSpamTimerId: number | null = null;
+    let toggleShortcutPressTimestampMs: number | null = null;
     const activationHoldState = {
       timerId: null as number | null,
       startTimestamp: null as number | null,
@@ -886,7 +887,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       didSucceed: boolean,
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[],
-      shouldDeactivateAfter: boolean,
+      shouldDeactivateOnFailure: boolean,
       rerun?: () => void,
     ) => {
       if (didSucceed) {
@@ -899,7 +900,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const entry: CopyRetryEntry = {
         operation: clipboardOperation,
         siblingIds: new Set(labelInstanceIds),
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         rerun,
       };
       for (const labelInstanceId of labelInstanceIds) {
@@ -910,7 +911,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const executeCopyOperation = async (
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[] | null,
-      shouldDeactivateAfter?: boolean,
+      shouldDeactivateOnFailure?: boolean,
       signal: AbortSignal = startCopyOperation(),
     ): Promise<boolean> => {
       if (signal.aborted) return false;
@@ -932,7 +933,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           didSucceed,
           clipboardOperation,
           labelInstanceIds,
-          Boolean(shouldDeactivateAfter),
+          Boolean(shouldDeactivateOnFailure),
         );
       }
 
@@ -940,13 +941,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (didSucceed) {
         actions.completeCopy();
-      }
-
-      if (shouldDeactivateAfter) {
-        deactivateRenderer();
-      } else if (didSucceed) {
-        actions.activate();
+        actions.finishJustCopied();
         startCopyFeedbackCooldown();
+      } else if (shouldDeactivateOnFailure) {
+        deactivateRenderer();
       } else {
         // Leave the copying state before clearing the selection: unfreeze is a
         // no-op outside the active state, and staying in copying strands the
@@ -974,7 +972,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // Route through the full copy path (not just the clipboard attempt) so a
       // recovered copy runs the same completion side effects as a first-try
       // success: completeCopy, re-activate or deactivate, and feedback cooldown.
-      void executeCopyOperation(entry.operation, idsToRetry, entry.shouldDeactivateAfter).then(
+      void executeCopyOperation(entry.operation, idsToRetry, entry.shouldDeactivateOnFailure).then(
         (didComplete) => {
           if (!didComplete) dismissCopyingLabels(idsToRetry);
         },
@@ -1088,7 +1086,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 copySignal,
               ),
             copy.labelInstanceIds.length > 0 ? copy.labelInstanceIds : null,
-            copy.shouldDeactivateAfter,
+            copy.shouldDeactivateOnFailure,
             signal,
           );
           if (didComplete) {
@@ -1126,11 +1124,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                   );
                 }),
               copy.labelInstanceIds,
-              Boolean(copy.shouldDeactivateAfter),
+              Boolean(copy.shouldDeactivateOnFailure),
             );
           }
           if (current().state === "copying") {
-            if (copy.shouldDeactivateAfter) {
+            if (copy.shouldDeactivateOnFailure) {
               deactivateRenderer();
             } else {
               actions.activate();
@@ -1151,7 +1149,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         cursorX,
         selectedElements,
         extraPrompt,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
         dragRect: passedDragRect,
       } = options;
@@ -1194,7 +1192,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         targetElements: allTargetElements,
         labelInstanceIds: labelInstanceId ? [labelInstanceId] : [],
         extraPrompt,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
       });
     };
@@ -1207,10 +1205,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         componentName?: string;
         mouseX?: number;
       }>;
-      shouldDeactivateAfter?: boolean;
+      shouldDeactivateOnFailure?: boolean;
       onComplete?: () => void;
     }) => {
-      const { elements, labelEntries, shouldDeactivateAfter, onComplete } = options;
+      const { elements, labelEntries, shouldDeactivateOnFailure, onComplete } = options;
       const primaryElement = elements[0];
 
       clearCopyFeedbackCooldown();
@@ -1222,7 +1220,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         primaryElement,
         targetElements: elements,
         labelInstanceIds,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         onComplete,
       });
     };
@@ -1842,6 +1840,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const deactivateRenderer = () => {
       cancelPendingCopies();
+      toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
       stopSpaceDragRepositioning();
@@ -1852,6 +1851,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       keyboardSelection.clear();
       setIsPendingContextMenuSelect(false);
       setPendingToolbarActionId(null);
+      pendingDefaultActionId = null;
       inspect.selectTool("grab");
       didAnnotationToolActivate = false;
       if (wasDragging) {
@@ -1923,7 +1923,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         cursorX: labelPositionX,
         selectedElements: elements,
         extraPrompt: prompt || undefined,
-        shouldDeactivateAfter: true,
+        shouldDeactivateOnFailure: true,
       });
     };
 
@@ -2092,14 +2092,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const runPendingDefaultAction = (element: Element, position: Position) => {
       const actionId = pendingDefaultActionId;
-      pendingDefaultActionId = null;
-      setPendingToolbarActionId(null);
       if (!actionId) return;
 
       const action = pluginRegistry.store.actions.find(
         (registeredAction) => registeredAction.id === actionId,
       );
       if (!action) {
+        clearPendingToolbarSelection();
         openContextMenu(element, position);
         return;
       }
@@ -2220,6 +2219,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const shouldPreserveKeyboardSelection = keyboardSelection.selectedElement() !== null;
       actions.startDrag({ x: clientX, y: clientY }, isShiftHeld || shouldPreserveKeyboardSelection);
       dragStartTimestampMs = performance.now();
+      toggleShortcutPressTimestampMs = null;
       actions.setPointer({ x: clientX, y: clientY });
       setHostBodyStyle("userSelect", "none");
 
@@ -2301,7 +2301,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           element: accumulatedElements[0],
           cursorX: perElementLabelEntries[0].mouseX,
           selectedElements: accumulatedElements,
-          shouldDeactivateAfter: store.wasActivatedByToggle,
+          shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
         return;
       }
@@ -2309,7 +2309,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithPerElementLabels({
         elements: accumulatedElements,
         labelEntries: perElementLabelEntries,
-        shouldDeactivateAfter: store.wasActivatedByToggle,
+        shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
 
@@ -2364,22 +2364,22 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isPendingContextMenuSelect()) {
-        setIsPendingContextMenuSelect(false);
         if (pendingDefaultActionId) {
           runPendingDefaultAction(firstElement, center);
         } else {
+          setIsPendingContextMenuSelect(false);
           openContextMenu(firstElement, center);
         }
         return;
       }
 
-      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
+      const shouldDeactivateOnFailure = store.wasActivatedByToggle && !hasModifierKeyHeld;
 
       performCopyWithLabel({
         element: firstElement,
         cursorX: center.x,
         selectedElements,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
         dragRect,
       });
     };
@@ -2387,10 +2387,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // The overlay stays active (not "copying") while the image renders:
     // leaving the active state unfreezes the page's hover state and
     // animations, and the capture has to show what was on screen.
-    const captureScreenshot = (dragSelectionRect: DragRect, hasModifierKeyHeld: boolean) => {
+    const captureScreenshot = (dragSelectionRect: DragRect) => {
       const pageRect = createPageRectFromBounds(dragSelectionRect);
       const annotations = { strokes: inspect.strokes(), texts: inspect.texts() };
-      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
       let capturedBlobPromise: Promise<Blob> | null = null;
       const getCapturedBlob = () => {
         if (!capturedBlobPromise) {
@@ -2438,11 +2437,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return { status: "succeeded" };
       };
 
-      // A capture finishing late must not end something the user has started
-      // since releasing the pointer.
-      const hasNewerInteraction = (signal: AbortSignal) =>
-        signal.aborted || isDragging() || isShiftMultiSelecting() || isPromptMode();
-
       const runScreenshotCopy = () => {
         const signal = startCopyOperation();
         void attemptClipboardAndLabel(copyScreenshotToClipboard, [labelInstanceId], signal).then(
@@ -2456,12 +2450,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               didSucceed,
               copyScreenshotToClipboard,
               [labelInstanceId],
-              shouldDeactivateAfter,
+              false,
               runScreenshotCopy,
             );
-            if (didSucceed && shouldDeactivateAfter && !hasNewerInteraction(signal)) {
-              deactivateRenderer();
-            }
           },
         );
       };
@@ -2548,7 +2539,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isPendingContextMenuSelect()) {
-        setIsPendingContextMenuSelect(false);
         const { wasIntercepted } = pluginRegistry.hooks.onElementSelect(selectedElement);
         if (wasIntercepted) return;
         keyboardSelection.clear();
@@ -2561,19 +2551,20 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (pendingDefaultActionId) {
           runPendingDefaultAction(selectedElement, position);
         } else {
+          setIsPendingContextMenuSelect(false);
           openContextMenu(selectedElement, position);
         }
         return;
       }
 
-      const shouldDeactivateAfter = store.wasActivatedByToggle && !hasModifierKeyHeld;
+      const shouldDeactivateOnFailure = store.wasActivatedByToggle && !hasModifierKeyHeld;
 
       actions.setLastGrabbed(selectedElement);
 
       performCopyWithLabel({
         element: selectedElement,
         cursorX: positionX,
-        shouldDeactivateAfter,
+        shouldDeactivateOnFailure,
       });
       keyboardSelection.clear();
     };
@@ -2638,7 +2629,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       restoreHostBodyStyle("userSelect");
 
       if (dragSelectionRect && shouldCaptureScreenshot) {
-        captureScreenshot(dragSelectionRect, hasModifierKeyHeld);
+        captureScreenshot(dragSelectionRect);
       } else if (dragSelectionRect) {
         handleDragSelection(
           dragSelectionRect,
@@ -2812,7 +2803,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithLabel({
         element: selectedElement,
         cursorX: center.x,
-        shouldDeactivateAfter: store.wasActivatedByToggle,
+        shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
 
@@ -3051,8 +3042,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
-        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold")
+        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold") {
+          if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
           return;
+        }
         if (event.repeat) return;
 
         // If the overlay gets stuck active (e.g. the modifier keyup was lost
@@ -3347,7 +3340,22 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
 
-        if (didJustCopy() || isCopyFeedbackCooldownActive) {
+        if (
+          toggleShortcutPressTimestampMs !== null &&
+          (isReleasingActivationKey || isReleasingModifier)
+        ) {
+          const shortcutPressDurationMs = performance.now() - toggleShortcutPressTimestampMs;
+          toggleShortcutPressTimestampMs = null;
+          if (shortcutPressDurationMs < store.keyHoldDuration) {
+            deactivateRenderer();
+            return;
+          }
+        }
+
+        if (
+          (didJustCopy() || isCopyFeedbackCooldownActive) &&
+          (!store.wasActivatedByToggle || pluginRegistry.store.options.activationMode === "hold")
+        ) {
           if (isReleasingActivationKey || isReleasingModifier) {
             clearCopyFeedbackCooldown();
             deactivateRenderer();
@@ -3692,19 +3700,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (isRendererActive() || didJustDrag()) {
           event.preventDefault();
           event.stopImmediatePropagation();
-
-          // A click with the pen or text tool places ink or a note, and one
-          // made while measuring was swallowed at the press; neither is the
-          // element pick that ends a toggled session.
-          if (isAnnotating() || inspect.measureAnchorElement() !== null) return;
-
-          if (store.wasActivatedByToggle && !isPromptMode() && !event.shiftKey) {
-            if (!isHoldingKeys()) {
-              deactivateRenderer();
-            } else {
-              actions.setWasActivatedByToggle(false);
-            }
-          }
         }
       }),
       { capture: true },
@@ -4387,7 +4382,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             ? createFlatOverlayBounds(combineBounds(frozenBounds))
             : singleElementBounds;
 
-          const shouldDeactivateAfter = store.wasActivatedByToggle;
+          const signal = startCopyOperation();
+          const shouldDeactivateOnFailure = store.wasActivatedByToggle;
+          let didSucceed = false;
           let selectionBoundsForLabel: OverlayBounds[];
           if (hasMultipleElements) {
             selectionBoundsForLabel = frozenBounds;
@@ -4417,7 +4414,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               },
             );
 
-            let didSucceed = false;
             let errorMessage: string | undefined;
 
             try {
@@ -4432,7 +4428,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             labelController.updateAfterCopy(labelInstanceId, didSucceed, errorMessage);
           } else {
             try {
-              await action();
+              didSucceed = await action();
             } catch (error) {
               reportRecoverableError(
                 new RecoverableError("Action failed without feedback bounds", error),
@@ -4440,7 +4436,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             }
           }
 
-          if (shouldDeactivateAfter) {
+          if (signal.aborted) return;
+          if (didSucceed) {
+            actions.completeCopy();
+            actions.finishJustCopied();
+          } else if (shouldDeactivateOnFailure) {
             deactivateRenderer();
           } else {
             actions.unfreeze();
@@ -4479,13 +4479,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         : actions.hideContextMenu;
 
       const copyAction = () => {
-        clearPendingToolbarSelection();
         onBeforeCopy?.();
         performCopyWithLabel({
           element,
           cursorX: position.x,
           selectedElements: elements.length > 1 ? elements : undefined,
-          shouldDeactivateAfter: store.wasActivatedByToggle,
+          shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
         hideContextMenuAction();
       };

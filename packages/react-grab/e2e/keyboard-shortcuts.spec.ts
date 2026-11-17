@@ -56,7 +56,7 @@ test.describe("Keyboard Shortcuts", () => {
     expect(isVisible).toBe(true);
   });
 
-  test("should deactivate after successful click copy in toggle mode", async ({ reactGrab }) => {
+  test("should stay active after successful click copy in toggle mode", async ({ reactGrab }) => {
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected("li:first-child");
 
@@ -64,6 +64,6 @@ test.describe("Keyboard Shortcuts", () => {
     await reactGrab.page.waitForTimeout(2000);
 
     const isVisible = await reactGrab.isOverlayVisible();
-    expect(isVisible).toBe(false);
+    expect(isVisible).toBe(true);
   });
 });

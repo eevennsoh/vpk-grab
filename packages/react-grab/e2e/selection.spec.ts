@@ -137,12 +137,13 @@ test.describe("Element Selection", () => {
     expect(isVisible).toBe(true);
   });
 
-  test("should deactivate after successful copy in toggle mode", async ({ reactGrab }) => {
+  test("should stay active after successful copy in toggle mode", async ({ reactGrab }) => {
     await reactGrab.activate();
     await reactGrab.hoverElement("li");
     await reactGrab.clickElement("li");
 
-    await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(false);
+    await expect.poll(() => reactGrab.getClipboardContent()).toBeTruthy();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
   });
 
   test("should not show selection when inactive", async ({ reactGrab }) => {
@@ -275,4 +276,114 @@ test.describe("Selection Bounds and Mutations", () => {
     await reactGrab.clickElement("[data-testid='pe-outside-target']");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("outside the popover");
   });
+});
+
+test.describe("Persistent Grab sessions", () => {
+  test("shortcut tap keeps Grab on for consecutive copies until Escape", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activateViaKeyboard();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await reactGrab.clickElement("[data-testid='todo-list'] h1");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+    await reactGrab.clickElement("[data-testid='main-title']");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+    await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(0);
+  });
+
+  test("marquee and committed Shift selection keep Grab on", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await reactGrab.dragSelect(
+      "[data-testid='todo-list'] li:first-child span",
+      "[data-testid='todo-list'] li:nth-child(3) span",
+    );
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.keyboard.down("Shift");
+    await reactGrab.clickElement("[data-testid='todo-list'] li:first-child span");
+    await reactGrab.clickElement("[data-testid='todo-list'] li:nth-child(2) span");
+    await page.keyboard.up("Shift");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("h1");
+  });
+
+  test("context menu Copy keeps Grab on", async ({ reactGrab }) => {
+    await reactGrab.activate();
+    await reactGrab.rightClickElement("[data-testid='todo-list'] h1");
+    await reactGrab.clickContextMenuItem("Copy");
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+  });
+
+  test("keyboard selection copy keeps Grab on", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await page.keyboard.press("ArrowUp");
+    await reactGrab.waitForSelectionBox();
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("[<div");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+  });
+
+  test("prompt submission keeps Grab on and restores hover", async ({ reactGrab }) => {
+    await reactGrab.enterPromptMode("li:first-child");
+    await reactGrab.typeInInput("Update this element");
+    await reactGrab.submitInput();
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("Update this element");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+    await reactGrab.hoverUntilSelected("h1");
+  });
+});
+
+test("a successful plugin copy with feedback keeps Grab on", async ({ reactGrab, page }) => {
+  await page.evaluate(() => {
+    window.__REACT_GRAB__?.registerPlugin({
+      name: "copy-tag-test",
+      actions: [
+        {
+          id: "copy-tag-test",
+          label: "Copy tag",
+          onAction: (context) =>
+            context.performWithFeedback(async () => {
+              await navigator.clipboard.writeText(context.element.tagName);
+              return true;
+            }),
+        },
+      ],
+    });
+  });
+  await reactGrab.activate();
+  await reactGrab.rightClickElement("[data-testid='todo-list'] h1");
+  await reactGrab.clickContextMenuItem("Copy tag");
+  await expect.poll(() => reactGrab.getClipboardContent()).toBe("H1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.hoverUntilSelected("li:first-child");
+});
+
+test("tapping the shortcut again after a copy switches Grab off", async ({ reactGrab, page }) => {
+  await reactGrab.activateViaKeyboard();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+  await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+  await page.keyboard.press(`${reactGrab.modifierKey}+c`);
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
 });

@@ -4,9 +4,7 @@ const FEEDBACK_DURATION_MS = 1500;
 
 test.describe("Copy Feedback Behavior", () => {
   test.describe("Toggle Mode - Feedback Period Deactivation", () => {
-    test("should deactivate immediately when key released during feedback period", async ({
-      reactGrab,
-    }) => {
+    test("should stay active when key released during feedback period", async ({ reactGrab }) => {
       await reactGrab.activateViaKeyboard();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
 
@@ -21,7 +19,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
 
       await reactGrab.page.waitForTimeout(100);
-      expect(await reactGrab.isOverlayVisible()).toBe(false);
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
     });
 
     test("should stay active when key held through entire feedback period", async ({
@@ -88,7 +86,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
     });
 
-    test("should deactivate at end of feedback if key released mid-feedback", async ({
+    test("should stay active at end of feedback if key released mid-feedback", async ({
       reactGrab,
     }) => {
       await reactGrab.activateViaKeyboard();
@@ -106,7 +104,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
 
       await reactGrab.page.waitForTimeout(100);
-      expect(await reactGrab.isOverlayVisible()).toBe(false);
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
     });
   });
 
@@ -136,7 +134,7 @@ test.describe("Copy Feedback Behavior", () => {
   });
 
   test.describe("API Activation - Toggle Mode Behavior", () => {
-    test("should deactivate after copy via API activation in toggle mode", async ({
+    test("should stay active after copy via API activation in toggle mode", async ({
       reactGrab,
     }) => {
       await reactGrab.activate();
@@ -144,18 +142,17 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.hoverUntilSelected("li:first-child");
       await reactGrab.clickElement("li:first-child");
 
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(false);
+      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(true);
     });
 
-    test("should require re-activation for multiple copies via API", async ({ reactGrab }) => {
+    test("should allow multiple copies via API activation", async ({ reactGrab }) => {
       await reactGrab.activate();
 
       await reactGrab.hoverUntilSelected("li:first-child");
       await reactGrab.clickElement("li:first-child");
 
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(false);
+      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(true);
 
-      await reactGrab.activate();
       await reactGrab.hoverElement("h1");
       await reactGrab.page.waitForTimeout(100);
 
@@ -184,10 +181,10 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
 
       await reactGrab.page.waitForTimeout(100);
-      expect(await reactGrab.isOverlayVisible()).toBe(false);
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
     });
 
-    test("should handle modifier key release during feedback", async ({ reactGrab }) => {
+    test("should stay active on modifier key release during feedback", async ({ reactGrab }) => {
       await reactGrab.activateViaKeyboard();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
 
@@ -202,7 +199,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
 
       await reactGrab.page.waitForTimeout(100);
-      expect(await reactGrab.isOverlayVisible()).toBe(false);
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
 
       await reactGrab.page.keyboard.up("c");
     });
@@ -507,9 +504,12 @@ test.describe("Copy Feedback Behavior", () => {
         "[data-testid='todo-list'] li:first-child",
         "[data-testid='todo-list'] li:nth-child(3)",
       );
-      await reactGrab.waitForSelectionLabel();
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
 
-      const labelBeforeScroll = await reactGrab.getSelectionLabelBounds();
+      const labelBeforeScroll = await reactGrab
+        .getOverlayHost()
+        .locator("[data-react-grab-selection-label]:has([data-react-grab-completion])")
+        .boundingBox();
       expect(labelBeforeScroll).not.toBeNull();
       if (!labelBeforeScroll) throw new Error("Expected label bounds before scroll");
 
@@ -528,8 +528,11 @@ test.describe("Copy Feedback Behavior", () => {
       await expect
         .poll(
           async () => {
-            const currentLabel = await reactGrab.getSelectionLabelBounds();
-            return currentLabel ? labelBeforeScroll.label.y - currentLabel.label.y : 0;
+            const currentLabel = await reactGrab
+              .getOverlayHost()
+              .locator("[data-react-grab-selection-label]:has([data-react-grab-completion])")
+              .boundingBox();
+            return currentLabel ? labelBeforeScroll.y - currentLabel.y : 0;
           },
           { timeout: 5000 },
         )
@@ -546,11 +549,14 @@ test.describe("Copy Feedback Behavior", () => {
     }) => {
       await reactGrab.activate();
       await reactGrab.dragSelect("li:first-child", "li:nth-child(3)");
-      await reactGrab.waitForSelectionLabel();
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
 
       const firstItem = reactGrab.page.locator("li").first();
       const elementBefore = await firstItem.boundingBox();
-      const labelBefore = await reactGrab.getSelectionLabelBounds();
+      const labelBefore = await reactGrab
+        .getOverlayHost()
+        .locator("[data-react-grab-selection-label]:has([data-react-grab-completion])")
+        .boundingBox();
       expect(elementBefore).not.toBeNull();
       expect(labelBefore).not.toBeNull();
       if (!elementBefore || !labelBefore) throw new Error("Expected pre-resize bounds");
@@ -559,7 +565,10 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.waitForTimeout(300);
 
       const elementAfter = await firstItem.boundingBox();
-      const labelAfter = await reactGrab.getSelectionLabelBounds();
+      const labelAfter = await reactGrab
+        .getOverlayHost()
+        .locator("[data-react-grab-selection-label]:has([data-react-grab-completion])")
+        .boundingBox();
       expect(elementAfter).not.toBeNull();
       expect(labelAfter).not.toBeNull();
       if (!elementAfter || !labelAfter) throw new Error("Expected post-resize bounds");
@@ -569,9 +578,7 @@ test.describe("Copy Feedback Behavior", () => {
       expect(Math.abs(elementCenterDelta)).toBeGreaterThan(20);
 
       const labelCenterDelta =
-        labelAfter.label.x +
-        labelAfter.label.width / 2 -
-        (labelBefore.label.x + labelBefore.label.width / 2);
+        labelAfter.x + labelAfter.width / 2 - (labelBefore.x + labelBefore.width / 2);
       expect(Math.abs(labelCenterDelta - elementCenterDelta)).toBeLessThan(8);
 
       await reactGrab.page.setViewportSize({ width: 1280, height: 720 });

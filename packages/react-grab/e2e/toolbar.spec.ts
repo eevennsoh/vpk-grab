@@ -841,3 +841,21 @@ test.describe("Toolbar", () => {
     });
   });
 });
+
+test("toolbar activation keeps Grab on and pressed across consecutive copies", async ({
+  reactGrab,
+}) => {
+  await reactGrab.clickToolbarToggle();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+  await expect.poll(() => reactGrab.getToolbarActionPressed("copy")).toBe(true);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.hoverUntilSelected("[data-testid='main-title']");
+  await reactGrab.clickElement("[data-testid='main-title']");
+  await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
+  await expect.poll(() => reactGrab.getToolbarActionPressed("copy")).toBe(true);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.clickToolbarToggle();
+  expect(await reactGrab.isOverlayVisible()).toBe(false);
+});
