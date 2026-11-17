@@ -7,6 +7,8 @@ interface RecordedImageWrite {
   types: string[];
   width: number;
   height: number;
+  plainText: string | null;
+  html: string | null;
 }
 
 interface ScreenshotRecorder {
@@ -83,6 +85,8 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
       if (shouldReject) throw new DOMException("Write permission denied.", "NotAllowedError");
       await gate;
       for (const item of items) {
+        const readText = async (type: string) =>
+          item.types.includes(type) ? (await item.getType(type)).text() : null;
         const blob = await item.getType("image/png");
         const bitmap = await createImageBitmap(blob);
         recorder.imageBlobs.push(blob);
@@ -90,6 +94,8 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
           types: [...item.types],
           width: bitmap.width,
           height: bitmap.height,
+          plainText: await readText("text/plain"),
+          html: await readText("text/html"),
         });
       }
     };

@@ -45,6 +45,8 @@ import { createEventListenerManager } from "./events.js";
 import { runCopyFlow, type CopyFlowResult } from "./copy.js";
 import { capturePageRect } from "../utils/capture-page-rect.js";
 import { deliverPngBlob } from "../utils/deliver-png-blob.js";
+import { padPageRect } from "../utils/pad-page-rect.js";
+import { registerPersistentLabelDismiss } from "../utils/register-persistent-label-dismiss.js";
 import {
   clearElementPositionCache,
   getElementAtPosition,
@@ -84,6 +86,7 @@ import {
   TEXT_TOOL_CURSOR,
   SPECS_INPUT_ATTRIBUTE,
   SCREENSHOT_MIN_SIZE_PX,
+  SCREENSHOT_SELECTION_PADDING_PX,
   SCREENSHOT_SHIFT_RELEASE_GRACE_MS,
   SCREENSHOT_TOOL_CURSOR,
   ARROW_KEYS,
@@ -498,6 +501,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         actions.activate();
+        labelController.dismissCompleted();
       }, store.keyHoldDuration);
       onCleanup(clearHoldTimer);
     });
@@ -842,6 +846,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (labelInstanceIds) {
         for (const labelInstanceId of labelInstanceIds) {
+          if (copyResult.copiedContent !== undefined) {
+            labelController.setCopiedContent(labelInstanceId, copyResult.copiedContent);
+          }
           labelController.updateAfterCopy(
             labelInstanceId,
             copyResult.status === "succeeded",
@@ -1155,6 +1162,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             element,
             mouseX: labelCursorX,
             elements: selectedElements,
+            selectionPageRect: dragRect && isMultiSelect ? { ...dragRect } : undefined,
           })
         : null;
 
@@ -1804,6 +1812,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const activateRenderer = () => {
       const wasInHoldingState = isHoldingKeys();
       actions.activate();
+      labelController.dismissCompleted();
       if (!wasInHoldingState) {
         pluginRegistry.hooks.onActivate();
       }
@@ -4171,6 +4180,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         previousInstance &&
         previousInstance.status === instance.status &&
         previousInstance.errorMessage === instance.errorMessage &&
+        previousInstance.statusText === instance.statusText &&
+        previousInstance.thumbnailUrl === instance.thumbnailUrl &&
+        previousInstance.copiedContent === instance.copiedContent &&
+        previousInstance.isCapturingScreenshot === instance.isCapturingScreenshot &&
+        previousInstance.screenshotErrorMessage === instance.screenshotErrorMessage &&
         previousInstance.bounds.x === newBounds.x &&
         previousInstance.bounds.y === newBounds.y &&
         previousInstance.bounds.width === newBounds.width &&
@@ -4648,6 +4662,93 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }, 0);
     };
 
+    const getLabelCaptureRect = (instance: SelectionLabelInstance) => {
+      const anchorElements =
+        instance.elements && instance.elements.length > 0 ? instance.elements : [instance.element];
+      const liveBoundsList: OverlayBounds[] = anchorElements
+        .filter(isElementConnected)
+        .map(createElementBounds);
+      if (instance.selectionPageRect) {
+        liveBoundsList.push(createBoundsFromDragRect(instance.selectionPageRect));
+      }
+      const captureBounds =
+        liveBoundsList.length > 0 ? combineBounds(liveBoundsList) : instance.bounds;
+      return padPageRect(
+        createPageRectFromBounds(captureBounds),
+        SCREENSHOT_SELECTION_PADDING_PX,
+        document.documentElement.scrollWidth,
+        document.documentElement.scrollHeight,
+      );
+    };
+
+    // Called from the camera button's click: the clipboard write has to be
+    // issued in this call stack, before the image has rendered. A copy that
+    // starts while the image renders aborts the copy signal, and the pending
+    // image then rejects so this write cannot overwrite the newer copy.
+    const handleCopyScreenshotInstance = (instanceId: string) => {
+      const instance = store.labelInstances.find(
+        (labelInstance) => labelInstance.id === instanceId,
+      );
+      if (!instance || instance.status !== "copied" || instance.isCapturingScreenshot) return;
+      const copiedContent = instance.copiedContent;
+      if (copiedContent === undefined) return;
+
+      const copySignal = getCopySignal();
+      const blobPromise = capturePageRect(getLabelCaptureRect(instance), {
+        strokes: inspect.strokes(),
+        texts: inspect.texts(),
+      }).then((blob) => {
+        if (copySignal.aborted) throw new Error("Superseded by a newer copy");
+        return blob;
+      });
+      const deliveryPromise = deliverPngBlob(blobPromise, copiedContent);
+      labelController.startScreenshotCapture(instanceId);
+
+      void Promise.allSettled([blobPromise, deliveryPromise]).then(
+        ([blobOutcome, deliveryOutcome]) => {
+          const currentInstance = store.labelInstances.find(
+            (labelInstance) => labelInstance.id === instanceId,
+          );
+          if (currentInstance?.status !== "copied") return;
+          if (blobOutcome.status === "rejected") {
+            labelController.failScreenshotCapture(instanceId, "Couldn't capture image");
+            return;
+          }
+          if (deliveryOutcome.status === "rejected") {
+            labelController.failScreenshotCapture(instanceId, "Couldn't copy image");
+            return;
+          }
+          labelController.setImage(
+            instanceId,
+            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image",
+            blobOutcome.value,
+          );
+        },
+      );
+    };
+
+    const hasPersistentLabel = createMemo(() =>
+      store.labelInstances.some((labelInstance) => labelInstance.status === "copied"),
+    );
+
+    const hasDetachedLabelAnchor = () =>
+      store.labelInstances.some(
+        (labelInstance) =>
+          labelInstance.status === "copied" &&
+          labelInstance.element !== undefined &&
+          !isElementConnected(labelInstance.element),
+      );
+
+    createEffect(() => {
+      if (!hasPersistentLabel()) return;
+      onCleanup(
+        registerPersistentLabelDismiss({
+          onDismiss: labelController.dismissCompleted,
+          hasDetachedAnchor: hasDetachedLabelAnchor,
+        }),
+      );
+    });
+
     createEffect(() => {
       const hue = pluginRegistry.store.theme.hue;
       if (hue !== 0) {
@@ -4700,9 +4801,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
                 onShowContextMenuInstance={handleShowContextMenuInstance}
+                onCopyScreenshotInstance={handleCopyScreenshotInstance}
                 onRetryInstance={handleRetryInstance}
                 onAcknowledgeErrorInstance={handleAcknowledgeErrorInstance}
-                onLabelInstanceHoverChange={labelController.handleHoverChange}
                 onInputChange={actions.setInputText}
                 onInputSubmit={() => void handleInputSubmit()}
                 selectionLabelShakeCount={selectionLabelShakeCount()}

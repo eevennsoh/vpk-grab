@@ -385,9 +385,12 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
           <CompletionView
             statusText={props.statusText ?? "Copied"}
             thumbnailUrl={props.thumbnailUrl}
+            isCapturingScreenshot={props.isCapturingScreenshot}
+            screenshotError={props.screenshotError}
             onDismiss={props.onDismiss}
             onFadingChange={setIsInternalFading}
             onShowContextMenu={props.onShowContextMenu}
+            onCopyScreenshot={props.onCopyScreenshot}
           />
         </Show>
 

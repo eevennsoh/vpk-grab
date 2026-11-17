@@ -1,6 +1,11 @@
 import { createStore, produce } from "solid-js/store";
 import { batch, createSignal } from "solid-js";
-import type { Position, GrabbedBox, SelectionLabelInstance } from "../types.js";
+import type {
+  Position,
+  GrabbedBox,
+  SelectionLabelInstance,
+  SelectionLabelInstancePatch,
+} from "../types.js";
 import { OFFSCREEN_POSITION } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
 import { getBoundsCenter } from "../utils/get-bounds-center.js";
@@ -190,7 +195,7 @@ interface GrabActions {
     status: SelectionLabelInstance["status"],
     errorMessage?: string,
   ) => void;
-  setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
+  patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => void;
   removeLabelInstance: (instanceId: string) => void;
   clearLabelInstances: () => void;
   showContextMenu: (position: Position, element: Element) => void;
@@ -620,13 +625,10 @@ const createGrabStore = (input: GrabStoreInput) => {
       }
     },
 
-    setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => {
+    patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => {
       const index = store.labelInstances.findIndex((instance) => instance.id === instanceId);
       if (index === -1) return;
-      batch(() => {
-        setStore("labelInstances", index, "statusText", statusText);
-        setStore("labelInstances", index, "thumbnailUrl", thumbnailUrl);
-      });
+      setStore("labelInstances", index, patch);
     },
 
     removeLabelInstance: (instanceId: string) => {

@@ -532,6 +532,7 @@ export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
 // released this recently still counts as held when the drag ends.
 export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
+export const SCREENSHOT_SELECTION_PADDING_PX = 8;
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
 export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;

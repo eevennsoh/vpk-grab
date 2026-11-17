@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { FADE_COMPLETE_BUFFER_MS, FEEDBACK_DURATION_MS } from "../src/constants.js";
 import { createLabelController } from "../src/core/label-controller.js";
-import type { SelectionLabelInstance } from "../src/types.js";
+import type { SelectionLabelInstance, SelectionLabelInstancePatch } from "../src/types.js";
 
 const LABEL_BOUNDS = {
   borderRadius: "0px",
@@ -41,11 +41,10 @@ const createLabelStore = (labelInstances: SelectionLabelInstance[]) => ({
     instance.status = status;
     instance.errorMessage = errorMessage;
   },
-  setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => {
+  patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => {
     const instance = labelInstances.find((labelInstance) => labelInstance.id === instanceId);
     if (!instance) return;
-    instance.statusText = statusText;
-    instance.thumbnailUrl = thumbnailUrl;
+    Object.assign(instance, patch);
   },
   removeLabelInstance: (instanceId: string) => {
     const instanceIndex = labelInstances.findIndex(
@@ -56,7 +55,7 @@ const createLabelStore = (labelInstances: SelectionLabelInstance[]) => ({
 });
 
 describe("createLabelController", () => {
-  it("restores a fading copied label while it is hovered", () => {
+  it("keeps a copied label on screen until it is dismissed", () => {
     const labelInstances: SelectionLabelInstance[] = [];
     const controller = createLabelController(
       createLabelStore(labelInstances),
@@ -65,17 +64,87 @@ describe("createLabelController", () => {
     const instanceId = controller.createInstance(LABEL_BOUNDS, "button", undefined, "copying");
 
     controller.updateAfterCopy(instanceId, true);
-    vi.advanceTimersByTime(FEEDBACK_DURATION_MS);
-    expect(labelInstances[0]?.status).toBe("fading");
-
-    controller.handleHoverChange(instanceId, true);
+    vi.advanceTimersByTime(FEEDBACK_DURATION_MS * 4);
     expect(labelInstances[0]?.status).toBe("copied");
 
+    controller.dismissCompleted();
+    expect(labelInstances[0]?.status).toBe("fading");
     vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
-    expect(labelInstances).toHaveLength(1);
+    expect(labelInstances).toHaveLength(0);
+  });
 
-    controller.handleHoverChange(instanceId, false);
-    vi.advanceTimersByTime(FEEDBACK_DURATION_MS + FADE_COMPLETE_BUFFER_MS);
+  it("dismisses every label of one copy together", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "li", undefined, "copying");
+    labelInstances.push({ ...labelInstances[0], id: "label-sibling" });
+    for (const instanceId of [firstInstanceId, "label-sibling"]) {
+      controller.updateAfterCopy(instanceId, true);
+    }
+
+    controller.dismissCompleted();
+    expect(labelInstances.map((labelInstance) => labelInstance.status)).toEqual([
+      "fading",
+      "fading",
+    ]);
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances).toHaveLength(0);
+  });
+
+  it("leaves in-progress and error labels alone when dismissing", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const copyingInstanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.dismissCompleted();
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances[0]?.id).toBe(copyingInstanceId);
+    expect(labelInstances[0]?.status).toBe("copying");
+
+    controller.updateAfterCopy(copyingInstanceId, false, "Failed to copy");
+    controller.dismissCompleted();
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances[0]?.status).toBe("error");
+  });
+
+  it("replaces the previous copy's labels when a new copy starts", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.updateAfterCopy(firstInstanceId, true);
+
+    const secondInstanceId = controller.createInstance(LABEL_BOUNDS, "b", undefined, "copying");
+    expect(labelInstances.map((labelInstance) => labelInstance.id)).toEqual([secondInstanceId]);
+  });
+
+  it("keeps the copied text on the label and drops it with the label", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.setCopiedContent(instanceId, "[button]");
+    controller.updateAfterCopy(instanceId, true);
+    expect(labelInstances[0]?.copiedContent).toBe("[button]");
+
+    controller.startScreenshotCapture(instanceId);
+    expect(labelInstances[0]?.isCapturingScreenshot).toBe(true);
+    controller.failScreenshotCapture(instanceId, "Couldn't copy image");
+    expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
+    expect(labelInstances[0]?.screenshotErrorMessage).toBe("Couldn't copy image");
+    expect(labelInstances[0]?.status).toBe("copied");
+
+    controller.dismissCompleted();
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
     expect(labelInstances).toHaveLength(0);
   });
 
@@ -104,7 +173,8 @@ describe("createLabelController", () => {
     expect(labelInstances[0]?.thumbnailUrl).toBe("blob:2");
 
     controller.updateAfterCopy(instanceId, true);
-    vi.advanceTimersByTime(FEEDBACK_DURATION_MS + FADE_COMPLETE_BUFFER_MS);
+    controller.dismissCompleted();
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
     expect(labelInstances).toHaveLength(0);
     expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:2");
 

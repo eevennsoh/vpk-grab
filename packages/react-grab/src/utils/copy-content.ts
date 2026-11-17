@@ -1,6 +1,6 @@
 import { VERSION } from "../constants.js";
 import type { ReactGrabEntry } from "../types.js";
-import { escapeHtmlText } from "./escape-html-text.js";
+import { getClipboardHtml } from "./get-clipboard-html.js";
 import { IS_DEMO } from "./runtime-mode.js";
 
 const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
@@ -47,10 +47,7 @@ export const copyContent = (content: string, options?: CopyContentOptions): bool
   const copyHandler = (event: ClipboardEvent) => {
     event.preventDefault();
     event.clipboardData?.setData("text/plain", content);
-    event.clipboardData?.setData(
-      "text/html",
-      `<meta charset='utf-8'><pre><code>${escapeHtmlText(content)}</code></pre>`,
-    );
+    event.clipboardData?.setData("text/html", getClipboardHtml(content));
     event.clipboardData?.setData(REACT_GRAB_MIME_TYPE, JSON.stringify(reactGrabMetadata));
   };
 

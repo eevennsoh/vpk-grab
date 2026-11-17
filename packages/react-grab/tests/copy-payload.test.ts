@@ -45,7 +45,10 @@ describe("copy payload", () => {
 
     const result = await runCopyFlow({}, createHooks(), [element]);
 
-    expect(result).toEqual({ status: "succeeded" });
+    expect(result).toEqual({
+      status: "succeeded",
+      copiedContent: vi.mocked(copyContent).mock.calls[0]?.[0],
+    });
     expect(resolveElementReferenceContext).toHaveBeenCalledOnce();
     expect(copyContent).toHaveBeenCalledWith(
       '[<button data-testid="docs-link">Docs</button>]',

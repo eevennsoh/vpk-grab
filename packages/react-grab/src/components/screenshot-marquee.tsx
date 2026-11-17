@@ -22,7 +22,6 @@ export const ScreenshotMarquee: Component<ScreenshotMarqueeProps> = (props) => (
       width: `${props.bounds.width}px`,
       height: `${props.bounds.height}px`,
       border: `1px dashed ${INSPECT_ACCENT_COLOR}`,
-      "box-shadow": `0 0 0 1px ${INSPECT_ACCENT_CONTRAST_COLOR}`,
       "z-index": String(Z_INDEX_OVERLAY_CANVAS),
     }}
   >

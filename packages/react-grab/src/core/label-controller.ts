@@ -1,7 +1,12 @@
-import { FADE_COMPLETE_BUFFER_MS, FEEDBACK_DURATION_MS } from "../constants.js";
+import { FADE_COMPLETE_BUFFER_MS } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
 import { generateId } from "../utils/generate-id.js";
-import type { OverlayBounds, SelectionLabelInstance } from "../types.js";
+import type {
+  OverlayBounds,
+  PageRect,
+  SelectionLabelInstance,
+  SelectionLabelInstancePatch,
+} from "../types.js";
 
 interface LabelStoreBridge {
   clearLabelInstances: () => void;
@@ -11,7 +16,7 @@ interface LabelStoreBridge {
     status: SelectionLabelInstance["status"],
     errorMessage?: string,
   ) => void;
-  setLabelInstanceImage: (instanceId: string, statusText: string, thumbnailUrl: string) => void;
+  patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => void;
   removeLabelInstance: (instanceId: string) => void;
 }
 
@@ -22,6 +27,7 @@ interface CreateLabelInstanceOptions {
   boundsMultiple?: OverlayBounds[];
   hideArrow?: boolean;
   statusText?: string;
+  selectionPageRect?: PageRect;
 }
 
 interface PerElementLabelEntry {
@@ -42,6 +48,7 @@ interface BuildLabelInstanceOptions {
   boundsMultiple?: OverlayBounds[];
   hideArrow?: boolean;
   statusText?: string;
+  selectionPageRect?: PageRect;
 }
 
 interface LabelController {
@@ -58,11 +65,14 @@ interface LabelController {
   ) => string[];
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
+  setCopiedContent: (instanceId: string, copiedContent: string) => void;
   setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
+  startScreenshotCapture: (instanceId: string) => void;
+  failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
   dismissInstance: (instanceId: string) => void;
+  dismissCompleted: () => void;
   cancelAllFades: () => void;
   clearAll: () => void;
-  handleHoverChange: (instanceId: string, isHovered: boolean) => void;
 }
 
 const buildLabelInstance = (options: BuildLabelInstanceOptions): SelectionLabelInstance => {
@@ -87,6 +97,7 @@ const buildLabelInstance = (options: BuildLabelInstanceOptions): SelectionLabelI
         : undefined,
     hideArrow: options.hideArrow,
     statusText: options.statusText,
+    selectionPageRect: options.selectionPageRect,
   };
 };
 
@@ -131,17 +142,14 @@ export const createLabelController = (
     onClearAll?.();
   };
 
-  const scheduleFade = (instanceId: string) => {
+  const fadeOut = (instanceId: string) => {
     cancelFade(instanceId);
-    const fadeStartTimeoutId = window.setTimeout(() => {
-      store.updateLabelInstance(instanceId, "fading");
-      const removalTimeoutId = window.setTimeout(() => {
-        fadeTimeouts.delete(instanceId);
-        removeInstance(instanceId);
-      }, FADE_COMPLETE_BUFFER_MS);
-      fadeTimeouts.set(instanceId, removalTimeoutId);
-    }, FEEDBACK_DURATION_MS);
-    fadeTimeouts.set(instanceId, fadeStartTimeoutId);
+    store.updateLabelInstance(instanceId, "fading");
+    const removalTimeoutId = window.setTimeout(() => {
+      fadeTimeouts.delete(instanceId);
+      removeInstance(instanceId);
+    }, FADE_COMPLETE_BUFFER_MS);
+    fadeTimeouts.set(instanceId, removalTimeoutId);
   };
 
   const createInstance = (
@@ -163,6 +171,7 @@ export const createLabelController = (
       boundsMultiple: options?.boundsMultiple,
       hideArrow: options?.hideArrow,
       statusText: options?.statusText,
+      selectionPageRect: options?.selectionPageRect,
     });
     store.addLabelInstance(instance);
     return instance.id;
@@ -190,13 +199,10 @@ export const createLabelController = (
   };
 
   const updateAfterCopy = (instanceId: string, didSucceed: boolean, errorMessage?: string) => {
+    cancelFade(instanceId);
     if (didSucceed) {
       store.updateLabelInstance(instanceId, "copied");
-      scheduleFade(instanceId);
     } else {
-      // Errors are actionable (Retry/Ok), so the label persists until it is
-      // acknowledged or superseded by the next grab instead of auto-fading.
-      cancelFade(instanceId);
       store.updateLabelInstance(instanceId, "error", errorMessage || "Unknown error");
     }
   };
@@ -206,11 +212,34 @@ export const createLabelController = (
     store.updateLabelInstance(instanceId, "copying");
   };
 
+  const setCopiedContent = (instanceId: string, copiedContent: string) => {
+    store.patchLabelInstance(instanceId, { copiedContent });
+  };
+
   const setImage = (instanceId: string, statusText: string, imageBlob: Blob) => {
     const instance = findInstance(instanceId);
     if (!instance) return;
     revokeThumbnail(instance);
-    store.setLabelInstanceImage(instanceId, statusText, URL.createObjectURL(imageBlob));
+    store.patchLabelInstance(instanceId, {
+      statusText,
+      thumbnailUrl: URL.createObjectURL(imageBlob),
+      isCapturingScreenshot: undefined,
+      screenshotErrorMessage: undefined,
+    });
+  };
+
+  const startScreenshotCapture = (instanceId: string) => {
+    store.patchLabelInstance(instanceId, {
+      isCapturingScreenshot: true,
+      screenshotErrorMessage: undefined,
+    });
+  };
+
+  const failScreenshotCapture = (instanceId: string, errorMessage: string) => {
+    store.patchLabelInstance(instanceId, {
+      isCapturingScreenshot: undefined,
+      screenshotErrorMessage: errorMessage,
+    });
   };
 
   const dismissInstance = (instanceId: string) => {
@@ -218,22 +247,11 @@ export const createLabelController = (
     removeInstance(instanceId);
   };
 
-  const handleHoverChange = (instanceId: string, isHovered: boolean) => {
-    const instance = findInstance(instanceId);
-    if (!instance) return;
-
-    if (isHovered) {
-      cancelFade(instanceId);
-      if (instance.status === "fading") {
-        store.updateLabelInstance(instanceId, "copied");
-      }
-      return;
-    }
-    // Error labels are dismissed explicitly (Retry/Ok), so unhovering must not
-    // start a fade; only the transient copied/fading labels fade on hover-out.
-    if (instance.status === "copied" || instance.status === "fading") {
-      scheduleFade(instanceId);
-    }
+  const dismissCompleted = () => {
+    const completedInstanceIds = getLabelInstances()
+      .filter((labelInstance) => labelInstance.status === "copied")
+      .map((labelInstance) => labelInstance.id);
+    for (const instanceId of completedInstanceIds) fadeOut(instanceId);
   };
 
   return {
@@ -241,10 +259,13 @@ export const createLabelController = (
     createPerElementInstances,
     updateAfterCopy,
     markRetrying,
+    setCopiedContent,
     setImage,
+    startScreenshotCapture,
+    failScreenshotCapture,
     dismissInstance,
+    dismissCompleted,
     cancelAllFades,
     clearAll,
-    handleHoverChange,
   };
 };

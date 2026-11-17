@@ -31,6 +31,8 @@ Every change in the panel (switching a property off, picking a token, typing a v
 
 While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).
 
+After a grab, the **Copied** pill stays until you click anywhere else, press **Esc** or start Grab again. Its camera button copies the same element references again together with a PNG of the element and a little space around it, with your drawings and notes, so one paste brings both. On an address without HTTPS the image downloads instead and the references stay on the clipboard.
+
 ## Install
 
 Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.8`.
