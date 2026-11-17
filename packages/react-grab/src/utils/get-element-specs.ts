@@ -6,6 +6,7 @@ import { getDefaultStylesForTag } from "./extract-element-css.js";
 import { formatCssColor, isTransparentCssColor } from "./format-css-color.js";
 import { formatCssNumber } from "./format-css-number.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
+import { getSpecTokenRows } from "./get-spec-token-rows.js";
 import { getSpecTokens } from "./get-spec-tokens.js";
 import { getTagName } from "./get-tag-name.js";
 import { groupSpecRows } from "./group-spec-rows.js";
@@ -311,7 +312,9 @@ const applyStyleOverrides = (element: Element, sections: ElementSpecSection[]) =
       if (!override) return row;
       overrides.delete(row.property);
       const updatedRow = override.isOff ? { ...override.original, override } : { ...row, override };
-      updatedRow.children = updatedRow.children?.map((child) => {
+      updatedRow.children = (
+        override.isOff ? (override.enabledChildren ?? updatedRow.children) : updatedRow.children
+      )?.map((child) => {
         const longhand = override.longhands?.find((entry) => entry.property === child.property);
         const childOverride = longhand
           ? longhand.value !== null || longhand.isOff
@@ -320,7 +323,17 @@ const applyStyleOverrides = (element: Element, sections: ElementSpecSection[]) =
           : override.value !== null
             ? { isOff: override.isOff, value: child.value, token: override.token }
             : undefined;
-        return { ...child, override: childOverride };
+        return {
+          ...child,
+          override: override.isOff
+            ? {
+                ...childOverride,
+                isOff: true,
+                value: childOverride?.value ?? child.value,
+                token: childOverride?.token ?? null,
+              }
+            : childOverride,
+        };
       });
       return updatedRow;
     });
@@ -343,6 +356,7 @@ const applyStyleOverrides = (element: Element, sections: ElementSpecSection[]) =
 export const getElementSpecs = (
   element: Element,
   frozenAppliedProperties: string[] | null = null,
+  expandedProperties: ReadonlySet<string> = new Set(),
 ): ElementSpecs | null => {
   if (getElementAdapter(element)) return null;
 
@@ -400,11 +414,7 @@ export const getElementSpecs = (
 
   // An off row keeps the tokens it had when it was switched off: looked up
   // again, the unset property would name none.
-  const tokenRows = sections.flatMap((section) =>
-    section.rows
-      .flatMap((row) => [row, ...(row.children ?? [])])
-      .filter((row) => (row.override ? !row.override.isOff : row.isApplied)),
-  );
+  const tokenRows = getSpecTokenRows(sections, expandedProperties);
   const tokensBySpecProperty = getSpecTokens(
     element,
     tokenRows.map((row) => row.property),

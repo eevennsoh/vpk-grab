@@ -57,4 +57,17 @@ describe("getRatioLockedDimension", () => {
       getRatioLockedDimension({ ...dimensions, nextEditedSizePx: 1, currentPairedCssSizePx: 0 }),
     ).toBeNull();
   });
+  it("skips unchanged rendered dimensions and changes below half a pixel", () => {
+    expect(getRatioLockedDimension({ ...dimensions, nextEditedSizePx: 200 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, nextEditedSizePx: 200.49 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, nextEditedSizePx: 199.51 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, nextEditedSizePx: 202 })).toBe("101px");
+  });
+
+  it("skips a paired dimension that already follows the ratio within half a pixel", () => {
+    expect(getRatioLockedDimension({ ...dimensions, currentPairedSizePx: 150 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, currentPairedSizePx: 150.5 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, currentPairedSizePx: 150.49 })).toBeNull();
+    expect(getRatioLockedDimension({ ...dimensions, currentPairedSizePx: 149.51 })).toBeNull();
+  });
 });

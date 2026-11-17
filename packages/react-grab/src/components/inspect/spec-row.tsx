@@ -15,8 +15,8 @@ interface SpecRowProps {
   onReset: () => void;
   isExpanded?: boolean;
   isSubRow?: boolean;
-  onToggleExpanded?: () => void;
-  onNavigateValue?: (isBackward: boolean) => void;
+  onToggleExpanded?: (isKeyboardActivation: boolean) => void;
+  getAdjacentValueButton?: (isBackward: boolean) => HTMLButtonElement | undefined;
 }
 
 // Keeps a press from moving the page's focus or extending its text selection
@@ -72,18 +72,17 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
 
   // The row node is reused when its slot shows another property.
   createEffect(
-    on(
-      () => props.row.property,
-      () => stopEditing(),
-      { defer: true },
-    ),
+    on([() => props.row.property, () => props.isEditable], () => stopEditing(), { defer: true }),
   );
 
   const handleInputKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Tab" && props.onNavigateValue) {
-      event.preventDefault();
-      commitDraft(false);
-      props.onNavigateValue(event.shiftKey);
+    if (event.key === "Tab") {
+      const adjacentValueButton = props.getAdjacentValueButton?.(event.shiftKey);
+      if (adjacentValueButton) {
+        event.preventDefault();
+        commitDraft(false);
+        adjacentValueButton.click();
+      }
     } else if (event.key === "Enter") {
       event.preventDefault();
       commitDraft(true);
@@ -98,6 +97,7 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
     <div
       ref={rowRef}
       data-react-grab-spec-row={props.row.property}
+      data-react-grab-spec-sub-row={props.isSubRow ? "" : undefined}
       data-applied={props.row.isApplied ? "" : undefined}
       data-off={isOff() ? "" : undefined}
       data-overridden={hasOverride() ? "" : undefined}
@@ -161,8 +161,8 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
               // The page freeze blocks focus events crossing the shadow root;
               // moving focus inside it delivers blur before the input unmounts.
               event.currentTarget.focus({ preventScroll: true });
-              props.onToggleExpanded?.();
-              event.currentTarget.blur();
+              props.onToggleExpanded?.(event.detail === 0);
+              if (event.detail > 0) event.currentTarget.blur();
             }}
           >
             <IconChevron

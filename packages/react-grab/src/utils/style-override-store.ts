@@ -1,3 +1,4 @@
+import { setStyleOverrideLonghand } from "./set-style-override-longhand.js";
 import { getSpecShorthandProperty } from "./get-spec-shorthand-property.js";
 import type { ElementSpecRow, StyleOverride } from "../types.js";
 
@@ -6,7 +7,11 @@ interface InlineStyleProperty {
   priority: string;
 }
 
-interface StoredStyleOverride extends StyleOverride {
+interface SpecStyleOverride extends StyleOverride {
+  enabledChildren?: ElementSpecRow[];
+}
+
+interface StoredStyleOverride extends SpecStyleOverride {
   previousInlineProperties: Map<string, InlineStyleProperty>;
   appliedInlineValues: Map<string, InlineStyleProperty>;
 }
@@ -171,13 +176,14 @@ const saveOverride = (element: StyledElement, override: StoredStyleOverride) => 
   overrides.set(override.property, override);
 };
 
-const toPublicOverride = (override: StoredStyleOverride): StyleOverride => ({
+const toPublicOverride = (override: StoredStyleOverride): SpecStyleOverride => ({
   element: override.element,
   property: override.property,
   original: override.original,
   isOff: override.isOff,
   value: override.value,
   token: override.token,
+  enabledChildren: override.enabledChildren,
   longhands: override.longhands?.map((longhand) => ({ ...longhand })),
 });
 
@@ -186,8 +192,8 @@ export const canOverrideStyles = (element: Element): boolean => isStyledElement(
 export const isValidStyleValue = (property: string, value: string): boolean =>
   value.trim() !== "" && CSS.supports(property, value);
 
-export const getElementStyleOverrides = (element: Element): Map<string, StyleOverride> => {
-  const publicOverrides = new Map<string, StyleOverride>();
+export const getElementStyleOverrides = (element: Element): Map<string, SpecStyleOverride> => {
+  const publicOverrides = new Map<string, SpecStyleOverride>();
   for (const [property, override] of getLiveOverrides(element) ?? []) {
     publicOverrides.set(property, toPublicOverride(override));
   }
@@ -213,8 +219,10 @@ export const setStyleOverrideOff = (
   if (!isStyledElement(element)) return;
   const override = getOrCreateOverride(element, shorthandRow);
   if (!override) return;
-  if (row.property === shorthandRow.property) override.isOff = isOff;
-  else {
+  if (row.property === shorthandRow.property) {
+    if (isOff && !override.isOff) override.enabledChildren = row.children;
+    override.isOff = isOff;
+  } else {
     const previousLonghand = override.longhands?.find(
       (longhand) => longhand.property === row.property,
     );
@@ -224,12 +232,11 @@ export const setStyleOverrideOff = (
       value: previousLonghand ? previousLonghand.value : override.value !== null ? row.value : null,
       token: previousLonghand?.token ?? override.token,
     };
-    override.longhands = (override.longhands ?? []).filter(
-      (entry) => entry.property !== row.property,
-    );
+    if (override.isOff) return;
     if (isOff || longhand.value !== null || override.value !== null)
-      override.longhands.push(longhand);
-    override.isOff = false;
+      setStyleOverrideLonghand(override, longhand);
+    else
+      override.longhands = override.longhands?.filter((entry) => entry.property !== row.property);
   }
   saveOverride(element, override);
 };
@@ -244,17 +251,19 @@ export const setStyleOverrideValue = (
   const trimmedValue = value.trim();
   if (!isStyledElement(element) || !isValidStyleValue(row.property, trimmedValue)) return false;
   const override = getOrCreateOverride(element, shorthandRow);
-  if (!override) return false;
+  if (!override || (override.isOff && row.property !== shorthandRow.property)) return false;
   override.isOff = false;
   if (row.property === shorthandRow.property) {
     override.value = trimmedValue;
     override.token = token;
     override.longhands = undefined;
   } else {
-    override.longhands = [
-      ...(override.longhands ?? []).filter((longhand) => longhand.property !== row.property),
-      { property: row.property, isOff: false, value: trimmedValue, token },
-    ];
+    setStyleOverrideLonghand(override, {
+      property: row.property,
+      isOff: false,
+      value: trimmedValue,
+      token,
+    });
   }
   saveOverride(element, override);
   return true;
@@ -267,11 +276,10 @@ export const resetStyleOverride = (element: Element, property: string) => {
   if (!overrides || !override || !isStyledElement(element)) return;
   if (property !== shorthandProperty) {
     if (!isOverrideInPlace(element, override)) return;
-    override.longhands = (override.longhands ?? []).filter(
-      (longhand) => longhand.property !== property,
-    );
     if (override.value !== null)
-      override.longhands.push({ property, isOff: false, value: null, token: null });
+      setStyleOverrideLonghand(override, { property, isOff: false, value: null, token: null });
+    else
+      override.longhands = override.longhands?.filter((longhand) => longhand.property !== property);
     saveOverride(element, override);
     return;
   }
@@ -294,7 +302,7 @@ export const resetAllStyleOverrides = () => {
 // Undo and redo put the page back to an earlier set of overrides. Clearing
 // first restores every element's own inline styles, so each override is laid
 // over what the element really had, not over another override.
-export const restoreStyleOverrides = (snapshot: readonly StyleOverride[]) => {
+export const restoreStyleOverrides = (snapshot: readonly SpecStyleOverride[]) => {
   resetAllStyleOverrides();
   for (const override of snapshot) {
     if (!override.element.isConnected) continue;
@@ -315,6 +323,14 @@ export const restoreStyleOverrides = (snapshot: readonly StyleOverride[]) => {
       else resetStyleOverride(override.element, longhand.property);
       if (longhand.isOff) setStyleOverrideOff(override.element, row, true, override.original);
     }
-    if (override.isOff) setStyleOverrideOff(override.element, override.original, true);
+    if (override.isOff)
+      setStyleOverrideOff(
+        override.element,
+        {
+          ...override.original,
+          children: override.enabledChildren ?? override.original.children,
+        },
+        true,
+      );
   }
 };

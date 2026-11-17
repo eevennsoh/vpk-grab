@@ -671,4 +671,235 @@ test.describe("expanded specs and ratio lock", () => {
     await typeValue(page, "height", "120px");
     await expectStyles(page, "specs-box-button", ["width", "height"], ["200px", "120px"]);
   });
+
+  test("hover keeps the panel corner and root node when the corner stays clear", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 1200 });
+    await page.getByTestId("specs-box-button").evaluate((element) => {
+      element.style.left = "1300px";
+      element.style.top = "100px";
+      element.style.height = "1000px";
+    });
+    await inspect(page, "specs-box-button");
+    const panel = page.locator(PANEL_SELECTOR);
+    await expect(panel).toHaveCSS("left", "12px");
+    const originalPanel = await panel.elementHandle();
+    const originalCorner = await panel.evaluate((element) => [
+      element.style.top,
+      element.style.left,
+    ]);
+    await inspect(page, "specs-ratio-button");
+    await expect(rowValue(page, "padding")).toHaveText("10px");
+    expect(await panel.evaluate((element, previous) => element === previous, originalPanel)).toBe(
+      true,
+    );
+    expect(await panel.evaluate((element) => [element.style.top, element.style.left])).toEqual(
+      originalCorner,
+    );
+  });
+
+  test("returning to a previously locked element starts unlocked", async ({ page }) => {
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await moveToSpecsElement(page, "specs-box-button");
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "false");
+    await moveToSpecsElement(page, "specs-ratio-button");
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("an off shorthand disables every side and preserves its base and patches", async ({
+    page,
+    reactGrab,
+  }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding", "20px");
+    await typeValue(page, "padding-left", "40px");
+    await rowValue(page, "padding-left").click();
+    await specRow(page, "padding-left").locator("[data-react-grab-spec-input]").fill("50px");
+    await toggle(page, "padding");
+    await expect(page.locator("[data-react-grab-spec-input]")).toHaveCount(0);
+    for (const property of PADDING_PROPERTIES) {
+      await expect(specRow(page, property)).toHaveAttribute("data-off", "");
+      await expect(specToggle(page, property)).toHaveCount(0);
+      await expect(rowValue(page, property)).toHaveText(
+        property === "padding-left" ? "40px" : "20px",
+      );
+      await expect(rowValue(page, property)).not.toHaveRole("button");
+      await expect(
+        specRow(page, property).locator("[data-react-grab-spec-menu-trigger]"),
+      ).toHaveCount(0);
+    }
+    await toggle(page, "padding");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "20px",
+      "20px",
+      "40px",
+    ]);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(specRow(page, "padding-left")).toHaveAttribute("data-off", "");
+    await expect(rowValue(page, "padding-left")).toHaveText("40px");
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "20px",
+      "20px",
+      "40px",
+    ]);
+  });
+
+  test("ratio lock leaves height untouched when max-width prevents a width change", async ({
+    page,
+  }) => {
+    await page.getByTestId("specs-ratio-button").evaluate((element) => {
+      element.style.maxWidth = "200px";
+    });
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await typeValue(page, "width", "400px");
+    await expectStyles(page, "specs-ratio-button", ["width", "height"], ["200px", "100px"]);
+    expect(
+      await page
+        .getByTestId("specs-ratio-button")
+        .evaluate((element) => element.style.getPropertyPriority("height")),
+    ).toBe("");
+    await expect(specRow(page, "height")).not.toHaveAttribute("data-overridden");
+  });
+
+  test("ratio lock preserves auto height when aspect-ratio already follows width", async ({
+    page,
+  }) => {
+    await page.getByTestId("specs-box-button").evaluate((element) => {
+      element.style.height = "auto";
+      element.style.aspectRatio = "2 / 1";
+    });
+    await inspect(page, "specs-box-button");
+    await pinAndReach(page, "width");
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await typeValue(page, "width", "300px");
+    await expectStyles(page, "specs-box-button", ["width", "height"], ["300px", "150px"]);
+    expect(
+      await page.getByTestId("specs-box-button").evaluate((element) => element.style.height),
+    ).toBe("auto");
+    await expect(specRow(page, "height")).not.toHaveAttribute("data-overridden");
+  });
+
+  test("ratio lock preserves the layout ratio of a rotated element", async ({ page }) => {
+    await page.getByTestId("specs-box-button").evaluate((element) => {
+      element.style.transform = "rotate(30deg) scale(0.8)";
+    });
+    await inspect(page, "specs-box-button");
+    await pinAndReach(page, "width");
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await typeValue(page, "width", "300px");
+    await expect
+      .poll(() =>
+        page
+          .getByTestId("specs-box-button")
+          .evaluate((element) =>
+            element instanceof HTMLElement ? element.offsetWidth / element.offsetHeight : null,
+          ),
+      )
+      .toBeCloseTo(2, 2);
+  });
+
+  test("picking the same side token again adds no undo step", async ({ page, reactGrab }) => {
+    await prepareBoxSpecs(page);
+    const pickTopToken = async () => {
+      await specRow(page, "padding-top").locator("[data-react-grab-spec-menu-trigger]").click();
+      await page.locator("[data-react-grab-spec-value-filter]").fill("--ds-space-050");
+      await page.locator('[data-react-grab-spec-option="--ds-space-050"]').click();
+      await expect(page.locator("[data-react-grab-spec-value-menu]")).toHaveCount(0);
+    };
+    await pickTopToken();
+    await typeValue(page, "padding-right", "30px");
+    await pickTopToken();
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "2px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+  });
+
+  test("keyboard expansion keeps focus and the panel pinned", async ({ page }) => {
+    await inspect(page, "specs-box-button");
+    await pinAndReach(page, "padding");
+    await rowValue(page, "padding").click();
+    await page.keyboard.press("Shift+Tab");
+    const expandControl = specRow(page, "padding").locator("[data-react-grab-spec-expand]");
+    await expect(expandControl).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(expandControl).toHaveAttribute("aria-expanded", "true");
+    await expect(expandControl).toBeFocused();
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y, { steps: 8 });
+    await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(1);
+  });
+
+  test("Tab crosses expanded row boundaries in both directions", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    const nextProperty = await specRow(page, "padding-left").evaluate((element) =>
+      element.nextElementSibling?.getAttribute("data-react-grab-spec-row"),
+    );
+    expect(nextProperty).toBeTruthy();
+    await rowValue(page, "padding-left").click();
+    await page.keyboard.press("Tab");
+    const nextInput = specRow(page, nextProperty ?? "").locator("[data-react-grab-spec-input]");
+    await expect(nextInput).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      specRow(page, "padding-left").locator("[data-react-grab-spec-input]"),
+    ).toBeFocused();
+    await rowValue(page, "padding-top").click();
+    await page.keyboard.press("Shift+Tab");
+    await expect(specRow(page, "padding").locator("[data-react-grab-spec-input]")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      specRow(page, "padding-top").locator("[data-react-grab-spec-input]"),
+    ).toBeFocused();
+  });
+
+  test("expanding while pinned looks up side tokens immediately", async ({ page }) => {
+    await inspect(page, "specs-plain-button");
+    await pinAndReach(page, "padding");
+    await expect(specRow(page, "padding-top")).toHaveCount(0);
+    await expandSpecRow(page, "padding");
+    for (const property of PADDING_PROPERTIES)
+      await expect(specTokens(page, property)).toHaveText(["--ds-space-050 × 4"]);
+  });
+
+  test("expanded side tokens follow overlapping logical and physical padding", async ({ page }) => {
+    await inspect(page, "specs-token-button");
+    await pinAndReach(page, "padding");
+    await expandSpecRow(page, "padding");
+    await expect(specTokens(page, "padding-top")).toHaveText(["--ds-space-050 × 4"]);
+    await expect(specTokens(page, "padding-right")).toHaveText(["--ds-space-050 × 6"]);
+    await expect(specTokens(page, "padding-bottom")).toHaveText(["--ds-space-050 × 4"]);
+    await expect(specTokens(page, "padding-left")).toHaveText(["--ds-space-050 × 6"]);
+  });
+
+  test("reopening Changes pinned keeps a corner clear of its element", async ({
+    page,
+    reactGrab,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 1200 });
+    await page.getByTestId("specs-box-button").evaluate((element) => {
+      element.style.left = "1300px";
+      element.style.top = "100px";
+      element.style.height = "1000px";
+    });
+    await inspect(page, "specs-box-button");
+    await pinAndReach(page, "padding");
+    await typeValue(page, "padding", "20px");
+    await expect(page.locator(PANEL_SELECTOR)).toHaveCSS("left", "12px");
+    await reactGrab.deactivate();
+    await page.locator('[data-react-grab-toolbar-action="style-changes"]').click();
+    await page.locator("[data-react-grab-changes-configure]").click();
+    await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveAttribute("data-pin-locked", "");
+    await expect(page.locator(PANEL_SELECTOR)).toHaveCSS("left", "12px");
+  });
 });

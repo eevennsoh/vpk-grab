@@ -2,6 +2,8 @@ import { collectTokenRules } from "./collect-token-rules.js";
 import { createSheetRuleCache } from "./create-sheet-rule-cache.js";
 import { formatSpecToken } from "./format-spec-token.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
+import { getPhysicalSpecProperty } from "./get-physical-spec-property.js";
+import { getSpecShorthandProperty } from "./get-spec-shorthand-property.js";
 import { getStyleProbe } from "./get-style-probe.js";
 import { getElementStyleSheets } from "./get-element-style-sheets.js";
 import { isSpecSourceProperty } from "./is-spec-source-property.js";
@@ -116,11 +118,12 @@ export const getSpecTokens = (
     });
 
   for (const specProperty of specProperties) {
+    const sourceProperty = getSpecShorthandProperty(specProperty);
     const claimedProperties = new Set<string>();
     const tokens: string[] = [];
 
     for (const declaration of declarations) {
-      if (!isSpecSourceProperty(specProperty, declaration.property)) continue;
+      if (!isSpecSourceProperty(sourceProperty, declaration.property)) continue;
       const substitution = substituteCssVariables(declaration.value, readVariable);
       if (!substitution) continue;
 
@@ -129,7 +132,18 @@ export const getSpecTokens = (
       const declaredProperties: string[] = [];
       for (let index = 0; index < probe.style.length; index++) {
         const declaredProperty = probe.style[index];
-        if (isSpecSourceProperty(specProperty, declaredProperty)) {
+        if (
+          isSpecSourceProperty(
+            specProperty,
+            sourceProperty === specProperty
+              ? declaredProperty
+              : getPhysicalSpecProperty(
+                  declaredProperty,
+                  computedStyle.writingMode,
+                  computedStyle.direction,
+                ),
+          )
+        ) {
           declaredProperties.push(declaredProperty);
         }
       }

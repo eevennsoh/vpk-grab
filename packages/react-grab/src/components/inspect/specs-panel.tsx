@@ -35,6 +35,7 @@ import { createElementBounds } from "../../utils/create-element-bounds.js";
 import { getElementComputedStyle } from "../../utils/get-element-computed-style.js";
 import { getRatioLockedDimension } from "../../utils/get-ratio-locked-dimension.js";
 import { isDefiniteSpecDimension } from "../../utils/is-definite-spec-dimension.js";
+import { getElementLayoutSize } from "../../utils/get-element-layout-size.js";
 import { getElementSpecs } from "../../utils/get-element-specs.js";
 import { getSpecsPanelCorner } from "../../utils/get-specs-panel-corner.js";
 import { getVisualViewport } from "../../utils/get-visual-viewport.js";
@@ -97,6 +98,9 @@ const estimateSingleColumnHeight = (specs: ElementSpecs, expanded: ReadonlySet<s
 const sectionTitleClass =
   "m-0 pt-2 pb-0.5 text-[10px] leading-[14px] font-semibold uppercase tracking-[0.06em] text-[var(--rg-text-secondary)]";
 
+const panelControlClass =
+  "flex items-center justify-center size-5 m-0 p-0 border-0 rounded-[5px] cursor-pointer hover:bg-[var(--rg-surface-hover)]";
+
 const [expandedProperties, setExpandedProperties] = createSignal(new Set<string>());
 
 // Click-through while it follows the hover: the panel answers "what is applied
@@ -104,15 +108,15 @@ const [expandedProperties, setExpandedProperties] = createSignal(new Set<string>
 // hovered, so it may not ask for the pointer. Holding Shift pins it to the
 // element it is showing; only then does it take the pointer, and its rows
 // become editable.
-export const SpecsPanel: Component<SpecsPanelProps> = (props) => (
-  <Show when={props.element} keyed>
-    {(element) => <ElementSpecsPanel {...props} element={element} />}
-  </Show>
-);
-
-const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
+export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
   let panelRef: HTMLDivElement | undefined;
-  const [isRatioLocked, setIsRatioLocked] = createSignal(false);
+  const ratioLock = createMemo(
+    on(
+      () => props.element,
+      () => createSignal(false),
+    ),
+  );
+  const isRatioLocked = () => ratioLock()[0]();
   const [panelHeight, setPanelHeight] = createSignal(SPECS_PANEL_FALLBACK_HEIGHT_PX);
   const [requestedValueMenu, setOpenValueMenu] = createSignal<OpenValueMenu | null>(null);
   const openValueMenu = () => (isEditable() ? requestedValueMenu() : null);
@@ -134,7 +138,9 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
 
   const specs = createMemo(() => {
     void props.styleOverridesVersion;
-    return props.element ? getElementSpecs(props.element, frozenAppliedProperties()) : null;
+    return props.element
+      ? getElementSpecs(props.element, frozenAppliedProperties(), expandedProperties())
+      : null;
   });
 
   const isEditable = () =>
@@ -173,12 +179,13 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
     const element = props.element;
     if (!element) return false;
     return props.onStyleChange(() => {
+      if (!isRatioLocked() || (row.property !== "width" && row.property !== "height"))
+        return setStyleOverrideValue(element, row, value, token, shorthandRow(row));
       const pairedProperty = row.property === "width" ? "height" : "width";
       const pairedRow = allRows().find((candidate) => candidate.property === pairedProperty);
-      const previousRect = element.getBoundingClientRect();
+      const previousSize = getElementLayoutSize(element);
       if (!setStyleOverrideValue(element, row, value, token, shorthandRow(row))) return false;
-      if (!isRatioLocked() || !pairedRow || (row.property !== "width" && row.property !== "height"))
-        return true;
+      if (!pairedRow) return true;
       const style = getElementComputedStyle(element);
       const specifiedValue = element.computedStyleMap?.().get(row.property)?.toString() ?? value;
       if (
@@ -186,7 +193,7 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
         Number.parseFloat(style.getPropertyValue(row.property)) <= 0
       )
         return true;
-      const nextRect = element.getBoundingClientRect();
+      const nextSize = getElementLayoutSize(element);
       const pairedCssSizePx = Number.parseFloat(style.getPropertyValue(pairedProperty));
       const pairedSides = pairedProperty === "width" ? ["left", "right"] : ["top", "bottom"];
       const pairedBoxExtrasPx =
@@ -200,10 +207,10 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
               0,
             );
       const pairedValue = getRatioLockedDimension({
-        previousEditedSizePx: previousRect[row.property],
-        previousPairedSizePx: previousRect[pairedProperty],
-        nextEditedSizePx: nextRect[row.property],
-        currentPairedSizePx: nextRect[pairedProperty],
+        previousEditedSizePx: previousSize[row.property],
+        previousPairedSizePx: previousSize[pairedProperty],
+        nextEditedSizePx: nextSize[row.property],
+        currentPairedSizePx: nextSize[pairedProperty],
         currentPairedCssSizePx: pairedCssSizePx,
         pairedBorderBoxSizePx: pairedCssSizePx + pairedBoxExtrasPx,
       });
@@ -246,15 +253,15 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
   const renderValueRow = (row: () => ElementSpecRow, parent?: () => ElementSpecRow) => (
     <SpecRow
       row={row()}
-      isEditable={isEditable()}
+      isEditable={isEditable() && !parent?.().override?.isOff}
       isSubRow={Boolean(parent)}
       isExpanded={expandedProperties().has(row().property)}
       onToggleExpanded={
         parent
           ? undefined
           : row().children
-            ? () => {
-                setHasFocusWithin(false);
+            ? (isKeyboardActivation) => {
+                setHasFocusWithin(isKeyboardActivation);
                 setOpenValueMenu(null);
                 setExpandedProperties((previous) => {
                   const next = new Set(previous);
@@ -265,21 +272,20 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
               }
             : undefined
       }
-      onNavigateValue={
-        parent
-          ? (isBackward) => {
-              const siblings = parent().children ?? [];
-              const index = siblings.findIndex((child) => child.property === row().property);
-              const sibling = siblings[index + (isBackward ? -1 : 1)];
-              const nextProperty = sibling?.property ?? parent().property;
-              panelRef
-                ?.querySelector<HTMLButtonElement>(
-                  `[data-react-grab-spec-row="${nextProperty}"] [data-react-grab-spec-value]`,
-                )
-                ?.click();
-            }
-          : undefined
-      }
+      getAdjacentValueButton={(isBackward) => {
+        const rowElements = Array.from(
+          panelRef?.querySelectorAll<HTMLElement>("[data-react-grab-spec-row]") ?? [],
+        );
+        const rowIndex = rowElements.findIndex(
+          (element) => element.getAttribute("data-react-grab-spec-row") === row().property,
+        );
+        const adjacentRow = rowElements[rowIndex + (isBackward ? -1 : 1)];
+        if (!parent && !adjacentRow?.hasAttribute("data-react-grab-spec-sub-row")) return;
+        return (
+          adjacentRow?.querySelector<HTMLButtonElement>("button[data-react-grab-spec-value]") ??
+          undefined
+        );
+      }}
       isMenuOpen={openValueMenu()?.property === row().property}
       onToggle={() => toggleRow(row())}
       onCommitValue={(value) => commitRowValue(row(), value, null)}
@@ -309,13 +315,14 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
           title={isRatioLocked() ? "Unlock width and height ratio" : "Lock width and height ratio"}
           aria-pressed={isRatioLocked()}
           class={cn(
-            "flex items-center justify-center size-5 ml-auto m-0 p-0 border-0 rounded-[5px] cursor-pointer hover:bg-[var(--rg-surface-hover)]",
+            panelControlClass,
+            "ml-auto",
             isRatioLocked()
               ? "bg-[var(--rg-surface-hover)] text-[var(--rg-text-primary)]"
               : "bg-transparent text-[var(--rg-text-secondary)]",
           )}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => setIsRatioLocked((previous) => !previous)}
+          onClick={() => ratioLock()[1]((previous) => !previous)}
         >
           <IconLink size={SPECS_CONTROL_ICON_SIZE_PX} />
         </button>
@@ -465,7 +472,7 @@ const ElementSpecsPanel: Component<SpecsPanelProps> = (props) => {
                     aria-pressed={props.isPinLocked}
                     title={props.isPinLocked ? "Unpin" : "Keep pinned"}
                     class={cn(
-                      "flex items-center justify-center size-5 m-0 p-0 border-0 rounded-[5px] cursor-pointer hover:bg-[var(--rg-surface-hover)]",
+                      panelControlClass,
                       props.isPinLocked
                         ? "bg-[var(--rg-surface-hover)] text-[var(--rg-text-primary)]"
                         : "bg-transparent text-[var(--rg-text-secondary)]",
