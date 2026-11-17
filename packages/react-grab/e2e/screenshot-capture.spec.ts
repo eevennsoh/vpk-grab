@@ -4,6 +4,20 @@ import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
+  PILL_PAGE_BUTTON_POSITION_PX,
+  SCREENSHOT_SELECTION_PADDING_PX,
+  PILL_PERSISTENCE_CHECK_MS,
+  PILL_ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS,
+  PILL_HIDDEN_LABEL_REMOVAL_WAIT_MS,
+  PILL_MODIFIER_RELEASE_DELAY_MS,
+  PILL_INJECTED_ANCHOR_BOX_PX,
+  PILL_PEN_STROKE_START_PX,
+  PILL_PEN_STROKE_END_PX,
+  PILL_VISIBILITY_CLEANUP_TIMEOUT_MS,
+  SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS,
+  PILL_ANNOTATION_STROKE_Y_OFFSET_PX,
+  PILL_ANNOTATION_STROKE_START_OFFSET_PX,
+  PILL_ANNOTATION_STROKE_END_OFFSET_PX,
   SHIFT_LABEL_ANCHORED_COUNT,
   SHIFT_LABEL_SETTLE_DELAY_MS,
 } from "./constants.js";
@@ -13,6 +27,7 @@ import {
   getClipboardWriteCallCount,
   getCopyEventCount,
   getImageWrites,
+  getRevokedObjectUrls,
   getUnhandledRejections,
   installClipboardRecorder,
   openClipboardGate,
@@ -48,13 +63,6 @@ const SCREENSHOT_ERROR_SELECTOR = "[data-react-grab-screenshot-error]";
 const FIRST_TODO_SELECTOR = "[data-testid='todo-list'] li:first-child span";
 const MAIN_TITLE_SELECTOR = "[data-testid='main-title']";
 const PAGE_BUTTON_ID = "persistent-pill-page-button";
-const PAGE_BUTTON_POSITION = { x: 40, y: 640 };
-const SCREENSHOT_SELECTION_PADDING_PX = 8;
-const PERSISTENCE_CHECK_MS = 3000;
-const ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS = 1000;
-const COPY_FEEDBACK_DURATION_MS = 1500;
-const HIDDEN_LABEL_REMOVAL_WAIT_MS = COPY_FEEDBACK_DURATION_MS + 125 + 500;
-const MODIFIER_RELEASE_DELAY_MS = COPY_FEEDBACK_DURATION_MS + 200;
 const SPECS_PIN_SELECTOR = "[data-react-grab-specs-pin]";
 const PEN_TOOL_SELECTOR = '[data-react-grab-toolbar-action="annotate-pen"]';
 const SHADOW_HOST_ID = "persistent-pill-shadow-host";
@@ -62,10 +70,8 @@ const SHADOW_ANCHOR_SELECTOR = `#${SHADOW_HOST_ID} button`;
 const DETACHING_ANCHOR_ID = "persistent-pill-detaching-anchor";
 const SAME_ORIGIN_IFRAME_SELECTOR = "[data-testid='same-origin-iframe']";
 const IFRAME_TARGET_SELECTOR = "[data-testid='iframe-target']";
-const INJECTED_ANCHOR_BOX = { left: 520, top: 600, width: 160, height: 40 };
-const PEN_STROKE_START = { x: 700, y: 520 };
-const PEN_STROKE_END = { x: 800, y: 540 };
 const CAMERA_CURSOR_HOTSPOT = "3 6, crosshair";
+const HELD_ACTIVATION_KEY = "F8";
 const CAPTURE_START = { x: 250, y: 280 };
 const CAPTURE_END = { x: 610, y: 380 };
 const LINE_START = { x: 300, y: 320 };
@@ -285,7 +291,9 @@ const parseRgb = (cssColor: string) => {
 
 test.describe("Screenshot capture", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
     await installClipboardRecorder(page);
     await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
     await reactGrab.activate();
@@ -377,7 +385,7 @@ test.describe("Screenshot capture", () => {
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
     await expect(completion).toContainText("Image copied");
 
-    await page.waitForTimeout(PERSISTENCE_CHECK_MS);
+    await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toContainText("Image copied");
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
 
@@ -724,7 +732,9 @@ test.describe("Screenshot capture", () => {
 
 test.describe("Screenshot capture after a real activation", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
     await installClipboardRecorder(page);
   });
 
@@ -916,6 +926,7 @@ const injectPageButton = (page: Page) =>
       button.textContent = "Page button";
       button.dataset.clickCount = "0";
       button.dataset.pointerDownCount = "0";
+      button.dataset.enterEventCount = "0";
       Object.assign(button.style, {
         position: "fixed",
         left: `${position.x}px`,
@@ -932,9 +943,15 @@ const injectPageButton = (page: Page) =>
         },
         { capture: true },
       );
+      for (const eventName of ["keydown", "keypress", "keyup"]) {
+        button.addEventListener(eventName, (event) => {
+          if (!(event instanceof KeyboardEvent) || event.key !== "Enter") return;
+          button.dataset.enterEventCount = String(Number(button.dataset.enterEventCount) + 1);
+        });
+      }
       document.body.appendChild(button);
     },
-    { buttonId: PAGE_BUTTON_ID, position: PAGE_BUTTON_POSITION },
+    { buttonId: PAGE_BUTTON_ID, position: PILL_PAGE_BUTTON_POSITION_PX },
   );
 
 const getPageButtonClickCount = (page: Page) =>
@@ -965,7 +982,7 @@ const grabKeepingGrabActive = async (
   await page.mouse.down();
   await page.mouse.up();
   await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
-  await page.waitForTimeout(MODIFIER_RELEASE_DELAY_MS);
+  await page.waitForTimeout(PILL_MODIFIER_RELEASE_DELAY_MS);
   await page.keyboard.up("ControlOrMeta");
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
 };
@@ -997,7 +1014,7 @@ const injectShadowAnchor = (page: Page) =>
       shadowRoot.appendChild(button);
       document.body.appendChild(host);
     },
-    { hostId: SHADOW_HOST_ID, box: INJECTED_ANCHOR_BOX },
+    { hostId: SHADOW_HOST_ID, box: PILL_INJECTED_ANCHOR_BOX_PX },
   );
 
 const injectAnchorThatLeavesOnCopy = (page: Page) =>
@@ -1022,7 +1039,7 @@ const injectAnchorThatLeavesOnCopy = (page: Page) =>
       );
       document.body.appendChild(anchor);
     },
-    { anchorId: DETACHING_ANCHOR_ID, box: INJECTED_ANCHOR_BOX },
+    { anchorId: DETACHING_ANCHOR_ID, box: PILL_INJECTED_ANCHOR_BOX_PX },
   );
 
 const lockSpecsPinWithPill = async (reactGrab: ReactGrabPageObject, page: Page) => {
@@ -1133,7 +1150,9 @@ const copyTitleAndTodoWithPerElementPills = async (reactGrab: ReactGrabPageObjec
 
 test.describe("Copied pill", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
     await installClipboardRecorder(page);
     await reactGrab.activate();
   });
@@ -1150,7 +1169,7 @@ test.describe("Copied pill", () => {
     await expect(cameraButton).toHaveAttribute("type", "button");
     await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
 
-    await page.waitForTimeout(PERSISTENCE_CHECK_MS);
+    await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toHaveCount(1);
     await expect(completion).toContainText("Copied");
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
@@ -1177,9 +1196,11 @@ test.describe("Copied pill", () => {
     await expect(page.locator(PEN_TOOL_SELECTOR)).toHaveAttribute("aria-pressed", "true");
     await expect(getCompletion(reactGrab)).toHaveCount(1);
 
-    await page.mouse.move(PEN_STROKE_START.x, PEN_STROKE_START.y);
+    await page.mouse.move(PILL_PEN_STROKE_START_PX.x, PILL_PEN_STROKE_START_PX.y);
     await page.mouse.down();
-    await page.mouse.move(PEN_STROKE_END.x, PEN_STROKE_END.y, { steps: DRAG_STEPS });
+    await page.mouse.move(PILL_PEN_STROKE_END_PX.x, PILL_PEN_STROKE_END_PX.y, {
+      steps: DRAG_STEPS,
+    });
     await page.mouse.up();
 
     await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
@@ -1266,7 +1287,7 @@ test.describe("Copied pill", () => {
     }, SHADOW_HOST_ID);
 
     await expect(getCompletion(reactGrab)).toHaveCount(0, {
-      timeout: ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS,
+      timeout: PILL_ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS,
     });
   });
 
@@ -1282,7 +1303,9 @@ test.describe("Copied pill", () => {
     expect(await page.locator(`#${DETACHING_ANCHOR_ID}`).count()).toBe(0);
 
     await expect
-      .poll(() => getLabelInstanceCount(reactGrab), { timeout: ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS })
+      .poll(() => getLabelInstanceCount(reactGrab), {
+        timeout: PILL_ANCHOR_REMOVAL_DISMISS_TIMEOUT_MS,
+      })
       .toBe(0);
     await expect(getCompletion(reactGrab)).toHaveCount(0);
   });
@@ -1299,7 +1322,7 @@ test.describe("Copied pill", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
     await expect(getCompletion(reactGrab)).toHaveCount(0);
 
-    await page.waitForTimeout(HIDDEN_LABEL_REMOVAL_WAIT_MS);
+    await page.waitForTimeout(PILL_HIDDEN_LABEL_REMOVAL_WAIT_MS);
     expect(await getLabelInstanceCount(reactGrab)).toBe(0);
 
     await page.locator(`#${PAGE_BUTTON_ID}`).click();
@@ -1311,20 +1334,40 @@ test.describe("Copied pill", () => {
     await grabFirstTodo(reactGrab, page);
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
-    await page.frameLocator(SAME_ORIGIN_IFRAME_SELECTOR).locator(IFRAME_TARGET_SELECTOR).click();
+    const frameTarget = page
+      .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
+      .locator(IFRAME_TARGET_SELECTOR);
+    await frameTarget.evaluate((target) => {
+      target.addEventListener("pointerdown", () => {
+        target.setAttribute("data-press-received", "true");
+      });
+    });
+    await frameTarget.click();
 
     await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await expect(frameTarget).toHaveAttribute("data-press-received", "true");
   });
 
   test("Escape inside a same-origin frame dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
-    await page.frameLocator(SAME_ORIGIN_IFRAME_SELECTOR).locator(IFRAME_TARGET_SELECTOR).focus();
+    const frameTarget = page
+      .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
+      .locator(IFRAME_TARGET_SELECTOR);
+    await frameTarget.evaluate((target) => {
+      target.addEventListener("keydown", (event) => {
+        if (event instanceof KeyboardEvent && event.key === "Escape") {
+          target.setAttribute("data-escape-received", "true");
+        }
+      });
+    });
+    await frameTarget.focus();
     await expect(getCompletion(reactGrab)).toHaveCount(1);
 
     await page.keyboard.press("Escape");
 
     await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await expect(frameTarget).toHaveAttribute("data-escape-received", "true");
   });
 
   test("Escape dismisses the pill", async ({ reactGrab, page }) => {
@@ -1381,7 +1424,7 @@ test.describe("Copied pill", () => {
     await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
     expect((await reactGrab.getState()).isActive).toBe(false);
 
-    await page.waitForTimeout(PERSISTENCE_CHECK_MS);
+    await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toContainText("Copied with image");
   });
 
@@ -1452,9 +1495,9 @@ test.describe("Copied pill", () => {
   }) => {
     const todoBox = await page.locator(FIRST_TODO_SELECTOR).first().boundingBox();
     if (!todoBox) throw new Error("No box for the first todo item");
-    const strokeY = todoBox.y + 2;
-    const strokeStart = { x: todoBox.x + 10, y: strokeY };
-    const strokeEnd = { x: todoBox.x + 90, y: strokeY };
+    const strokeY = todoBox.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX;
+    const strokeStart = { x: todoBox.x + PILL_ANNOTATION_STROKE_START_OFFSET_PX, y: strokeY };
+    const strokeEnd = { x: todoBox.x + PILL_ANNOTATION_STROKE_END_OFFSET_PX, y: strokeY };
     const penButton = page.locator('[data-react-grab-toolbar-action="annotate-pen"]');
     await penButton.click();
     await page.mouse.move(strokeStart.x, strokeStart.y);
@@ -1523,10 +1566,162 @@ test.describe("Copied pill", () => {
   });
 });
 
+test.describe("Copied pill visibility changes", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+  });
+
+  for (const visibilitySetting of [
+    { name: "theme", theme: { enabled: false } },
+    { name: "grabbed boxes", theme: { grabbedBoxes: { enabled: false } } },
+  ]) {
+    test(`hiding ${visibilitySetting.name} removes an existing success`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await grabFirstTodo(reactGrab, page);
+
+      await reactGrab.updateOptions({ theme: visibilitySetting.theme });
+
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      await expect
+        .poll(() => getLabelInstanceCount(reactGrab), {
+          timeout: PILL_VISIBILITY_CLEANUP_TIMEOUT_MS,
+        })
+        .toBe(0);
+      await reactGrab.updateOptions({ theme: { enabled: true, grabbedBoxes: { enabled: true } } });
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+    });
+
+    test(`hiding ${visibilitySetting.name} revokes an existing success thumbnail`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await grabFirstTodo(reactGrab, page);
+      const completion = getCompletion(reactGrab);
+      await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+      await expect(completion).toContainText("Copied with image");
+      const thumbnailUrl = await completion.locator(THUMBNAIL_SELECTOR).getAttribute("src");
+      expect(thumbnailUrl).toMatch(/^blob:/);
+
+      await reactGrab.updateOptions({ theme: visibilitySetting.theme });
+
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      await expect
+        .poll(() => getLabelInstanceCount(reactGrab), {
+          timeout: PILL_VISIBILITY_CLEANUP_TIMEOUT_MS,
+        })
+        .toBe(0);
+      expect(await getRevokedObjectUrls(page)).toContain(thumbnailUrl);
+    });
+
+    test(`hiding ${visibilitySetting.name} cancels a pending camera capture`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const pageErrors = trackPageErrors(page);
+      const { copiedText } = await grabFirstTodo(reactGrab, page);
+      await startGatedCameraCapture(reactGrab, page);
+
+      await reactGrab.updateOptions({ theme: visibilitySetting.theme });
+
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      await expect
+        .poll(() => getLabelInstanceCount(reactGrab), {
+          timeout: PILL_VISIBILITY_CLEANUP_TIMEOUT_MS,
+        })
+        .toBe(0);
+      await expectCameraCaptureCancelled(reactGrab, page, pageErrors, copiedText);
+    });
+  }
+});
+
 test.describe("Copied pill camera after a real activation", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
     await installClipboardRecorder(page);
+  });
+
+  test.describe("with the activation shortcut held", () => {
+    test.beforeEach(async ({ reactGrab, page }) => {
+      await reactGrab.updateOptions({
+        activationMode: "hold",
+        activationKey: HELD_ACTIVATION_KEY,
+      });
+      await page.keyboard.down(HELD_ACTIVATION_KEY);
+      await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
+      await expect.poll(() => isReactGrabActive(page)).toBe(true);
+      await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+      await page.waitForTimeout(PILL_MODIFIER_RELEASE_DELAY_MS);
+      await expect.poll(() => isReactGrabActive(page)).toBe(true);
+    });
+
+    test.afterEach(async ({ page }) => {
+      await page.keyboard.up(HELD_ACTIVATION_KEY);
+    });
+
+    test("Enter on the camera while Grab stays active from the keyboard copies once", async ({
+      reactGrab,
+      page,
+    }) => {
+      const completion = getCompletion(reactGrab);
+      await completion.locator(CAMERA_BUTTON_SELECTOR).focus();
+
+      await page.keyboard.press("Enter");
+
+      await expect(completion).toContainText("Copied with image");
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      const [imageWrite] = await getImageWrites(page);
+      expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+      expect(imageWrite.plainText).toContain("TodoItem");
+      expect(await getClipboardWriteCallCount(page)).toBe(1);
+      expect(await isReactGrabActive(page)).toBe(true);
+    });
+
+    test("Enter on more-options while Grab stays active from the keyboard opens the menu", async ({
+      reactGrab,
+      page,
+    }) => {
+      await getCompletion(reactGrab).locator(MORE_OPTIONS_SELECTOR).focus();
+
+      await page.keyboard.press("Enter");
+
+      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      expect(await getClipboardWriteCallCount(page)).toBe(0);
+      expect(await isReactGrabActive(page)).toBe(true);
+    });
+
+    test("Enter away from pill buttons stays blocked while Grab is active from the keyboard", async ({
+      page,
+    }) => {
+      await injectPageButton(page);
+      const pageButton = page.locator(`#${PAGE_BUTTON_ID}`);
+      await pageButton.focus();
+      expect(await isReactGrabActive(page)).toBe(true);
+
+      await page.keyboard.press("Enter");
+
+      await expect(pageButton).toHaveAttribute("data-enter-event-count", "0");
+      expect(await getPageButtonClickCount(page)).toBe(0);
+      expect(await getClipboardWriteCallCount(page)).toBe(0);
+
+      await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+      await page.keyboard.up(HELD_ACTIVATION_KEY);
+      await pageButton.focus();
+      await page.keyboard.press("Enter");
+      await expect(pageButton).toHaveAttribute("data-enter-event-count", "3");
+      expect(await getPageButtonClickCount(page)).toBe(1);
+    });
   });
 
   test("releasing the activation keys while the image renders still copies it", async ({
@@ -1554,7 +1749,9 @@ test.describe("Copied pill camera after a real activation", () => {
 
 test.describe("Copied pill camera cancellation", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
     await installClipboardRecorder(page);
     await reactGrab.activate();
   });

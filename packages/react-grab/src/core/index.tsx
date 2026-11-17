@@ -795,6 +795,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       areLabelInstancesShown,
     );
 
+    createEffect(
+      on(areLabelInstancesShown, (areLabelsShown) => {
+        if (!areLabelsShown) labelController.dismissCompleted();
+      }),
+    );
+
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
       if (isEventFromOverlay(event, "data-react-grab-completion")) return;
       labelController.dismissCompleted();
@@ -2742,6 +2748,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (shouldBlockEnter) {
         // The prompt input keeps Enter so its textarea handler can submit.
         if (isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE)) return false;
+        if (isEventFromOverlay(event, "data-react-grab-completion-action")) return false;
         keyboardClaimer.claimedEvents.add(event);
         event.preventDefault();
         event.stopImmediatePropagation();

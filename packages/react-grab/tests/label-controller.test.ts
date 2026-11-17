@@ -294,6 +294,59 @@ describe("createLabelController", () => {
     expect(labelInstances[0]?.status).toBe("error");
   });
 
+  it("cleans up completed labels when visibility dismisses them, leaving unfinished labels alone", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      createObjectURL: () => "blob:hidden-thumbnail",
+      revokeObjectURL,
+    });
+    const labelInstances: SelectionLabelInstance[] = [];
+    let areLabelsShown = true;
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+      undefined,
+      () => areLabelsShown,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "button", undefined, "copying");
+    controller.setImage(instanceId, "Copied with image", new Blob());
+    controller.updateAfterCopy(instanceId, true);
+    labelInstances.push(
+      { ...labelInstances[0], id: "pending-camera", thumbnailUrl: undefined },
+      { ...labelInstances[0], id: "unfinished-copy", thumbnailUrl: undefined, status: "copying" },
+      { ...labelInstances[0], id: "failed-copy", thumbnailUrl: undefined, status: "error" },
+    );
+    const captureSignal = controller.startScreenshotCapture("pending-camera");
+
+    areLabelsShown = false;
+    controller.dismissCompleted();
+
+    expect(captureSignal.aborted).toBe(true);
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:hidden-thumbnail");
+    expect(labelInstances.map((instance) => instance.id)).toEqual([
+      "unfinished-copy",
+      "failed-copy",
+    ]);
+  });
+
+  it("keeps timed removal for a hidden success after labels become visible again", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    let areLabelsShown = false;
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+      undefined,
+      () => areLabelsShown,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "button", undefined, "copying");
+    controller.updateAfterCopy(instanceId, true);
+    areLabelsShown = true;
+
+    vi.advanceTimersByTime(FEEDBACK_DURATION_MS + FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances).toHaveLength(0);
+  });
+
   it("dismisses every copied label once one anchor has left the document", () => {
     const labelInstances: SelectionLabelInstance[] = [];
     const controller = createLabelController(

@@ -17,6 +17,7 @@ interface ScreenshotRecorder {
   writeCallCount: number;
   copyEventCount: number;
   unhandledRejections: string[];
+  revokedObjectUrls: string[];
   openGate: () => void;
 }
 
@@ -73,9 +74,15 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
       writeCallCount: 0,
       copyEventCount: 0,
       unhandledRejections: [],
+      revokedObjectUrls: [],
       openGate: () => openGate(),
     };
     recorderWindow.__screenshotRecorder = recorder;
+    const originalRevokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (objectUrl) => {
+      recorder.revokedObjectUrls.push(objectUrl);
+      originalRevokeObjectURL(objectUrl);
+    };
     document.addEventListener(
       "copy",
       () => {
@@ -163,6 +170,12 @@ export const getUnhandledRejections = (page: Page) =>
   page.evaluate(() => {
     const recorderWindow: ScreenshotRecorderWindow = window;
     return recorderWindow.__screenshotRecorder?.unhandledRejections ?? [];
+  });
+
+export const getRevokedObjectUrls = (page: Page) =>
+  page.evaluate(() => {
+    const recorderWindow: ScreenshotRecorderWindow = window;
+    return recorderWindow.__screenshotRecorder?.revokedObjectUrls ?? [];
   });
 
 // Coordinates are CSS pixels from the captured rectangle's top-left corner;
