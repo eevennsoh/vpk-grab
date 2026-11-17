@@ -4,18 +4,6 @@ import { getClipboardHtml } from "./get-clipboard-html.js";
 import { getScreenshotFileName } from "./get-screenshot-file-name.js";
 import { IS_DEMO } from "./runtime-mode.js";
 
-const buildClipboardRepresentations = (
-  blobPromise: Promise<Blob>,
-  textContent: string | undefined,
-): Record<string, Blob | Promise<Blob>> => {
-  if (textContent === undefined) return { "image/png": blobPromise };
-  return {
-    "text/plain": new Blob([textContent], { type: "text/plain" }),
-    "text/html": new Blob([getClipboardHtml(textContent)], { type: "text/html" }),
-    "image/png": blobPromise,
-  };
-};
-
 // Must be called synchronously from the user's gesture: the clipboard write
 // is issued at once with the still-pending blob, so the gesture is not lost
 // while the image renders. Insecure origins (no async clipboard) get a
@@ -32,8 +20,15 @@ export const deliverPngBlob = async (
     downloadBlob(await blobPromise, getScreenshotFileName(new Date()));
     return "saved";
   }
+  const textRepresentations: Record<string, Blob> =
+    textContent === undefined
+      ? {}
+      : {
+          "text/plain": new Blob([textContent], { type: "text/plain" }),
+          "text/html": new Blob([getClipboardHtml(textContent)], { type: "text/html" }),
+        };
   await navigator.clipboard.write([
-    new ClipboardItem(buildClipboardRepresentations(blobPromise, textContent)),
+    new ClipboardItem({ ...textRepresentations, "image/png": blobPromise }),
   ]);
   return "copied";
 };

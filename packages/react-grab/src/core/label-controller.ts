@@ -68,8 +68,9 @@ interface LabelController {
   markRetrying: (instanceId: string) => void;
   setCopiedContent: (instanceId: string, copiedContent: string) => void;
   setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
-  startScreenshotCapture: (instanceId: string) => void;
+  startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
+  cancelScreenshotCaptures: () => void;
   dismissInstance: (instanceId: string) => void;
   dismissCompleted: () => void;
   dismissCompletedIfAnchorDetached: () => void;
@@ -110,6 +111,12 @@ export const createLabelController = (
   areLabelsShown: () => boolean = () => true,
 ): LabelController => {
   const fadeTimeouts = new Map<string, number>();
+  const screenshotCaptureControllers = new Map<string, AbortController>();
+
+  const abortScreenshotCapture = (instanceId: string) => {
+    screenshotCaptureControllers.get(instanceId)?.abort();
+    screenshotCaptureControllers.delete(instanceId);
+  };
 
   const cancelFade = (instanceId: string) => {
     const existingTimeout = fadeTimeouts.get(instanceId);
@@ -134,19 +141,24 @@ export const createLabelController = (
   };
 
   const removeInstance = (instanceId: string) => {
+    abortScreenshotCapture(instanceId);
     revokeThumbnail(findInstance(instanceId));
     store.removeLabelInstance(instanceId);
   };
 
   const clearAll = () => {
     cancelAllFades();
-    for (const instance of getLabelInstances()) revokeThumbnail(instance);
+    for (const instance of getLabelInstances()) {
+      abortScreenshotCapture(instance.id);
+      revokeThumbnail(instance);
+    }
     store.clearLabelInstances();
     onClearAll?.();
   };
 
   const fadeOut = (instanceId: string) => {
     cancelFade(instanceId);
+    abortScreenshotCapture(instanceId);
     store.updateLabelInstance(instanceId, "fading");
     const removalTimeoutId = window.setTimeout(() => {
       fadeTimeouts.delete(instanceId);
@@ -231,6 +243,7 @@ export const createLabelController = (
   const setImage = (instanceId: string, statusText: string, imageBlob: Blob) => {
     const instance = findInstance(instanceId);
     if (!instance) return;
+    screenshotCaptureControllers.delete(instanceId);
     revokeThumbnail(instance);
     store.patchLabelInstance(instanceId, {
       statusText,
@@ -240,18 +253,30 @@ export const createLabelController = (
     });
   };
 
-  const startScreenshotCapture = (instanceId: string) => {
+  const startScreenshotCapture = (instanceId: string): AbortSignal => {
+    abortScreenshotCapture(instanceId);
+    const captureController = new AbortController();
+    screenshotCaptureControllers.set(instanceId, captureController);
     store.patchLabelInstance(instanceId, {
       isCapturingScreenshot: true,
       screenshotErrorMessage: undefined,
     });
+    return captureController.signal;
   };
 
   const failScreenshotCapture = (instanceId: string, errorMessage: string) => {
+    screenshotCaptureControllers.delete(instanceId);
     store.patchLabelInstance(instanceId, {
       isCapturingScreenshot: undefined,
       screenshotErrorMessage: errorMessage,
     });
+  };
+
+  const cancelScreenshotCaptures = () => {
+    for (const instanceId of [...screenshotCaptureControllers.keys()]) {
+      abortScreenshotCapture(instanceId);
+      store.patchLabelInstance(instanceId, { isCapturingScreenshot: undefined });
+    }
   };
 
   const dismissInstance = (instanceId: string) => {
@@ -285,6 +310,7 @@ export const createLabelController = (
     setImage,
     startScreenshotCapture,
     failScreenshotCapture,
+    cancelScreenshotCaptures,
     dismissInstance,
     dismissCompleted,
     dismissCompletedIfAnchorDetached,

@@ -993,6 +993,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const tagName = firstElement ? getTagName(firstElement) : null;
       const elementName = componentName ?? tagName ?? undefined;
 
+      labelController.cancelScreenshotCaptures();
       return runCopyFlow(
         {
           getContent: pluginRegistry.store.options.getContent,
@@ -2410,6 +2411,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
 
       const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
+        labelController.cancelScreenshotCaptures();
         const blobPromise = getCapturedBlob();
         const [blobOutcome, deliveryOutcome] = await Promise.allSettled([
           blobPromise,
@@ -4702,9 +4704,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     // Called from the camera button's click: the clipboard write has to be
-    // issued in this call stack, before the image has rendered. A copy that
-    // starts while the image renders aborts the copy signal, and the pending
-    // image then rejects so this write cannot overwrite the newer copy.
+    // issued in this call stack, before the image has rendered. A newer Grab
+    // clipboard write or the pill's removal cancels the capture, and the
+    // pending image then rejects so this write cannot overwrite the newer one.
     const handleCopyScreenshotInstance = (instanceId: string) => {
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
@@ -4713,23 +4715,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const copiedContent = instance.copiedContent;
       if (copiedContent === undefined) return;
 
-      const copySignal = getCopySignal();
-      const blobPromise = capturePageRect(getLabelCaptureRect(instance), {
-        strokes: inspect.strokes(),
-        texts: inspect.texts(),
-      }).then((blob) => {
-        if (copySignal.aborted) throw new Error("Superseded by a newer copy");
-        return blob;
+      labelController.cancelScreenshotCaptures();
+      const captureSignal = labelController.startScreenshotCapture(instanceId);
+      const blobPromise = racePromiseWithAbort(
+        capturePageRect(getLabelCaptureRect(instance), {
+          strokes: inspect.strokes(),
+          texts: inspect.texts(),
+        }),
+        captureSignal,
+      ).then((captureResult) => {
+        if (captureResult === ABORTED_PROMISE_RESULT) {
+          throw new Error("Screenshot capture cancelled");
+        }
+        return captureResult;
       });
       const deliveryPromise = deliverPngBlob(blobPromise, copiedContent);
-      labelController.startScreenshotCapture(instanceId);
 
       void Promise.allSettled([blobPromise, deliveryPromise]).then(
         ([blobOutcome, deliveryOutcome]) => {
-          const currentInstance = store.labelInstances.find(
-            (labelInstance) => labelInstance.id === instanceId,
-          );
-          if (currentInstance?.status !== "copied") return;
+          if (captureSignal.aborted) return;
           if (blobOutcome.status === "rejected") {
             labelController.failScreenshotCapture(instanceId, "Couldn't capture image");
             return;

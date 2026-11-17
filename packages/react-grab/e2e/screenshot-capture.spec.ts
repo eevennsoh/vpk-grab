@@ -2,8 +2,13 @@
 // of the elements in it.
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
-import { KEYBOARD_ACTIVATION_SETTLE_DELAY_MS } from "./constants.js";
 import {
+  KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
+  SHIFT_LABEL_ANCHORED_COUNT,
+  SHIFT_LABEL_SETTLE_DELAY_MS,
+} from "./constants.js";
+import {
+  controlImageEncoding,
   findColorInLastImage,
   getClipboardWriteCallCount,
   getCopyEventCount,
@@ -11,6 +16,7 @@ import {
   getUnhandledRejections,
   installClipboardRecorder,
   openClipboardGate,
+  openImageEncodingGate,
   sampleLastImagePixel,
 } from "./screenshot-fixture.js";
 import {
@@ -40,6 +46,7 @@ const MORE_OPTIONS_SELECTOR = "[data-react-grab-more-options]";
 const CAPTURING_SELECTOR = "[data-react-grab-screenshot-capturing]";
 const SCREENSHOT_ERROR_SELECTOR = "[data-react-grab-screenshot-error]";
 const FIRST_TODO_SELECTOR = "[data-testid='todo-list'] li:first-child span";
+const MAIN_TITLE_SELECTOR = "[data-testid='main-title']";
 const PAGE_BUTTON_ID = "persistent-pill-page-button";
 const PAGE_BUTTON_POSITION = { x: 40, y: 640 };
 const SCREENSHOT_SELECTION_PADDING_PX = 8;
@@ -1050,6 +1057,80 @@ const grabFirstTodo = async (
   };
 };
 
+const trackPageErrors = (page: Page) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  return pageErrors;
+};
+
+const startGatedCameraCapture = async (reactGrab: ReactGrabPageObject, page: Page) => {
+  await controlImageEncoding(page, { isGated: true });
+  const completion = getCompletion(reactGrab);
+  await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+  await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
+  return completion;
+};
+
+const expectCameraCaptureCancelled = async (
+  reactGrab: ReactGrabPageObject,
+  page: Page,
+  pageErrors: string[],
+  expectedClipboardText: string,
+) => {
+  await openImageEncodingGate(page);
+  await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+  expect(await getImageWrites(page)).toHaveLength(0);
+  expect(await reactGrab.getClipboardContent()).toBe(expectedClipboardText);
+  await expect(reactGrab.getOverlayHost().locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+  expect(await getUnhandledRejections(page)).toEqual([]);
+  expect(pageErrors).toEqual([]);
+};
+
+const expectCameraCaptureCompleted = async (
+  reactGrab: ReactGrabPageObject,
+  page: Page,
+  pageErrors: string[],
+) => {
+  const completion = getCompletion(reactGrab);
+  await openImageEncodingGate(page);
+  await expect(completion).toContainText("Copied with image");
+  await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+  const imageWrites = await getImageWrites(page);
+  expect(imageWrites).toHaveLength(1);
+  expect([...imageWrites[0].types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+  expect(await getUnhandledRejections(page)).toEqual([]);
+  expect(pageErrors).toEqual([]);
+};
+
+const copyTitleAndTodoWithPerElementPills = async (reactGrab: ReactGrabPageObject, page: Page) => {
+  const titleCenter = await getCenter(page, MAIN_TITLE_SELECTOR);
+  const todoCenter = await getTodoItemCenter(page, 0);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(titleCenter.x, titleCenter.y);
+  await page.waitForTimeout(SHIFT_LABEL_SETTLE_DELAY_MS);
+  await page.mouse.click(todoCenter.x, todoCenter.y);
+  await page.waitForTimeout(SHIFT_LABEL_SETTLE_DELAY_MS);
+  await page.keyboard.up("Shift");
+
+  const completion = getCompletion(reactGrab);
+  await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(SHIFT_LABEL_ANCHORED_COUNT);
+  const { grabbedBoxes } = await reactGrab.getState();
+  expect(grabbedBoxes).toHaveLength(SHIFT_LABEL_ANCHORED_COUNT);
+  const [titleBox, todoBox] = grabbedBoxes
+    .map((grabbedBox) => grabbedBox.bounds)
+    .sort((firstBox, secondBox) => firstBox.y - secondBox.y);
+  const pillTops = await completion.evaluateAll((pills) =>
+    pills.map((pill) => pill.getBoundingClientRect().y),
+  );
+  const todoPillIndex = pillTops[0] > pillTops[1] ? 0 : 1;
+  return {
+    titlePill: completion.nth(1 - todoPillIndex),
+    todoPill: completion.nth(todoPillIndex),
+    titleCaptureRect: padBox(titleBox),
+    todoCaptureRect: padBox(todoBox),
+  };
+};
+
 test.describe("Copied pill", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
@@ -1440,4 +1521,142 @@ test.describe("Copied pill", () => {
     await expect(completion).toContainText("Copied with image");
     expect(await getClipboardWriteCallCount(page)).toBe(1);
   });
+});
+
+test.describe("Copied pill camera after a real activation", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await installClipboardRecorder(page);
+  });
+
+  test("releasing the activation keys while the image renders still copies it", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await reactGrab.activateViaKeyboard();
+    await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+    await page.keyboard.down(reactGrab.feedbackModifierKey);
+    await page.keyboard.down("c");
+    try {
+      await reactGrab.clickElement(FIRST_TODO_SELECTOR);
+      await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+      await startGatedCameraCapture(reactGrab, page);
+    } finally {
+      await page.keyboard.up("c");
+      await page.keyboard.up(reactGrab.feedbackModifierKey);
+    }
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    await expectCameraCaptureCompleted(reactGrab, page, pageErrors);
+  });
+});
+
+test.describe("Copied pill camera cancellation", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+  });
+
+  test("deactivating Grab through the API while the image renders still copies it", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await grabKeepingGrabActive(reactGrab, page, FIRST_TODO_SELECTOR);
+    await startGatedCameraCapture(reactGrab, page);
+
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    await expectCameraCaptureCompleted(reactGrab, page, pageErrors);
+  });
+
+  test("a newer grab while the image renders keeps its text and drops the image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await grabKeepingGrabActive(reactGrab, page, FIRST_TODO_SELECTOR);
+    await startGatedCameraCapture(reactGrab, page);
+
+    await reactGrab.hoverUntilSelected(MAIN_TITLE_SELECTOR);
+    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    await page.mouse.down();
+    await page.mouse.up();
+    const newerCopy = await newerCopyPromise;
+    expect(newerCopy["text/plain"]).toContain("React Grab");
+
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, newerCopy["text/plain"]);
+  });
+
+  test("a newer copy through the API while the image renders cancels it silently", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await grabFirstTodo(reactGrab, page);
+    const completion = await startGatedCameraCapture(reactGrab, page);
+
+    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    expect(await reactGrab.copyElementViaApi(MAIN_TITLE_SELECTOR)).toBe(true);
+    const newerCopy = await newerCopyPromise;
+
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expect(completion).toContainText("Copied");
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, newerCopy["text/plain"]);
+    await expect(completion).not.toContainText("Copied with image");
+  });
+
+  test("an image that fails to render shows the capture error and offers the camera again", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await grabFirstTodo(reactGrab, page);
+    await controlImageEncoding(page, { shouldFail: true });
+    const completion = getCompletion(reactGrab);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText(
+      "Couldn't capture image",
+    );
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    expect(await getImageWrites(page)).toHaveLength(0);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  for (const activationKey of ["Enter", "Space"]) {
+    test(`${activationKey} on a pill's camera captures that pill's element once`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const { titlePill, todoPill, todoCaptureRect } = await copyTitleAndTodoWithPerElementPills(
+        reactGrab,
+        page,
+      );
+      await titlePill.getByText("Copied", { exact: true }).click();
+      await todoPill.locator(CAMERA_BUTTON_SELECTOR).focus();
+
+      await page.keyboard.press(activationKey);
+
+      await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+      const [imageWrite] = await getImageWrites(page);
+      const expectedSize = await getExpectedPixelSize(
+        page,
+        todoCaptureRect.width,
+        todoCaptureRect.height,
+      );
+      expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
+      expect(imageWrite.plainText).toContain("TodoItem");
+      await expect(todoPill).toContainText("Copied with image");
+      await expect(titlePill).not.toContainText("Copied with image");
+      await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+      expect(await getClipboardWriteCallCount(page)).toBe(1);
+    });
+  }
 });

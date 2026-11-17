@@ -29,6 +29,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
     <button
       type="button"
       data-react-grab-ignore-events
+      data-react-grab-completion-action
       aria-label={local.label}
       class={cn(
         buttonVariants({ variant: "ghost" }),
@@ -92,20 +93,11 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
 
   // Without onDismiss the label only offers its action buttons, so Enter and
   // Escape elsewhere are left to the page while the label stays on screen.
+  // Only one label owns this listener, so Enter on an action button is left to
+  // the button itself: handling it here would act on the owning label instead.
   const { claimFocus } = createConfirmationKeyboard({
     onEnter: (event) => {
-      if (isEventFromOverlay(event, "data-react-grab-more-options")) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleShowContextMenu();
-        return;
-      }
-      if (isEventFromOverlay(event, "data-react-grab-copy-screenshot")) {
-        event.preventDefault();
-        event.stopPropagation();
-        props.onCopyScreenshot?.();
-        return;
-      }
+      if (isEventFromOverlay(event, "data-react-grab-completion-action")) return;
       if (!props.onDismiss) return;
       if (isEventFromOverlay(event, "data-react-grab-context-menu")) return;
       event.preventDefault();

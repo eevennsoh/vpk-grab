@@ -22,6 +22,12 @@ interface ScreenshotRecorder {
 
 interface ScreenshotRecorderWindow extends Window {
   __screenshotRecorder?: ScreenshotRecorder;
+  __openImageEncodingGate?: () => void;
+}
+
+interface ImageEncodingOptions {
+  isGated?: boolean;
+  shouldFail?: boolean;
 }
 
 interface ClipboardRecorderOptions {
@@ -100,6 +106,34 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
       }
     };
   }, options);
+
+// Holds back (or fails) the PNG encoding at the end of a capture, so a test
+// can act while the image is still rendering.
+export const controlImageEncoding = (page: Page, options: ImageEncodingOptions) =>
+  page.evaluate(({ isGated, shouldFail }) => {
+    const recorderWindow: ScreenshotRecorderWindow = window;
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    const pendingEncodings: Array<() => void> = [];
+    let isGateOpen = !isGated;
+    recorderWindow.__openImageEncodingGate = () => {
+      isGateOpen = true;
+      for (const runEncoding of pendingEncodings.splice(0)) runEncoding();
+    };
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      const runEncoding = () => {
+        if (shouldFail) callback(null);
+        else originalToBlob.call(this, callback, type, quality);
+      };
+      if (isGateOpen) runEncoding();
+      else pendingEncodings.push(runEncoding);
+    };
+  }, options);
+
+export const openImageEncodingGate = (page: Page) =>
+  page.evaluate(() => {
+    const recorderWindow: ScreenshotRecorderWindow = window;
+    recorderWindow.__openImageEncodingGate?.();
+  });
 
 export const openClipboardGate = (page: Page) =>
   page.evaluate(() => {

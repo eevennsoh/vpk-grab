@@ -151,6 +151,61 @@ describe("createLabelController", () => {
     expect(labelInstances).toHaveLength(0);
   });
 
+  it("cancels a label's screenshot capture silently when a newer copy supersedes it", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.updateAfterCopy(instanceId, true);
+    const captureSignal = controller.startScreenshotCapture(instanceId);
+    expect(captureSignal.aborted).toBe(false);
+
+    controller.cancelScreenshotCaptures();
+
+    expect(captureSignal.aborted).toBe(true);
+    expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
+    expect(labelInstances[0]?.screenshotErrorMessage).toBeUndefined();
+    expect(labelInstances[0]?.status).toBe("copied");
+  });
+
+  it("cancels a label's screenshot capture when the label is dismissed or replaced", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.updateAfterCopy(firstInstanceId, true);
+    const dismissedCaptureSignal = controller.startScreenshotCapture(firstInstanceId);
+    controller.dismissCompleted();
+    expect(dismissedCaptureSignal.aborted).toBe(true);
+
+    const secondInstanceId = controller.createInstance(LABEL_BOUNDS, "b", undefined, "copying");
+    controller.updateAfterCopy(secondInstanceId, true);
+    const replacedCaptureSignal = controller.startScreenshotCapture(secondInstanceId);
+    controller.createInstance(LABEL_BOUNDS, "c", undefined, "copying");
+    expect(replacedCaptureSignal.aborted).toBe(true);
+  });
+
+  it("leaves a finished screenshot capture alone when later copies cancel captures", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+    controller.updateAfterCopy(instanceId, true);
+    const captureSignal = controller.startScreenshotCapture(instanceId);
+    controller.failScreenshotCapture(instanceId, "Couldn't capture image");
+
+    controller.cancelScreenshotCaptures();
+
+    expect(captureSignal.aborted).toBe(false);
+    expect(labelInstances[0]?.screenshotErrorMessage).toBe("Couldn't capture image");
+  });
+
   it("revokes an image label's thumbnail when the label goes away", () => {
     let createdUrlCount = 0;
     const createObjectURL = vi.fn(() => {
