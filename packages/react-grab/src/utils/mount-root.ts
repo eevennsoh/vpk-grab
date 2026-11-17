@@ -20,7 +20,12 @@ const attachHostToBody = (host: HTMLElement): void => {
       candidate.remove();
     }
   }
+  // Re-appending moves the host, which drops focus from any overlay input.
+  const focusedOverlayElement = host.shadowRoot?.activeElement;
   document.body.appendChild(host);
+  if (focusedOverlayElement instanceof HTMLElement && !host.shadowRoot?.activeElement) {
+    focusedOverlayElement.focus({ preventScroll: true });
+  }
 };
 
 // During parsing (readyState === "loading") <body> may not exist yet, and

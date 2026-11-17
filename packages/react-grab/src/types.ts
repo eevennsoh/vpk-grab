@@ -396,6 +396,11 @@ export interface OverlayBounds {
 
 export type SelectionLabelStatus = "idle" | "copying" | "copied" | "fading" | "error";
 
+export interface PromptCopyTarget {
+  primaryElement: Element;
+  elements: Element[];
+}
+
 export interface SelectionLabelInstance {
   id: string;
   bounds: OverlayBounds;
@@ -420,6 +425,7 @@ export interface SelectionLabelInstance {
   copiedContent?: string;
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
+  promptTarget?: PromptCopyTarget;
 }
 
 export interface SelectionLabelInstancePatch {
@@ -428,6 +434,7 @@ export interface SelectionLabelInstancePatch {
   copiedContent?: string;
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
+  promptTarget?: PromptCopyTarget;
 }
 
 export interface FrozenLabelEntry {
@@ -477,6 +484,9 @@ export interface ReactGrabRendererProps {
   isPromptMode?: boolean;
   onShowContextMenuInstance?: (instanceId: string) => void;
   onCopyScreenshotInstance?: (instanceId: string) => void;
+  onSubmitPromptInstance?: (instanceId: string, prompt: string) => void;
+  shouldFocusInstancePrompt?: boolean;
+  onInstancePromptFocusRelease?: () => void;
   onRetryInstance?: (instanceId: string) => void;
   onAcknowledgeErrorInstance?: (instanceId: string) => void;
   onInputChange?: (value: string) => void;
@@ -614,6 +624,27 @@ export interface CompletionViewProps {
   onFadingChange?: (isFading: boolean) => void;
   onShowContextMenu?: () => void;
   onCopyScreenshot?: () => void;
+  onSubmitPrompt?: (prompt: string) => void;
+  shouldFocusPrompt?: boolean;
+  onPromptFocusRelease?: () => void;
+}
+
+export interface PromptTextareaProps {
+  ref?: (element: HTMLTextAreaElement) => void;
+  class?: string;
+  value: string;
+  readOnly?: boolean;
+  shouldFocusOnMount?: boolean;
+  onValueChange?: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+}
+
+export interface PillPromptProps {
+  shouldFocus?: boolean;
+  onSubmit: (prompt: string) => void;
+  onFocusRelease?: () => void;
 }
 
 export interface SelectionLabelProps {
@@ -648,6 +679,9 @@ export interface SelectionLabelProps {
   isCapturingScreenshot?: boolean;
   screenshotError?: string;
   isLabelInstance?: boolean;
+  onSubmitPrompt?: (prompt: string) => void;
+  shouldFocusPrompt?: boolean;
+  onPromptFocusRelease?: () => void;
 }
 
 export interface SourceLocation extends SourceInfo {

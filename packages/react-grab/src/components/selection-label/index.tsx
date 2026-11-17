@@ -17,10 +17,8 @@ import {
   ARROW_LABEL_MARGIN_PX,
   LABEL_GAP_PX,
   SELECTION_LABEL_OFFSCREEN_PX,
-  TEXTAREA_MAX_HEIGHT_PX,
   Z_INDEX_OVERLAY,
 } from "../../constants.js";
-import { autoResizeTextarea } from "../../utils/auto-resize-textarea.js";
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
 import { getArrowSize } from "../../utils/get-arrow-size.js";
 import { getVisualViewport } from "../../utils/get-visual-viewport.js";
@@ -37,6 +35,7 @@ import { Surface } from "../ui/surface.js";
 import { DiscardPrompt } from "./discard-prompt.js";
 import { ErrorView } from "./error-view.js";
 import { CompletionView } from "./completion-view.js";
+import { PromptTextarea } from "./prompt-textarea.js";
 
 interface LabelPosition {
   left: number;
@@ -307,15 +306,6 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
     }
   };
 
-  const handleInput = (event: InputEvent) => {
-    const inputTarget = event.target;
-    if (!(inputTarget instanceof HTMLTextAreaElement)) {
-      return;
-    }
-    autoResizeTextarea(inputTarget, TEXTAREA_MAX_HEIGHT_PX);
-    props.onInputChange?.(inputTarget.value);
-  };
-
   const tagDisplayResult = () =>
     getTagDisplay({
       tagName: props.tagName,
@@ -392,6 +382,9 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             onFadingChange={setIsInternalFading}
             onShowContextMenu={props.onShowContextMenu}
             onCopyScreenshot={props.onCopyScreenshot}
+            onSubmitPrompt={props.onSubmitPrompt}
+            shouldFocusPrompt={props.shouldFocusPrompt}
+            onPromptFocusRelease={props.onPromptFocusRelease}
           />
         </Show>
 
@@ -446,36 +439,13 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
               </div>
               <BottomSection>
                 <div class="shrink-0 flex justify-between items-end w-full min-h-4">
-                  <textarea
-                    ref={(element) => {
-                      inputRef = element;
-                      // This ref fires during Solid's render commit when the
-                      // surrounding DOM tree isn't fully built yet, so focusing
-                      // synchronously can fail or cause a scroll jump.
-                      if (props.onSubmit) {
-                        queueMicrotask(() => {
-                          focusInOverlay(element, { preventScroll: true });
-                          autoResizeTextarea(element, TEXTAREA_MAX_HEIGHT_PX);
-                        });
-                      }
-                    }}
-                    data-react-grab-ignore-events
-                    data-react-grab-input
-                    aria-label="Add context for selected element"
-                    aria-keyshortcuts="Enter Escape"
-                    class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-medium bg-transparent border-none resize-none flex-1 p-0 m-0 wrap-break-word overflow-y-auto"
-                    style={{
-                      "field-sizing": "content",
-                      "min-height": "16px",
-                      "max-height": `${TEXTAREA_MAX_HEIGHT_PX}px`,
-                      "scrollbar-width": "none",
-                    }}
+                  <PromptTextarea
+                    ref={(element) => (inputRef = element)}
                     value={props.inputValue ?? ""}
-                    onInput={handleInput}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Add context"
-                    rows={1}
                     readOnly={!props.onSubmit}
+                    shouldFocusOnMount={Boolean(props.onSubmit)}
+                    onValueChange={(value) => props.onInputChange?.(value)}
+                    onKeyDown={handleKeyDown}
                   />
                   <Show when={props.onSubmit}>
                     <button

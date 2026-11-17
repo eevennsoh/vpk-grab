@@ -1,12 +1,16 @@
 import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } from "solid-js";
-import type { CompletionViewProps } from "../../types.js";
+import type { CompletionViewProps, PillPromptProps } from "../../types.js";
 import {
   FEEDBACK_DURATION_MS,
   FADE_DURATION_MS,
   SCREENSHOT_THUMBNAIL_SIZE_PX,
+  TEXTAREA_MAX_HEIGHT_PX,
 } from "../../constants.js";
+import { autoResizeTextarea } from "../../utils/auto-resize-textarea.js";
 import { createConfirmationKeyboard } from "../../utils/create-confirmation-keyboard.js";
+import { isEnterCode } from "../../utils/is-enter-code.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
+import { isKeyboardEventComposing } from "../../utils/is-keyboard-event-composing.js";
 import { IconReturn } from "../icons/icon-return.jsx";
 import { IconEllipsis } from "../icons/icon-ellipsis.jsx";
 import { cn } from "../../utils/cn.js";
@@ -16,6 +20,7 @@ import { IconCheck } from "../icons/icon-check.jsx";
 import { IconLoader } from "../icons/icon-loader.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
 import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { PromptTextarea } from "./prompt-textarea.js";
 
 interface CompletionActionButtonProps {
   label: string;
@@ -63,6 +68,54 @@ const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => (
     <IconEllipsis size={14} aria-hidden="true" class={ACTION_ICON_CLASS} />
   </CompletionActionButton>
 );
+
+// An empty prompt leaves every key but text to the page (the overlay's keydown
+// handler sees to that), so Escape only has work here once there is text.
+const PillPrompt: Component<PillPromptProps> = (props) => {
+  let textareaRef: HTMLTextAreaElement | undefined;
+  let hasFocus = false;
+  const [promptText, setPromptText] = createSignal("");
+
+  const releaseFocus = () => {
+    if (!hasFocus) return;
+    hasFocus = false;
+    textareaRef?.blur();
+    props.onFocusRelease?.();
+  };
+
+  onCleanup(releaseFocus);
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (isKeyboardEventComposing(event)) return;
+    event.stopImmediatePropagation();
+    if (isEnterCode(event.code) && !event.shiftKey) {
+      event.preventDefault();
+      const prompt = promptText().trim();
+      if (prompt) props.onSubmit(prompt);
+      return;
+    }
+    if (event.code === "Escape" && promptText()) {
+      event.preventDefault();
+      setPromptText("");
+      if (textareaRef) autoResizeTextarea(textareaRef, TEXTAREA_MAX_HEIGHT_PX);
+      releaseFocus();
+    }
+  };
+
+  return (
+    <div data-react-grab-pill-prompt class="flex flex-1 items-center min-w-[96px] ml-1.5">
+      <PromptTextarea
+        ref={(element) => (textareaRef = element)}
+        value={promptText()}
+        shouldFocusOnMount={props.shouldFocus}
+        onValueChange={setPromptText}
+        onKeyDown={handleKeyDown}
+        onFocus={() => (hasFocus = true)}
+        onBlur={() => (hasFocus = false)}
+      />
+    </div>
+  );
+};
 
 export const CompletionView: Component<CompletionViewProps> = (props) => {
   let fadeTimeoutId: number | undefined;
@@ -188,6 +241,15 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-sans font-medium h-fit tabular-nums overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
             textContent={displayStatusText()}
           />
+          <Show when={props.onSubmitPrompt}>
+            {(onSubmitPrompt) => (
+              <PillPrompt
+                shouldFocus={props.shouldFocusPrompt}
+                onSubmit={onSubmitPrompt()}
+                onFocusRelease={props.onPromptFocusRelease}
+              />
+            )}
+          </Show>
           <Show when={props.onCopyScreenshot}>
             {(onCopyScreenshot) => (
               <>

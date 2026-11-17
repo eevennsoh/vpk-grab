@@ -230,6 +230,7 @@ export const OPAQUE_TEXT_MIN_ALPHA = 0.5;
 
 // Marks the overlay's comment input; queried by the demo driver and prompt-mode checks in core.
 export const REACT_GRAB_INPUT_ATTRIBUTE = "data-react-grab-input";
+export const PILL_PROMPT_ATTRIBUTE = "data-react-grab-pill-prompt";
 
 export const USER_IGNORE_ATTRIBUTE = "data-react-grab-ignore";
 

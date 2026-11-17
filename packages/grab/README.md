@@ -35,6 +35,8 @@ While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal 
 
 After a grab, the **Copied** pill stays until you click anywhere else, press **Esc** or start Grab again. Its camera button copies the same element references again together with a PNG of the element and a little space around it, with your drawings and notes, so one paste brings both. On an address without HTTPS the image downloads instead and the references stay on the clipboard.
 
+The pill also has an **Add context** field for a quick follow-up. When Grab stays on after the copy, the field takes focus as the pill appears, so you can type straight away; while you hold the shortcut, or on touch, click the field first. **Enter** copies the same elements again with your text above them, and the pill reads **Copied with prompt**; the camera then adds the image to that. **Shift+Enter** starts a new line, and **Esc** clears the text. While the field is empty only typing goes into it, so arrow keys, **Esc** and the shortcut work as before, but single keys such as a control's number type into the field instead. There is no field after a screenshot or once the camera has copied an image.
+
 ## Install
 
 Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.9`.

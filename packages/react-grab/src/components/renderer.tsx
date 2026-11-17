@@ -123,6 +123,20 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                   }
                   return () => props.onCopyScreenshotInstance?.(currentInstance.id);
                 })()}
+                onSubmitPrompt={(() => {
+                  const currentInstance = instance();
+                  if (
+                    currentInstance.status !== "copied" ||
+                    !currentInstance.promptTarget ||
+                    !hasLabelCompletionActions(currentInstance)
+                  ) {
+                    return undefined;
+                  }
+                  return (prompt: string) =>
+                    props.onSubmitPromptInstance?.(currentInstance.id, prompt);
+                })()}
+                shouldFocusPrompt={props.shouldFocusInstancePrompt}
+                onPromptFocusRelease={props.onInstancePromptFocusRelease}
                 onRetry={() => props.onRetryInstance?.(instance().id)}
                 onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
               />
