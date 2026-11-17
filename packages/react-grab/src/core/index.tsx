@@ -225,7 +225,6 @@ interface BuildActionContextOptions {
   position: Position;
   performWithFeedbackOptions?: PerformWithFeedbackOptions;
   shouldDeferHideContextMenu: boolean;
-  onBeforeCopy?: () => void;
   onBeforePrompt?: () => void;
   customEnterPromptMode?: () => void;
 }
@@ -632,7 +631,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       copyWaiting: false,
       holdTimerFired: false,
     };
-    let previousSpaceDragPointerPage: Position | null = null;
+    const previousSpaceDragPointerPage: Position = { x: 0, y: 0 };
     const [isShiftMultiSelecting, setIsShiftMultiSelecting] = createSignal(false);
     let lastWindowFocusTimestamp = 0;
     let isCopyFeedbackCooldownActive = false;
@@ -701,16 +700,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       () => isDragging(),
       (scrollDelta) => {
         if (isDragRepositioning()) {
-          actions.shiftDragStart(scrollDelta);
-          if (previousSpaceDragPointerPage) {
-            previousSpaceDragPointerPage = {
-              x: previousSpaceDragPointerPage.x + scrollDelta.x,
-              y: previousSpaceDragPointerPage.y + scrollDelta.y,
-            };
-            return;
-          }
-          const { pageX, pageY } = toPageCoordinates(pointer().x, pointer().y);
-          previousSpaceDragPointerPage = { x: pageX, y: pageY };
+          actions.shiftDragStart(scrollDelta.x, scrollDelta.y);
+          previousSpaceDragPointerPage.x += scrollDelta.x;
+          previousSpaceDragPointerPage.y += scrollDelta.y;
         }
       },
     );
@@ -908,6 +900,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
+    const completeSuccessfulCopy = () => {
+      stopShiftMultiSelecting();
+      clearKeyboardNavigation();
+      actions.completeCopy();
+      actions.finishJustCopied();
+    };
+
     const executeCopyOperation = async (
       clipboardOperation: (signal: AbortSignal) => Promise<CopyFlowResult>,
       labelInstanceIds: string[] | null,
@@ -940,8 +939,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (current().state !== "copying") return true;
 
       if (didSucceed) {
-        actions.completeCopy();
-        actions.finishJustCopied();
+        completeSuccessfulCopy();
         startCopyFeedbackCooldown();
       } else if (shouldDeactivateOnFailure) {
         deactivateRenderer();
@@ -971,7 +969,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
       // Route through the full copy path (not just the clipboard attempt) so a
       // recovered copy runs the same completion side effects as a first-try
-      // success: completeCopy, re-activate or deactivate, and feedback cooldown.
+      // success: clearing the copying state, resuming hover, and feedback cooldown.
       void executeCopyOperation(entry.operation, idsToRetry, entry.shouldDeactivateOnFailure).then(
         (didComplete) => {
           if (!didComplete) dismissCopyingLabels(idsToRetry);
@@ -1468,15 +1466,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       event.code === "Space" || event.key === " ";
 
     const startSpaceDragRepositioning = () => {
-      if (!isDragging()) return;
+      if (!isDraggingBeyondThreshold() || isDragRepositioning()) return;
+      previousSpaceDragPointerPage.x = pointer().x + window.scrollX;
+      previousSpaceDragPointerPage.y = pointer().y + window.scrollY;
       actions.startDragReposition();
-      const { pageX, pageY } = toPageCoordinates(pointer().x, pointer().y);
-      previousSpaceDragPointerPage = { x: pageX, y: pageY };
     };
 
     const stopSpaceDragRepositioning = () => {
       actions.stopDragReposition();
-      previousSpaceDragPointerPage = null;
     };
 
     const dragBounds = createMemo((): OverlayBounds | undefined => {
@@ -1839,6 +1836,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const deactivateRenderer = () => {
+      clearCopyFeedbackCooldown();
       cancelPendingCopies();
       toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
@@ -2186,14 +2184,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (isDragging()) {
         if (isDragRepositioning()) {
-          const { pageX, pageY } = toPageCoordinates(clientX, clientY);
-          if (previousSpaceDragPointerPage) {
-            actions.shiftDragStart({
-              x: pageX - previousSpaceDragPointerPage.x,
-              y: pageY - previousSpaceDragPointerPage.y,
-            });
-          }
-          previousSpaceDragPointerPage = { x: pageX, y: pageY };
+          const pageX = clientX + window.scrollX;
+          const pageY = clientY + window.scrollY;
+          actions.shiftDragStart(
+            pageX - previousSpaceDragPointerPage.x,
+            pageY - previousSpaceDragPointerPage.y,
+          );
+          previousSpaceDragPointerPage.x = pageX;
+          previousSpaceDragPointerPage.y = pageY;
         }
 
         scheduleDragPreviewUpdate(clientX, clientY);
@@ -2629,6 +2627,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       restoreHostBodyStyle("userSelect");
 
       if (dragSelectionRect && shouldCaptureScreenshot) {
+        actions.unfreeze();
+        clearKeyboardNavigation();
         captureScreenshot(dragSelectionRect);
       } else if (dragSelectionRect) {
         handleDragSelection(
@@ -2716,6 +2716,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     });
 
     const keyboardClaimer = setupKeyboardEventClaimer();
+
+    const claimMarqueeSpace = (event: KeyboardEvent) => {
+      if (!isDragging() || !isSpaceActivationKey(event)) return;
+      if (event.type === "keydown" && !event.repeat) startSpaceDragRepositioning();
+      if (event.type === "keyup") stopSpaceDragRepositioning();
+      keyboardClaimer.claimedEvents.add(event);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    eventListenerManager.addWindowListener("keydown", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keyup", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keypress", ignoreRealInput(claimMarqueeSpace), {
+      capture: true,
+    });
 
     const blockEnterIfNeeded = (event: KeyboardEvent) => {
       if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return false;
@@ -3259,15 +3278,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        if (isDragging() && isSpaceActivationKey(event)) {
-          if (!event.repeat) {
-            startSpaceDragRepositioning();
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
         if (event.key === "Escape") {
           if (isHoldingKeys() || store.wasActivatedByToggle) {
             deactivateRenderer();
@@ -3302,12 +3312,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         if (blockEnterIfNeeded(event)) return;
-
-        if (isSpaceActivationKey(event) && isDragRepositioning()) {
-          stopSpaceDragRepositioning();
-          event.preventDefault();
-          event.stopPropagation();
-        }
 
         if (event.key === "Shift" && isShiftMultiSelecting()) {
           // If shift is released mid-drag, abort the in-progress drag
@@ -3346,7 +3350,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         ) {
           const shortcutPressDurationMs = performance.now() - toggleShortcutPressTimestampMs;
           toggleShortcutPressTimestampMs = null;
-          if (shortcutPressDurationMs < store.keyHoldDuration) {
+          if (
+            shortcutPressDurationMs < Math.max(store.keyHoldDuration, DEFAULT_KEY_HOLD_DURATION_MS)
+          ) {
             deactivateRenderer();
             return;
           }
@@ -4438,8 +4444,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
           if (signal.aborted) return;
           if (didSucceed) {
-            actions.completeCopy();
-            actions.finishJustCopied();
+            completeSuccessfulCopy();
           } else if (shouldDeactivateOnFailure) {
             deactivateRenderer();
           } else {
@@ -4467,7 +4472,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         position,
         performWithFeedbackOptions,
         shouldDeferHideContextMenu,
-        onBeforeCopy,
         onBeforePrompt,
         customEnterPromptMode,
       } = options;
@@ -4479,7 +4483,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         : actions.hideContextMenu;
 
       const copyAction = () => {
-        onBeforeCopy?.();
         performCopyWithLabel({
           element,
           cursorX: position.x,
@@ -4552,9 +4555,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         componentName: contextMenuComponentName(),
         position,
         shouldDeferHideContextMenu: true,
-        onBeforeCopy: () => {
-          keyboardSelection.clear();
-        },
         customEnterPromptMode: () => {
           labelController.clearAll();
           clearPendingToolbarSelection();

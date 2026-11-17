@@ -27,6 +27,8 @@ Holding a key changes what the pointer does:
 | Hold **Alt**   | Spacing on | Anchors the spacing to the element. Move to any other element to read the distances between the two.                                                                                                                              |
 | **Shift**+drag | Grab       | Copies a PNG of the dragged area, with your drawings and notes, instead of the elements in it. Let go of **Shift** before the mouse to select elements again. On an address without HTTPS the image downloads instead.            |
 
+While drawing either marquee, hold **Space** to move the rectangle without changing its size. Release **Space** to resize it again.
+
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
 While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).

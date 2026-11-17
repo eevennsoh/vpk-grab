@@ -67,3 +67,19 @@ export const PILL_MODIFIER_RELEASE_DELAY_MS =
 export const PILL_INJECTED_ANCHOR_BOX_PX = { left: 520, top: 600, width: 160, height: 40 };
 export const PILL_PEN_STROKE_START_PX = { x: 700, y: 520 };
 export const PILL_PEN_STROKE_END_PX = { x: 800, y: 540 };
+
+export const MARQUEE_START_PX = { x: 140, y: 140 };
+export const MARQUEE_END_PX = { x: 300, y: 240 };
+export const MARQUEE_FIRST_MOVE_PX = { x: 240, y: 140 };
+export const MARQUEE_RESIZE_PX = { x: 20, y: 10 };
+export const MARQUEE_SECOND_MOVE_PX = { x: -20, y: 20 };
+export const MARQUEE_SOURCE_BOX_PX = { x: 160, y: 170, width: 120, height: 50 };
+export const MARQUEE_TARGET_BOX_PX = { x: 400, y: 320, width: 120, height: 50 };
+export const MARQUEE_SCREENSHOT_MOVE_PX = { x: 100, y: 80 };
+export const MARQUEE_MOVE_STEP_COUNT = 6;
+export const MARQUEE_SCROLL_SETTLE_MS = 300;
+export const MARQUEE_PAGE_HEIGHT_PX = 4000;
+export const MARQUEE_TARGET_Z_INDEX = "2147483000";
+export const MARQUEE_OUTSET_SIDE_COUNT = 2;
+
+export const MARQUEE_EDGE_INSET_PX = 1;

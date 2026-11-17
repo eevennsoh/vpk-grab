@@ -4,6 +4,8 @@ import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
+  MARQUEE_SCREENSHOT_MOVE_PX,
+  MARQUEE_OUTSET_SIDE_COUNT,
   PILL_PAGE_BUTTON_POSITION_PX,
   SCREENSHOT_SELECTION_PADDING_PX,
   PILL_PERSISTENCE_CHECK_MS,
@@ -1866,4 +1868,122 @@ test.describe("Copied pill camera cancellation", () => {
       expect(await getClipboardWriteCallCount(page)).toBe(1);
     });
   }
+});
+
+test("screenshot marquee moves without resizing and captures the moved pixels", async ({
+  reactGrab,
+  page,
+}) => {
+  await installClipboardRecorder(page);
+  const { outerBox, innerBox } = await injectColorBlock(page, COLOR_BLOCK_PAGE_TOP);
+  await reactGrab.activate();
+  await page.evaluate(() => {
+    document.body.dataset.marqueeSpaceEvents = "0";
+    for (const eventName of ["keydown", "keypress", "keyup"]) {
+      window.addEventListener(
+        eventName,
+        (event) => {
+          if (event instanceof KeyboardEvent && event.code === "Space") {
+            document.body.dataset.marqueeSpaceEvents = String(
+              Number(document.body.dataset.marqueeSpaceEvents) + 1,
+            );
+          }
+        },
+        { capture: true },
+      );
+    }
+  });
+  const captureStart = {
+    x: outerBox.x - COLOR_BLOCK_CAPTURE_OUTSET.x - MARQUEE_SCREENSHOT_MOVE_PX.x,
+    y: outerBox.y - COLOR_BLOCK_CAPTURE_OUTSET.y - MARQUEE_SCREENSHOT_MOVE_PX.y,
+  };
+  const captureEnd = {
+    x: captureStart.x + outerBox.width + COLOR_BLOCK_CAPTURE_OUTSET.x * MARQUEE_OUTSET_SIDE_COUNT,
+    y: captureStart.y + outerBox.height + COLOR_BLOCK_CAPTURE_OUTSET.y * MARQUEE_OUTSET_SIDE_COUNT,
+  };
+  await page.keyboard.down("Shift");
+  await page.mouse.move(captureStart.x, captureStart.y);
+  await page.mouse.down();
+  await page.mouse.move(captureEnd.x, captureEnd.y, { steps: DRAG_STEPS });
+  const marquee = reactGrab.getOverlayHost().locator(MARQUEE_SELECTOR);
+  const sizeReadout = reactGrab.getOverlayHost().locator(MARQUEE_SIZE_SELECTOR);
+  const originalBounds = await marquee.boundingBox();
+  const originalSize = await sizeReadout.textContent();
+  if (!originalBounds) throw new Error("Missing screenshot marquee");
+  await page.keyboard.down("Space");
+  await page.mouse.move(
+    captureEnd.x + MARQUEE_SCREENSHOT_MOVE_PX.x,
+    captureEnd.y + MARQUEE_SCREENSHOT_MOVE_PX.y,
+    { steps: DRAG_STEPS },
+  );
+  await expect
+    .poll(() => marquee.boundingBox())
+    .toEqual({
+      x: originalBounds.x + MARQUEE_SCREENSHOT_MOVE_PX.x,
+      y: originalBounds.y + MARQUEE_SCREENSHOT_MOVE_PX.y,
+      width: originalBounds.width,
+      height: originalBounds.height,
+    });
+  await expect(sizeReadout).toHaveText(originalSize ?? "");
+  await page.keyboard.down("Space");
+  await expect(sizeReadout).toHaveText(originalSize ?? "");
+  expect(await page.evaluate(() => document.body.dataset.marqueeSpaceEvents)).toBe("0");
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  await page.keyboard.up("Shift");
+  await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+  const [imageWrite] = await getImageWrites(page);
+  const captureWidth = captureEnd.x - captureStart.x;
+  const expectedSize = await getExpectedPixelSize(
+    page,
+    captureWidth,
+    captureEnd.y - captureStart.y,
+  );
+  expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
+  await expectColorBlockInLastImage(
+    page,
+    innerBox,
+    {
+      x: captureStart.x + MARQUEE_SCREENSHOT_MOVE_PX.x,
+      y: captureStart.y + MARQUEE_SCREENSHOT_MOVE_PX.y,
+    },
+    captureWidth,
+  );
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+});
+
+test("Shift toggles remain live while Space moves a screenshot marquee", async ({
+  reactGrab,
+  page,
+}) => {
+  await installClipboardRecorder(page);
+  await reactGrab.activate();
+  await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.down("Shift");
+  await page.mouse.down();
+  await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+  const overlayHost = reactGrab.getOverlayHost();
+  const sizeReadout = overlayHost.locator(MARQUEE_SIZE_SELECTOR);
+  const initialSize = await sizeReadout.textContent();
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Shift");
+  await expect(overlayHost.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+  await page.mouse.move(
+    CAPTURE_END.x + MARQUEE_SCREENSHOT_MOVE_PX.x,
+    CAPTURE_END.y + MARQUEE_SCREENSHOT_MOVE_PX.y,
+    { steps: DRAG_STEPS },
+  );
+  await page.keyboard.down("Shift");
+  await expect(sizeReadout).toHaveText(initialSize ?? "");
+  await page.keyboard.up("Space");
+  await page.keyboard.down("Space");
+  await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+  await expect(sizeReadout).toHaveText(initialSize ?? "");
+  await page.keyboard.up("Shift");
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.hoverUntilSelected("[data-testid='main-title']");
 });

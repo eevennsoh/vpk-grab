@@ -158,7 +158,7 @@ interface GrabActions {
   startDrag: (position: Position, shouldPreserveFrozenElements?: boolean) => void;
   startDragReposition: () => void;
   stopDragReposition: () => void;
-  shiftDragStart: (delta: Position) => void;
+  shiftDragStart: (deltaX: number, deltaY: number) => void;
   endDrag: () => void;
   cancelDrag: () => void;
   finishJustDragged: () => void;
@@ -240,6 +240,13 @@ const createGrabStore = (input: GrabStoreInput) => {
   const isInactive = () => {
     const currentState = current().state;
     return currentState === "idle" || currentState === "holding";
+  };
+
+  let pendingDragStartDeltaX = 0;
+  let pendingDragStartDeltaY = 0;
+  const applyDragStartShift = () => {
+    setStore("dragStart", "x", store.dragStart.x + pendingDragStartDeltaX);
+    setStore("dragStart", "y", store.dragStart.y + pendingDragStartDeltaY);
   };
 
   const actions: GrabActions = {
@@ -364,13 +371,12 @@ const createGrabStore = (input: GrabStoreInput) => {
       }
     },
 
-    shiftDragStart: (delta: Position) => {
+    shiftDragStart: (deltaX: number, deltaY: number) => {
       const currentState = current();
       if (currentState.state === "active" && currentState.phase === "dragging-reposition") {
-        setStore("dragStart", (dragStart) => ({
-          x: dragStart.x + delta.x,
-          y: dragStart.y + delta.y,
-        }));
+        pendingDragStartDeltaX = deltaX;
+        pendingDragStartDeltaY = deltaY;
+        batch(applyDragStartShift);
       }
     },
 
