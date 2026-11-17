@@ -1084,7 +1084,10 @@ const createReactGrabPageObject = (
           filePath: null,
         };
 
-      const label = root.querySelector("[data-react-grab-selection-label]");
+      const label =
+        root.querySelector(
+          "[data-react-grab-selection-label]:not([data-react-grab-label-instance])",
+        ) ?? root.querySelector("[data-react-grab-selection-label]");
       if (!label)
         return {
           isVisible: false,
@@ -1136,7 +1139,10 @@ const createReactGrabPageObject = (
       const root = shadowRoot.querySelector(`[${attrName}]`);
       if (!root) return null;
 
-      const label = root.querySelector<HTMLElement>("[data-react-grab-selection-label]");
+      const label =
+        root.querySelector<HTMLElement>(
+          "[data-react-grab-selection-label]:not([data-react-grab-label-instance])",
+        ) ?? root.querySelector<HTMLElement>("[data-react-grab-selection-label]");
       if (!label) return null;
 
       const toRect = (rect: DOMRect) => ({

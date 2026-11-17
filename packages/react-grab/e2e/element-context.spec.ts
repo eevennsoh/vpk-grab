@@ -222,6 +222,7 @@ test.describe("Element Context Fallback", () => {
       const clipboard = await reactGrab.getClipboardContent();
       expect(clipboard).toContain('<text id="pointer-events-none-svg-label">composer-2.5</text>');
 
+      await reactGrab.deactivate();
       await reactGrab.activate();
       await reactGrab.hoverUntilTargetSelected("#pointer-events-none-svg-label");
       await reactGrab.pressArrowUp();

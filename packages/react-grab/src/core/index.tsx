@@ -198,6 +198,7 @@ import { isDocumentAncestorOfElement } from "../utils/is-document-ancestor-of-el
 import { clearGlobalApi } from "../global-api.js";
 import { collectCleanupError } from "../utils/collect-cleanup-error.js";
 import { throwCollectedErrors } from "../utils/throw-collected-errors.js";
+import { doesLabelInstanceCoverElement } from "../utils/does-label-instance-cover-element.js";
 
 const builtInPlugins = [copyPlugin, commentPlugin, openPlugin];
 
@@ -4268,6 +4269,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       return store.labelInstances.map(recomputeLabelInstance);
     });
 
+    const isSelectionLabelCoveredByCopiedLabel = createMemo(() => {
+      const element = selectionElement();
+      if (!element) return false;
+      return computedLabelInstances().some(
+        (instance) =>
+          instance.status === "copied" && doesLabelInstanceCoverElement(instance, element),
+      );
+    });
+
     const computedLabelInstanceById = createMemo(
       () => new Map(computedLabelInstances().map((instance) => [instance.id, instance])),
     );
@@ -4803,6 +4813,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 selectionTagName={selectionTagName()}
                 selectionComponentName={resolvedComponentName()}
                 selectionLabelVisible={selectionLabelVisible()}
+                isSelectionLabelCovered={isSelectionLabelCoveredByCopiedLabel()}
                 selectionLabelStatus="idle"
                 hierarchyState={hierarchyState()}
                 hierarchyMenuPosition={hierarchyMenuPosition()}

@@ -84,58 +84,8 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           <RedlinesOverlay redlines={currentRedlines()} showsSizeLabel={!selectionSizeText()} />
         )}
       </Show>
-      <Show
-        when={props.selectionLabelVisible && (props.frozenLabelEntryAccessors?.length ?? 0) > 0}
-      >
-        <For each={props.frozenLabelEntryAccessors ?? []}>
-          {(entryAccessor) => (
-            <Show when={entryAccessor.read()}>
-              {(entry) => (
-                <SelectionLabel
-                  tagName={entry().tagName}
-                  componentName={entry().componentName}
-                  selectionBounds={entry().bounds}
-                  mouseX={entry().mouseX}
-                  visible={true}
-                />
-              )}
-            </Show>
-          )}
-        </For>
-      </Show>
-      <Show when={props.selectionLabelVisible && props.pendingShiftPreviewEntry}>
-        {(pendingEntry) => (
-          <SelectionLabel
-            tagName={pendingEntry().tagName}
-            componentName={pendingEntry().componentName}
-            selectionBounds={pendingEntry().bounds}
-            mouseX={pendingEntry().mouseX}
-            visible={true}
-          />
-        )}
-      </Show>
-      <Show when={isSelectionLabelShown()}>
-        <SelectionLabel
-          tagName={props.selectionTagName}
-          componentName={props.selectionComponentName}
-          sizeText={selectionSizeText()}
-          clearanceBelowPx={selectionSizeText() ? getRedlineLabelClearance(redlines()) : 0}
-          elementsCount={props.selectionElementsCount}
-          selectionBounds={props.selectionBounds}
-          mouseX={props.mouseX}
-          visible={props.selectionLabelVisible}
-          isPromptMode={props.isPromptMode}
-          inputValue={props.inputValue}
-          status={props.selectionLabelStatus}
-          filePath={props.selectionFilePath}
-          onInputChange={props.onInputChange}
-          onSubmit={props.onInputSubmit}
-          selectionLabelShakeCount={props.selectionLabelShakeCount}
-          onConfirmDismiss={props.onConfirmDismiss}
-          discardPrompt={props.discardPrompt}
-          onOpen={props.onOpenSelectionFile}
-        />
-      </Show>
+      {/* Before the live labels, which share its z-index: a label for whatever
+          is under the pointer must stay readable over a pill it overlaps. */}
       <For each={props.labelInstanceAccessors ?? []}>
         {(instanceAccessor) => (
           <Show when={instanceAccessor.read()}>
@@ -147,6 +97,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 selectionBounds={instance().bounds}
                 mouseX={instance().mouseX}
                 visible={true}
+                isLabelInstance
                 status={instance().status}
                 statusText={instance().statusText}
                 isPromptMode={instance().isPromptMode}
@@ -179,6 +130,58 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           </Show>
         )}
       </For>
+      <Show
+        when={props.selectionLabelVisible && (props.frozenLabelEntryAccessors?.length ?? 0) > 0}
+      >
+        <For each={props.frozenLabelEntryAccessors ?? []}>
+          {(entryAccessor) => (
+            <Show when={entryAccessor.read()}>
+              {(entry) => (
+                <SelectionLabel
+                  tagName={entry().tagName}
+                  componentName={entry().componentName}
+                  selectionBounds={entry().bounds}
+                  mouseX={entry().mouseX}
+                  visible={true}
+                />
+              )}
+            </Show>
+          )}
+        </For>
+      </Show>
+      <Show when={props.selectionLabelVisible && props.pendingShiftPreviewEntry}>
+        {(pendingEntry) => (
+          <SelectionLabel
+            tagName={pendingEntry().tagName}
+            componentName={pendingEntry().componentName}
+            selectionBounds={pendingEntry().bounds}
+            mouseX={pendingEntry().mouseX}
+            visible={true}
+          />
+        )}
+      </Show>
+      <Show when={isSelectionLabelShown() && !props.isSelectionLabelCovered}>
+        <SelectionLabel
+          tagName={props.selectionTagName}
+          componentName={props.selectionComponentName}
+          sizeText={selectionSizeText()}
+          clearanceBelowPx={selectionSizeText() ? getRedlineLabelClearance(redlines()) : 0}
+          elementsCount={props.selectionElementsCount}
+          selectionBounds={props.selectionBounds}
+          mouseX={props.mouseX}
+          visible={props.selectionLabelVisible}
+          isPromptMode={props.isPromptMode}
+          inputValue={props.inputValue}
+          status={props.selectionLabelStatus}
+          filePath={props.selectionFilePath}
+          onInputChange={props.onInputChange}
+          onSubmit={props.onInputSubmit}
+          selectionLabelShakeCount={props.selectionLabelShakeCount}
+          onConfirmDismiss={props.onConfirmDismiss}
+          discardPrompt={props.discardPrompt}
+          onOpen={props.onOpenSelectionFile}
+        />
+      </Show>
       {/* After the selection labels, which share its z-index: a label that
           reaches the panel's corner must not cover the values being read. */}
       <Show when={props.inspect?.isSpecsEnabled() ? props.inspect : undefined}>

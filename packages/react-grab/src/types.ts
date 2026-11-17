@@ -457,6 +457,7 @@ export interface ReactGrabRendererProps {
   selectionTagName?: string;
   selectionComponentName?: string;
   selectionLabelVisible?: boolean;
+  isSelectionLabelCovered?: boolean;
   selectionLabelStatus?: SelectionLabelStatus;
   hierarchyState?: HierarchyState;
   hierarchyMenuPosition?: DropdownAnchor | null;
@@ -646,6 +647,7 @@ export interface SelectionLabelProps {
   thumbnailUrl?: string;
   isCapturingScreenshot?: boolean;
   screenshotError?: string;
+  isLabelInstance?: boolean;
 }
 
 export interface SourceLocation extends SourceInfo {
