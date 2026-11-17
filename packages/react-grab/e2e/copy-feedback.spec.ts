@@ -1,5 +1,11 @@
 import { test, expect } from "./fixtures.js";
 
+declare global {
+  interface Window {
+    __TEST_RELEASE_HELD_COPY__?: () => void;
+  }
+}
+
 const FEEDBACK_DURATION_MS = 1500;
 
 test.describe("Copy Feedback Behavior", () => {
@@ -162,25 +168,54 @@ test.describe("Copy Feedback Behavior", () => {
   });
 
   test.describe("Edge Cases", () => {
-    test("should handle rapid key tap during feedback", async ({ reactGrab }) => {
+    test("tapping the shortcut after a copy finishes switches Grab off", async ({ reactGrab }) => {
       await reactGrab.activateViaKeyboard();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
 
       await reactGrab.hoverUntilSelected("li:first-child");
 
-      await reactGrab.page.keyboard.down(reactGrab.feedbackModifierKey);
-      await reactGrab.page.keyboard.down("c");
       await reactGrab.clickElement("li:first-child");
 
-      await reactGrab.page.waitForTimeout(100);
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
 
-      await reactGrab.page.keyboard.up("c");
+      await reactGrab.page.keyboard.down(reactGrab.modifierKey);
       await reactGrab.page.keyboard.down("c");
-      await reactGrab.page.waitForTimeout(50);
       await reactGrab.page.keyboard.up("c");
-      await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
+      await reactGrab.page.keyboard.up(reactGrab.modifierKey);
 
-      await reactGrab.page.waitForTimeout(100);
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+    });
+
+    test("tapping the shortcut while a copy is in progress keeps Grab on", async ({
+      reactGrab,
+    }) => {
+      await reactGrab.activateViaKeyboard();
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+      await reactGrab.page.evaluate(() => {
+        const heldContent = new Promise<string>((resolve) => {
+          window.__TEST_RELEASE_HELD_COPY__ = () => resolve("held copy");
+        });
+        window.__REACT_GRAB__?.registerPlugin({
+          name: "held-copy-test",
+          options: { getContent: () => heldContent },
+        });
+      });
+
+      await reactGrab.hoverUntilSelected("li:first-child");
+      await reactGrab.clickElement("li:first-child");
+      await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(true);
+
+      await reactGrab.page.keyboard.down(reactGrab.modifierKey);
+      await reactGrab.page.keyboard.down("c");
+      await reactGrab.page.keyboard.up("c");
+      await reactGrab.page.keyboard.up(reactGrab.modifierKey);
+
+      await reactGrab.page.evaluate(() => window.__TEST_RELEASE_HELD_COPY__?.());
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
       expect(await reactGrab.isOverlayVisible()).toBe(true);
     });
 

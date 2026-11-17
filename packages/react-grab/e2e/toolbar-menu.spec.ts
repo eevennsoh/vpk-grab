@@ -144,6 +144,9 @@ test.describe("Toolbar Menu", () => {
         )
         .toBe("custom-action");
 
+      await expect(
+        reactGrab.page.locator('[data-react-grab-toolbar-action="custom-action"]'),
+      ).toBeVisible();
       await reactGrab.clickToolbarAction("custom-action");
       await reactGrab.hoverUntilSelected("li:first-child");
       await reactGrab.clickElement("li:first-child");

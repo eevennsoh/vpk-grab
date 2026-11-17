@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   ATTRIBUTE_NAME,
   MARQUEE_START_PX,
@@ -14,6 +14,51 @@ import {
   MARQUEE_TARGET_Z_INDEX,
   MARQUEE_EDGE_INSET_PX,
 } from "./constants.js";
+
+declare global {
+  interface Window {
+    __INTERCEPTED_ACTION_RUN_COUNT__?: number;
+  }
+}
+
+const armInterceptedToolbarAction = async (reactGrab: ReactGrabPageObject) => {
+  await reactGrab.page.evaluate(() => {
+    let hasInterceptedSelect = false;
+    window.__INTERCEPTED_ACTION_RUN_COUNT__ = 0;
+    window.__REACT_GRAB__?.registerPlugin({
+      name: "intercept-first-select",
+      actions: [
+        {
+          id: "intercepted-action",
+          label: "Intercepted",
+          showInToolbarMenu: true,
+          onAction: () => {
+            window.__INTERCEPTED_ACTION_RUN_COUNT__ =
+              (window.__INTERCEPTED_ACTION_RUN_COUNT__ ?? 0) + 1;
+          },
+        },
+      ],
+      hooks: {
+        onElementSelect: () => {
+          if (hasInterceptedSelect) return false;
+          hasInterceptedSelect = true;
+          return true;
+        },
+      },
+    });
+    window.__REACT_GRAB__?.setToolbarState({ defaultAction: "intercepted-action" });
+  });
+  await reactGrab.clickToolbarAction("intercepted-action");
+  expect(await reactGrab.getToolbarActionPressed("intercepted-action")).toBe(true);
+};
+
+const expectInterceptedPickClearedPendingAction = async (reactGrab: ReactGrabPageObject) => {
+  await expect.poll(() => reactGrab.getToolbarActionPressed("intercepted-action")).toBe(false);
+  await reactGrab.clickElement("[data-testid='todo-list'] h1");
+  await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  expect(await reactGrab.page.evaluate(() => window.__INTERCEPTED_ACTION_RUN_COUNT__)).toBe(0);
+  expect(await reactGrab.isContextMenuVisible()).toBe(false);
+};
 
 test.describe("Element Selection", () => {
   test("should show selection box when hovering over element while active", async ({
@@ -646,4 +691,24 @@ test("custom shortcut switches Grab off with zero activation delay", async ({
   await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
   await page.keyboard.press("F8");
   await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+});
+
+test("a plugin intercepting a clicked pick for a pending toolbar action clears the pending pick", async ({
+  reactGrab,
+}) => {
+  await armInterceptedToolbarAction(reactGrab);
+  await reactGrab.hoverUntilSelected("li:first-child");
+  await reactGrab.clickElement("li:first-child");
+  await expectInterceptedPickClearedPendingAction(reactGrab);
+});
+
+test("a plugin intercepting a keyboard pick for a pending toolbar action clears the pending pick", async ({
+  reactGrab,
+}) => {
+  await armInterceptedToolbarAction(reactGrab);
+  await reactGrab.hoverUntilSelected("li:first-child span");
+  await reactGrab.pressArrowUp();
+  await reactGrab.waitForSelectionBox();
+  await reactGrab.clickElement("li:first-child span");
+  await expectInterceptedPickClearedPendingAction(reactGrab);
 });

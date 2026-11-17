@@ -1,6 +1,36 @@
 import { test, expect } from "./fixtures.js";
+import { TEXT_SELECTION_SHORTCUT_PRESS_MS } from "./constants.js";
 
 test.describe("Keyboard Shortcuts", () => {
+  test("a press longer than the configured hold keeps Grab on after activating with page text selected", async ({
+    reactGrab,
+  }) => {
+    const { page } = reactGrab;
+    await page.click("body");
+    await page.evaluate(() => {
+      const title = document.querySelector("[data-testid='main-title']");
+      if (!title) throw new Error("Missing main title");
+      const range = document.createRange();
+      range.selectNodeContents(title);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+    });
+
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    await page.waitForTimeout(TEXT_SELECTION_SHORTCUT_PRESS_MS);
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+  });
+
   test("should copy selected element when clicking", async ({ reactGrab }) => {
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");

@@ -2538,7 +2538,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (isPendingContextMenuSelect()) {
         const { wasIntercepted } = pluginRegistry.hooks.onElementSelect(selectedElement);
-        if (wasIntercepted) return;
+        if (wasIntercepted) {
+          clearPendingToolbarSelection();
+          return;
+        }
         keyboardSelection.clear();
 
         freezeAllAnimations([selectedElement]);
@@ -3350,8 +3353,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         ) {
           const shortcutPressDurationMs = performance.now() - toggleShortcutPressTimestampMs;
           toggleShortcutPressTimestampMs = null;
+          const configuredKeyHoldDurationMs =
+            pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS;
           if (
-            shortcutPressDurationMs < Math.max(store.keyHoldDuration, DEFAULT_KEY_HOLD_DURATION_MS)
+            shortcutPressDurationMs <
+            Math.max(configuredKeyHoldDurationMs, DEFAULT_KEY_HOLD_DURATION_MS)
           ) {
             deactivateRenderer();
             return;
@@ -4483,6 +4489,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         : actions.hideContextMenu;
 
       const copyAction = () => {
+        keyboardSelection.clear();
         performCopyWithLabel({
           element,
           cursorX: position.x,
