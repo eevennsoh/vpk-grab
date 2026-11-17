@@ -70,6 +70,7 @@ interface GrabStore {
 
 interface GrabStoreInput {
   keyHoldDuration: number;
+  onActivate: () => void;
 }
 
 // Returns the live element for a tracked slot: keeps the recovery anchor fresh
@@ -236,6 +237,11 @@ const createGrabStore = (input: GrabStoreInput) => {
     setCurrent((prev) => (prev.state === "active" ? { ...prev, phase } : prev));
   };
 
+  const isInactive = () => {
+    const currentState = current().state;
+    return currentState === "idle" || currentState === "holding";
+  };
+
   const actions: GrabActions = {
     startHold: (duration?: number) => {
       if (duration !== undefined) {
@@ -251,6 +257,7 @@ const createGrabStore = (input: GrabStoreInput) => {
     },
 
     activate: () => {
+      const wasInactive = isInactive();
       batch(() => {
         setCurrent({
           state: "active",
@@ -261,6 +268,7 @@ const createGrabStore = (input: GrabStoreInput) => {
         setStore("activationTimestamp", Date.now());
         setStore("previouslyFocusedElement", document.activeElement);
       });
+      if (wasInactive) input.onActivate();
     },
 
     deactivate: () => {
@@ -442,6 +450,7 @@ const createGrabStore = (input: GrabStoreInput) => {
       const bounds = createElementBounds(element);
       const { x: selectionCenterX } = getBoundsCenter(bounds);
       trackElementAnchor(element);
+      const wasInactive = isInactive();
 
       batch(() => {
         setStore("copyStart", position);
@@ -465,6 +474,7 @@ const createGrabStore = (input: GrabStoreInput) => {
           );
         }
       });
+      if (wasInactive) input.onActivate();
     },
 
     exitPromptMode: () => {

@@ -46,7 +46,7 @@ import { runCopyFlow, type CopyFlowResult } from "./copy.js";
 import { capturePageRect } from "../utils/capture-page-rect.js";
 import { deliverPngBlob } from "../utils/deliver-png-blob.js";
 import { padPageRect } from "../utils/pad-page-rect.js";
-import { registerPersistentLabelDismiss } from "../utils/register-persistent-label-dismiss.js";
+import { isKeyboardEventComposing } from "../utils/is-keyboard-event-composing.js";
 import {
   clearElementPositionCache,
   getElementAtPosition,
@@ -304,6 +304,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const { store, actions, pointer, viewportVersion, current } = createGrabStore({
       keyHoldDuration: pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS,
+      onActivate: () => labelController.dismissCompleted(),
     });
 
     const isHoldingKeys = createMemo(() => current().state === "holding");
@@ -501,7 +502,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         actions.activate();
-        labelController.dismissCompleted();
       }, store.keyHoldDuration);
       onCleanup(clearHoldTimer);
     });
@@ -783,11 +783,27 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // later Retry never resurrects a dismissed label.
     const retryCopyByInstanceId = new Map<string, CopyRetryEntry>();
 
+    const areLabelInstancesShown = () =>
+      Boolean(
+        pluginRegistry.store.theme.enabled && pluginRegistry.store.theme.grabbedBoxes.enabled,
+      );
+
     const labelController = createLabelController(
       actions,
       () => store.labelInstances,
       () => retryCopyByInstanceId.clear(),
+      areLabelInstancesShown,
     );
+
+    const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
+      if (isEventFromOverlay(event, "data-react-grab-completion")) return;
+      labelController.dismissCompleted();
+    };
+
+    const dismissCompletedLabelsOnEscape = (event: KeyboardEvent) => {
+      if (event.code !== "Escape" || isKeyboardEventComposing(event)) return;
+      labelController.dismissCompleted();
+    };
 
     const dismissCopyingLabels = (labelInstanceIds: string[]) => {
       for (const labelInstanceId of labelInstanceIds) {
@@ -1812,7 +1828,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const activateRenderer = () => {
       const wasInHoldingState = isHoldingKeys();
       actions.activate();
-      labelController.dismissCompleted();
       if (!wasInHoldingState) {
         pluginRegistry.hooks.onActivate();
       }
@@ -2690,6 +2705,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
       shouldForwardKeyboardEvent: (event) =>
         isTargetKeyCombination(event, pluginRegistry.store.options),
+      onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
+      onFrameKeyDown: ignoreRealInput(dismissCompletedLabelsOnEscape),
       shouldForwardViewportEvent: (frameDocument) => {
         const activeElement = store.frozenElement ?? targetElement();
         if (activeElement && isDocumentAncestorOfElement(frameDocument, activeElement)) return true;
@@ -3108,6 +3125,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        dismissCompletedLabelsOnEscape(event);
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
         // being typed into the specs panel.
@@ -3471,6 +3489,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "pointerdown",
       ignoreRealInput((event: PointerEvent) => {
+        dismissCompletedLabelsOnPress(event);
         if (event.button !== 0) return;
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
@@ -3853,6 +3872,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         boundsRecalcIntervalId = window.setInterval(() => {
           actions.relinkLiveElements();
+          labelController.dismissCompletedIfAnchorDetached();
           scheduleBoundsSync();
         }, BOUNDS_RECALC_INTERVAL_MS);
         return;
@@ -4214,8 +4234,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const computedLabelInstances = createMemo(() => {
-      if (!isThemeEnabled()) return [];
-      if (!pluginRegistry.store.theme.grabbedBoxes.enabled) return [];
+      if (!areLabelInstancesShown()) return [];
       void viewportVersion();
       const currentIds = new Set(store.labelInstances.map((instance) => instance.id));
       for (const cachedId of labelInstanceCache.keys()) {
@@ -4633,6 +4652,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (!instance?.element) return;
       if (!isElementConnected(instance.element)) return;
 
+      labelController.dismissCompleted();
       const contextMenuElement = instance.element;
       const center = getBoundsCenter(createElementBounds(contextMenuElement));
       const position = {
@@ -4726,28 +4746,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         },
       );
     };
-
-    const hasPersistentLabel = createMemo(() =>
-      store.labelInstances.some((labelInstance) => labelInstance.status === "copied"),
-    );
-
-    const hasDetachedLabelAnchor = () =>
-      store.labelInstances.some(
-        (labelInstance) =>
-          labelInstance.status === "copied" &&
-          labelInstance.element !== undefined &&
-          !isElementConnected(labelInstance.element),
-      );
-
-    createEffect(() => {
-      if (!hasPersistentLabel()) return;
-      onCleanup(
-        registerPersistentLabelDismiss({
-          onDismiss: labelController.dismissCompleted,
-          hasDetachedAnchor: hasDetachedLabelAnchor,
-        }),
-      );
-    });
 
     createEffect(() => {
       const hue = pluginRegistry.store.theme.hue;

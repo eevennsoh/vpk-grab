@@ -1,6 +1,7 @@
-import { FADE_COMPLETE_BUFFER_MS } from "../constants.js";
+import { FADE_COMPLETE_BUFFER_MS, FEEDBACK_DURATION_MS } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
 import { generateId } from "../utils/generate-id.js";
+import { isElementConnected } from "../utils/is-element-connected.js";
 import type {
   OverlayBounds,
   PageRect,
@@ -71,6 +72,7 @@ interface LabelController {
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
   dismissInstance: (instanceId: string) => void;
   dismissCompleted: () => void;
+  dismissCompletedIfAnchorDetached: () => void;
   cancelAllFades: () => void;
   clearAll: () => void;
 }
@@ -105,6 +107,7 @@ export const createLabelController = (
   store: LabelStoreBridge,
   getLabelInstances: () => readonly SelectionLabelInstance[],
   onClearAll?: () => void,
+  areLabelsShown: () => boolean = () => true,
 ): LabelController => {
   const fadeTimeouts = new Map<string, number>();
 
@@ -150,6 +153,14 @@ export const createLabelController = (
       removeInstance(instanceId);
     }, FADE_COMPLETE_BUFFER_MS);
     fadeTimeouts.set(instanceId, removalTimeoutId);
+  };
+
+  const scheduleFadeOut = (instanceId: string) => {
+    cancelFade(instanceId);
+    fadeTimeouts.set(
+      instanceId,
+      window.setTimeout(() => fadeOut(instanceId), FEEDBACK_DURATION_MS),
+    );
   };
 
   const createInstance = (
@@ -202,6 +213,7 @@ export const createLabelController = (
     cancelFade(instanceId);
     if (didSucceed) {
       store.updateLabelInstance(instanceId, "copied");
+      if (!areLabelsShown()) scheduleFadeOut(instanceId);
     } else {
       store.updateLabelInstance(instanceId, "error", errorMessage || "Unknown error");
     }
@@ -254,6 +266,16 @@ export const createLabelController = (
     for (const instanceId of completedInstanceIds) fadeOut(instanceId);
   };
 
+  const dismissCompletedIfAnchorDetached = () => {
+    const hasDetachedAnchor = getLabelInstances().some(
+      (labelInstance) =>
+        labelInstance.status === "copied" &&
+        labelInstance.element !== undefined &&
+        !isElementConnected(labelInstance.element),
+    );
+    if (hasDetachedAnchor) dismissCompleted();
+  };
+
   return {
     createInstance,
     createPerElementInstances,
@@ -265,6 +287,7 @@ export const createLabelController = (
     failScreenshotCapture,
     dismissInstance,
     dismissCompleted,
+    dismissCompletedIfAnchorDetached,
     cancelAllFades,
     clearAll,
   };

@@ -24,6 +24,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const createAnchorElement = (isConnected: boolean): Element =>
+  ({ isConnected }) as unknown as Element;
+
 const createLabelStore = (labelInstances: SelectionLabelInstance[]) => ({
   clearLabelInstances: () => {
     labelInstances.length = 0;
@@ -200,5 +203,88 @@ describe("createLabelController", () => {
 
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(labelInstances).toHaveLength(0);
+  });
+
+  it("fades a copied label on the old timer when labels are not shown", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+      undefined,
+      () => false,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+
+    controller.updateAfterCopy(instanceId, true);
+    vi.advanceTimersByTime(FEEDBACK_DURATION_MS - 1);
+    expect(labelInstances[0]?.status).toBe("copied");
+    vi.advanceTimersByTime(1);
+    expect(labelInstances[0]?.status).toBe("fading");
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances).toHaveLength(0);
+  });
+
+  it("keeps a hidden error label until it is acknowledged", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+      undefined,
+      () => false,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying");
+
+    controller.updateAfterCopy(instanceId, false, "Failed to copy");
+    vi.advanceTimersByTime(FEEDBACK_DURATION_MS * 4);
+    expect(labelInstances[0]?.status).toBe("error");
+  });
+
+  it("dismisses every copied label once one anchor has left the document", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "li", undefined, "copying", {
+      element: createAnchorElement(true),
+    });
+    labelInstances.push({
+      ...labelInstances[0],
+      id: "label-sibling",
+      element: createAnchorElement(true),
+    });
+    for (const instanceId of [firstInstanceId, "label-sibling"]) {
+      controller.updateAfterCopy(instanceId, true);
+    }
+
+    controller.dismissCompletedIfAnchorDetached();
+    expect(labelInstances.map((labelInstance) => labelInstance.status)).toEqual([
+      "copied",
+      "copied",
+    ]);
+
+    labelInstances[1].element = createAnchorElement(false);
+    controller.dismissCompletedIfAnchorDetached();
+    expect(labelInstances.map((labelInstance) => labelInstance.status)).toEqual([
+      "fading",
+      "fading",
+    ]);
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances).toHaveLength(0);
+  });
+
+  it("leaves an in-progress label alone when its anchor has left the document", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying", {
+      element: createAnchorElement(false),
+    });
+
+    controller.dismissCompletedIfAnchorDetached();
+    vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
+    expect(labelInstances[0]?.status).toBe("copying");
   });
 });
