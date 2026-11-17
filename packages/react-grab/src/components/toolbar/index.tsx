@@ -17,6 +17,7 @@ import { IconClear } from "../icons/icon-clear.jsx";
 import { IconMove } from "../icons/icon-move.jsx";
 import { ToolbarRevealGroup } from "./toolbar-reveal-group.jsx";
 import { IconPen } from "../icons/icon-pen.jsx";
+import { IconRectangle } from "../icons/icon-rectangle.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
 import { IconText } from "../icons/icon-text.jsx";
@@ -92,6 +93,7 @@ interface ToolbarProps {
 const SPECS_ACTION_ID = "inspect-specs";
 const REDLINES_ACTION_ID = "inspect-redlines";
 const PEN_ACTION_ID = "annotate-pen";
+const RECTANGLE_ACTION_ID = "annotate-rectangle";
 const TEXT_ACTION_ID = "annotate-text";
 const EDIT_ACTION_ID = "annotate-edit";
 const CLEAR_ACTION_ID = "annotate-clear";
@@ -364,6 +366,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const handleToggleSpecs = drag.createDragAwareHandler(() => props.onToggleSpecs?.());
   const handleToggleRedlines = drag.createDragAwareHandler(() => props.onToggleRedlines?.());
   const handleSelectPen = drag.createDragAwareHandler(() => props.onSelectAnnotationTool?.("pen"));
+  const handleSelectRectangle = drag.createDragAwareHandler(() =>
+    props.onSelectAnnotationTool?.("rectangle"),
+  );
   const handleSelectText = drag.createDragAwareHandler(() =>
     props.onSelectAnnotationTool?.("text"),
   );
@@ -372,7 +377,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   );
   const handleClearAnnotations = drag.createDragAwareHandler(() => props.onClearAnnotations?.());
   const handleToggleChangesMenu = drag.createDragAwareHandler(() => props.onToggleChangesMenu?.());
-  const isColorTool = () => props.annotationTool === "pen" || props.annotationTool === "text";
+  const isColorTool = () =>
+    props.annotationTool === "pen" ||
+    props.annotationTool === "rectangle" ||
+    props.annotationTool === "text";
   // Move and Clear act on annotations, so they join the toolbar with the first
   // one and leave with the last. Changes does the same with style overrides.
   const hasAnnotationActions = () => Boolean(props.hasAnnotations);
@@ -390,19 +398,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     isActive
       ? "text-[var(--rg-accent)]"
       : "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)]";
-  // Only a swatch that would vanish into the dark panel gets an edge, drawn
-  // inside the dot so every swatch keeps the same size; the selection ring
-  // sits outside it.
-  const getColorSwatchShadowClass = (isSelected: boolean, hasInnerBorder?: boolean) => {
-    if (isSelected && hasInnerBorder) {
-      return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
-    }
-    if (isSelected) {
-      return "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]";
-    }
-    if (hasInnerBorder) return "[box-shadow:inset_0_0_0_1px_var(--rg-border-button)]";
-    return "";
-  };
+  const getColorSwatchShadowClass = (isSelected: boolean) =>
+    isSelected
+      ? "[box-shadow:inset_0_0_0_1px_var(--rg-swatch-border),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
+      : "[box-shadow:inset_0_0_0_1px_var(--rg-swatch-border)]";
 
   const handleToggleCollapse = drag.createDragAwareHandler(() => {
     if (isCollapsed()) {
@@ -957,6 +956,26 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               tooltipShortcut={getSelectionToolTooltipShortcut("pen")}
             />
             <ToolbarActionButton
+              actionId={RECTANGLE_ACTION_ID}
+              keepsPageFocus
+              label="Draw a rectangle on the page"
+              isActive={props.annotationTool === "rectangle"}
+              class={actionButtonClass}
+              wrapperClass={actionButtonWrapperClass()}
+              onClick={handleSelectRectangle}
+              {...createFreezeHandlers(() => RECTANGLE_ACTION_ID)}
+              icon={
+                <IconRectangle
+                  isFilled={props.annotationTool === "rectangle"}
+                  class={actionIconClass(props.annotationTool === "rectangle")}
+                />
+              }
+              tooltipVisible={isActionHovered(RECTANGLE_ACTION_ID)}
+              tooltipPosition={tooltipPosition()}
+              tooltip="Rectangle"
+              tooltipShortcut={getSelectionToolTooltipShortcut("rectangle")}
+            />
+            <ToolbarActionButton
               actionId={TEXT_ACTION_ID}
               keepsPageFocus
               label="Add text to the page"
@@ -1055,9 +1074,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                           <span
                             class={cn(
                               "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
-                              getColorSwatchShadowClass(isSelected(), colorOption.hasInnerBorder),
+                              getColorSwatchShadowClass(isSelected()),
                             )}
-                            style={{ "background-color": colorOption.value }}
+                            style={{
+                              "background-color": colorOption.value,
+                              "--rg-swatch-border":
+                                colorOption.label === "Black"
+                                  ? "var(--rg-border-button)"
+                                  : "var(--rg-swatch-color-border)",
+                            }}
                           />
                         </span>
                       }

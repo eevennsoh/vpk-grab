@@ -90,3 +90,12 @@ export const MARQUEE_TARGET_Z_INDEX = "2147483000";
 export const MARQUEE_OUTSET_SIDE_COUNT = 2;
 
 export const MARQUEE_EDGE_INSET_PX = 1;
+
+export const RECTANGLE_START_PX = { x: 300, y: 320 };
+export const RECTANGLE_END_PX = { x: 520, y: 420 };
+export const RECTANGLE_INTERIOR_PX = { x: 410, y: 370 };
+export const RECTANGLE_TINY_DELTA_PX = 2;
+export const RECTANGLE_DRAG_STEPS = 6;
+export const RECTANGLE_SCROLL_PX = 100;
+export const RECTANGLE_SCROLL_PAGE_HEIGHT_PX = 3000;
+export const RECTANGLE_EDGE_HIT_OFFSET_PX = 5;

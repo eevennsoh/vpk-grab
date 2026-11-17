@@ -503,6 +503,34 @@ test.describe("Screenshot capture", () => {
     expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
   });
 
+  test("a rectangle inside the area is drawn into the image", async ({ reactGrab, page }) => {
+    const rectangleButton = page.locator('[data-react-grab-toolbar-action="annotate-rectangle"]');
+    await rectangleButton.click();
+    await page.mouse.move(LINE_START.x, LINE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(LINE_END.x, LINE_END.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX, {
+      steps: DRAG_STEPS,
+    });
+    await page.mouse.up();
+    await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
+    await rectangleButton.click();
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const strokeMidpointX = (LINE_START.x + LINE_END.x) / 2;
+    const pixel = await sampleLastImagePixel(
+      page,
+      strokeMidpointX - CAPTURE_START.x,
+      LINE_START.y - CAPTURE_START.y,
+      CAPTURE_END.x - CAPTURE_START.x,
+    );
+    expect(pixel).not.toBeNull();
+    expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
+    expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
+    expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+  });
+
   test("the camera cursor shows while Shift is held in Grab, not in Pen", async ({ page }) => {
     await page.keyboard.down("Shift");
     await expect.poll(() => readPageCursor(page)).toContain("3 6, crosshair");
@@ -1110,7 +1138,7 @@ const grabKeepingGrabActive = async (
 const pressActivationShortcutInPlace = async (reactGrab: ReactGrabPageObject, page: Page) => {
   await page.keyboard.down(reactGrab.modifierKey);
   await page.keyboard.down("c");
-  await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
+  await expect.poll(() => isReactGrabActive(page)).toBe(true);
   await page.keyboard.up("c");
   await page.keyboard.up(reactGrab.modifierKey);
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
@@ -1646,6 +1674,47 @@ test.describe("Copied pill", () => {
       page,
       (strokeStart.x + strokeEnd.x) / 2 - captureRect.x,
       strokeY - captureRect.y,
+      captureRect.width,
+    );
+    expect(pixel).not.toBeNull();
+    expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
+    expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
+    expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+  });
+  test("a rectangle over the element is drawn into the camera's image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const todoBox = await page.locator(FIRST_TODO_SELECTOR).first().boundingBox();
+    if (!todoBox) throw new Error("No box for the first todo item");
+    const rectangleTopPx = todoBox.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX;
+    const rectangleStart = {
+      x: todoBox.x + PILL_ANNOTATION_STROKE_START_OFFSET_PX,
+      y: rectangleTopPx,
+    };
+    const rectangleEnd = { x: todoBox.x + PILL_ANNOTATION_STROKE_END_OFFSET_PX, y: rectangleTopPx };
+    const rectangleButton = page.locator('[data-react-grab-toolbar-action="annotate-rectangle"]');
+    await rectangleButton.click();
+    await page.mouse.move(rectangleStart.x, rectangleStart.y);
+    await page.mouse.down();
+    await page.mouse.move(rectangleEnd.x, rectangleEnd.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX, {
+      steps: DRAG_STEPS,
+    });
+    await page.mouse.up();
+    await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
+    await rectangleButton.click();
+
+    const { captureRect } = await grabFirstTodo(reactGrab, page);
+    await reactGrab
+      .getOverlayHost()
+      .locator(`${COMPLETION_SELECTOR} ${CAMERA_BUTTON_SELECTOR}`)
+      .click();
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const pixel = await sampleLastImagePixel(
+      page,
+      (rectangleStart.x + rectangleEnd.x) / 2 - captureRect.x,
+      rectangleTopPx - captureRect.y,
       captureRect.width,
     );
     expect(pixel).not.toBeNull();

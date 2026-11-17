@@ -77,6 +77,10 @@ import {
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
+  PEN_TOOL_KEY,
+  RECTANGLE_TOOL_KEY,
+  RECTANGLE_TOOL_CURSOR,
+  TEXT_TOOL_KEY,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
@@ -437,6 +441,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return GRAB_TOOL_CURSOR;
         case "pen":
           return PEN_TOOL_CURSOR;
+        case "rectangle":
+          return RECTANGLE_TOOL_CURSOR;
         case "text":
           return TEXT_TOOL_CURSOR;
         case "edit":
@@ -3240,6 +3246,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (canHandleEditShortcut && isBareKeyPress) {
           const pressedKey = event.key.toLowerCase();
           const runToolShortcut = (): boolean => {
+            if (isAnnotating()) {
+              const drawingTool =
+                pressedKey === PEN_TOOL_KEY
+                  ? "pen"
+                  : pressedKey === RECTANGLE_TOOL_KEY
+                    ? "rectangle"
+                    : pressedKey === TEXT_TOOL_KEY
+                      ? "text"
+                      : null;
+              if (drawingTool) {
+                if (inspect.annotationTool() !== drawingTool)
+                  handleSelectAnnotationTool(drawingTool);
+                return true;
+              }
+            }
             switch (pressedKey) {
               case SPECS_TOOL_KEY:
                 if (isAnnotating()) return false;

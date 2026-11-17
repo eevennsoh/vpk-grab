@@ -707,7 +707,7 @@ export interface ReactGrabEntry {
   frames?: ReactGrabStackFrame[];
 }
 
-export type AnnotationTool = "grab" | "pen" | "text" | "edit";
+export type AnnotationTool = "grab" | "pen" | "rectangle" | "text" | "edit";
 export type SelectionTool = Exclude<AnnotationTool, "edit">;
 export type ToolCycleDirection = "forward" | "backward";
 
@@ -719,13 +719,13 @@ export interface AnnotationStroke {
   id: string;
   points: AnnotationPoint[];
   isStraight: boolean;
+  isRectangle?: boolean;
   color: string;
 }
 
 export interface AnnotationColorOption {
   label: string;
   value: string;
-  hasInnerBorder?: boolean;
 }
 
 export interface AnnotationText extends Position {

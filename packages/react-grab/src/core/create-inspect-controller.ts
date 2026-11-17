@@ -4,6 +4,7 @@ import {
   ANNOTATION_MARQUEE_MIN_DRAG_PX,
   ANNOTATION_MIN_SAMPLE_DISTANCE_PX,
   ANNOTATION_MIN_STROKE_LENGTH_PX,
+  ANNOTATION_RECTANGLE_POINT_COUNT,
   EDIT_HISTORY_MAX_ENTRIES,
   ELEMENT_DETECTION_THROTTLE_MS,
 } from "../constants.js";
@@ -25,6 +26,7 @@ import { generateId } from "../utils/generate-id.js";
 import { getNextInkWeight, INK_NEUTRAL_WEIGHT } from "../utils/ink-path.js";
 import { loadInspectSettings, saveInspectSettings } from "../utils/inspect-settings.js";
 import { isRectOverlapping } from "../utils/is-rect-overlapping.js";
+import { updateRectanglePoints } from "../utils/update-rectangle-points.js";
 import { snapStraightLineEnd } from "../utils/snap-straight-line-end.js";
 import { getAllStyleOverrides, restoreStyleOverrides } from "../utils/style-override-store.js";
 
@@ -39,6 +41,8 @@ interface ActiveDrawing {
   points: AnnotationPoint[];
   lastSampleTimestamp: number;
   lengthPx: number;
+  rectangleStroke: AnnotationStroke | null;
+  squareStroke: AnnotationStroke | null;
 }
 
 interface ActiveMove {
@@ -118,7 +122,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
   const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
   const [texts, setTexts] = createSignal<AnnotationText[]>([]);
-  const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([]);
+  const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([], { equals: false });
   const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
   const [marqueeRect, setMarqueeRect] = createSignal<Rect | null>(null);
@@ -138,18 +142,27 @@ export const createInspectController = (options: InspectControllerOptions) => {
   let activeMarquee: ActiveMarquee | null = null;
   let textDraftValue = "";
 
-  const draftStroke = createMemo((): AnnotationStroke | null => {
-    const points = drawingPoints();
-    if (points.length === 0) return null;
-    return options.isShiftKeyHeld()
-      ? {
-          id: DRAFT_STROKE_ID,
-          points: createStraightPoints(points),
-          isStraight: true,
-          color: annotationColor(),
-        }
-      : { id: DRAFT_STROKE_ID, points, isStraight: false, color: annotationColor() };
-  });
+  const draftStroke = createMemo(
+    (): AnnotationStroke | null => {
+      const points = drawingPoints();
+      if (points.length === 0) return null;
+      if (activeDrawing?.rectangleStroke) {
+        return options.isShiftKeyHeld()
+          ? activeDrawing.squareStroke
+          : activeDrawing.rectangleStroke;
+      }
+      return options.isShiftKeyHeld()
+        ? {
+            id: DRAFT_STROKE_ID,
+            points: createStraightPoints(points),
+            isStraight: true,
+            color: annotationColor(),
+          }
+        : { id: DRAFT_STROKE_ID, points, isStraight: false, color: annotationColor() };
+    },
+    undefined,
+    { equals: false },
+  );
 
   const hasAnnotations = createMemo(() => strokes().length > 0 || texts().length > 0);
 
@@ -508,14 +521,37 @@ export const createInspectController = (options: InspectControllerOptions) => {
     switch (tool) {
       case "grab":
         return;
-      case "pen": {
+      case "pen":
+      case "rectangle": {
+        const origin = toPagePoint(event);
+        const points = Array.from(
+          { length: tool === "rectangle" ? ANNOTATION_RECTANGLE_POINT_COUNT : 1 },
+          () => ({ ...origin, weight: INK_NEUTRAL_WEIGHT }),
+        );
         activeDrawing = {
           pointerId: event.pointerId,
-          points: [{ ...toPagePoint(event), weight: INK_NEUTRAL_WEIGHT }],
+          points,
           lastSampleTimestamp: event.timeStamp,
           lengthPx: 0,
+          rectangleStroke:
+            tool === "rectangle"
+              ? {
+                  id: DRAFT_STROKE_ID,
+                  points,
+                  isStraight: false,
+                  isRectangle: true,
+                  color: annotationColor(),
+                }
+              : null,
+          squareStroke: null,
         };
-        setDrawingPoints([...activeDrawing.points]);
+        if (activeDrawing.rectangleStroke) {
+          activeDrawing.squareStroke = {
+            ...activeDrawing.rectangleStroke,
+            points: points.map((point) => ({ ...point })),
+          };
+        }
+        setDrawingPoints(activeDrawing.points);
         return;
       }
       case "text": {
@@ -552,6 +588,14 @@ export const createInspectController = (options: InspectControllerOptions) => {
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
+    if (activeDrawing.rectangleStroke && activeDrawing.squareStroke) {
+      const pageX = event.clientX + window.scrollX;
+      const pageY = event.clientY + window.scrollY;
+      updateRectanglePoints(activeDrawing.points, pageX, pageY, false);
+      updateRectanglePoints(activeDrawing.squareStroke.points, pageX, pageY, true);
+      setDrawingPoints(activeDrawing.points);
+      return;
+    }
     const previousPointCount = activeDrawing.points.length;
     // Every reading the browser took since the last event, so a fast stroke
     // is drawn through all of them rather than cut straight across.
@@ -578,18 +622,36 @@ export const createInspectController = (options: InspectControllerOptions) => {
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
-    addDrawingSample(event, true);
-    const isStraight = event.shiftKey;
+    const isRectangle = Boolean(activeDrawing.rectangleStroke);
+    if (isRectangle) {
+      updateRectanglePoints(
+        activeDrawing.points,
+        event.clientX + window.scrollX,
+        event.clientY + window.scrollY,
+        event.shiftKey,
+      );
+    } else {
+      addDrawingSample(event, true);
+    }
+    const isStraight = !isRectangle && event.shiftKey;
     const points = isStraight ? createStraightPoints(activeDrawing.points) : activeDrawing.points;
     // Measured along the stroke, not end to end: a loop ends where it began.
-    const lengthPx = isStraight
-      ? Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)
-      : activeDrawing.lengthPx;
+    const lengthPx = isRectangle
+      ? Math.max(Math.abs(points[2].x - points[0].x), Math.abs(points[2].y - points[0].y))
+      : isStraight
+        ? Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)
+        : activeDrawing.lengthPx;
     if (lengthPx >= ANNOTATION_MIN_STROKE_LENGTH_PX) {
       const before = captureAnnotations();
       setStrokes((previousStrokes) => [
         ...previousStrokes,
-        { id: generateId("annotation-stroke"), points, isStraight, color: annotationColor() },
+        {
+          id: generateId("annotation-stroke"),
+          points,
+          isStraight,
+          isRectangle,
+          color: annotationColor(),
+        },
       ]);
       recordAnnotationChange(before);
     }

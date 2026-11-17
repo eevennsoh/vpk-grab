@@ -1,6 +1,6 @@
 # vpk-grab
 
-[React Grab](https://github.com/aidenybai/react-grab) with a design inspector built in: applied styles and the design tokens behind them, spacing measurements, element-to-element measuring, and pen and text annotations.
+[React Grab](https://github.com/aidenybai/react-grab) with a design inspector built in: applied styles and the design tokens behind them, spacing measurements, element-to-element measuring, and pen, rectangle and text annotations.
 
 It is a fork, and a drop-in one. The package is still named `react-grab` and the global is still `window.__REACT_GRAB__`, so everything written for React Grab (its CLI, its plugins, its agent skill) keeps working.
 
@@ -12,12 +12,13 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Specs** (**1**)      | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`.                        |
 | **Spacing** (**2**)    | The element's distance to the nearest sibling or container edge on each side, with its size in the name tag. Around elements too small to hold them, the numbers move out past the end of each line so they never overlap.                                   |
-| **Pen**                | Draw on the page in one of five colors. Hold **Shift** for a straight line. While active, tap **⌘** (**Ctrl** on Windows and Linux) to step Grab → Pen → Text, or **⇧⌘** to step back.                                                                       |
+| **Pen**                | Draw on the page in Red, Orange, Yellow, Green or Black. Hold **Shift** for a straight line. While active, tap **⌘** (**Ctrl** on Windows and Linux) to step Grab → Pen → Rectangle → Text, or **⇧⌘** to step back.                                          |
+| **Rectangle**          | Drag an outline in the selected color. Hold **Shift** for a square.                                                                                                                                                                                          |
 | **Text**               | Click to place a note, in the same colors as the pen.                                                                                                                                                                                                        |
 | **Move** and **Clear** | Appear once something is drawn; press **v** to pick Move up or put it down. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all. |
 | **Changes**            | Appears with the first style change, showing how many there are. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                                         |
 
-While active, press a control's number to switch it on or off without going back to the toolbar. **Specs** and **Spacing** appear only while Grab is the tool in hand; **⌘C** (**Ctrl+C**) picks Grab back up from Pen, Text or Move.
+With Grab in hand, **1** and **2** toggle **Specs** and **Spacing**, which appear only with Grab. With Pen, Rectangle, Text or Move in hand, **1** picks Pen, **2** picks Rectangle and **3** picks Text. **⌘C** (**Ctrl+C**) picks Grab back up from any drawing tool or Move.
 
 Holding a key changes what the pointer does:
 

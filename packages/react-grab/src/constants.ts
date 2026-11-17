@@ -1,6 +1,7 @@
 import type { AnnotationColorOption, SelectionTool, SpecBoxSide } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
+  CROP_7_5_ICON_PATHS,
   NAVIGATION_ICON_PATHS,
   PAN_TOOL_ALT_ICON_PATHS,
   PAN_TOOL_ICON_PATHS,
@@ -440,12 +441,13 @@ export const ANNOTATION_RED_COLOR = "#f24822";
 
 export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Red", value: ANNOTATION_RED_COLOR },
+  { label: "Orange", value: "#fb923c" },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
-  { label: "Blue", value: "#0d99ff" },
-  { label: "Black", value: "#111827", hasInnerBorder: true },
+  { label: "Black", value: "#111827" },
 ];
 
+export const ANNOTATION_RECTANGLE_POINT_COUNT = 4;
 export const ANNOTATION_STROKE_WIDTH_PX = 3;
 export const ANNOTATION_MIN_STROKE_LENGTH_PX = 4;
 export const ANNOTATION_MIN_SAMPLE_DISTANCE_PX = 1;
@@ -494,10 +496,13 @@ export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
+export const PEN_TOOL_KEY = "1";
+export const RECTANGLE_TOOL_KEY = "2";
+export const TEXT_TOOL_KEY = "3";
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
-export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "text"];
+export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 // A press of the platform modifier on its own counts as a cycle only if let go
 // this soon: held any longer it is the start of a chord (Cmd+C, Cmd+Z) that
 // never got its key.
@@ -517,6 +522,11 @@ export const GRAB_TOOL_CURSOR = createSvgCursor(
 export const PEN_TOOL_CURSOR = createSvgCursor(
   STYLUS_ICON_PATHS.filled,
   { x: 4, y: 20 },
+  "crosshair",
+);
+export const RECTANGLE_TOOL_CURSOR = createSvgCursor(
+  CROP_7_5_ICON_PATHS.filled,
+  { x: 12, y: 12 },
   "crosshair",
 );
 export const TEXT_TOOL_CURSOR = createSvgCursor(TITLE_ICON_PATHS.filled, { x: 12, y: 12 }, "text");
