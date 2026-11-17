@@ -1,4 +1,4 @@
-import type { AnnotationColorOption, SelectionTool } from "./types.js";
+import type { AnnotationColorOption, SelectionTool, SpecBoxSide } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
   NAVIGATION_ICON_PATHS,
@@ -471,6 +471,13 @@ export const REDLINE_COMPACT_ELEMENT_MAX_PX = 48;
 export const REDLINE_SIBLING_SEARCH_RADIUS = 60;
 
 export const SPECS_PANEL_WIDTH_PX = 272;
+export const SPECS_CONTROL_ICON_SIZE_PX = 12;
+export const SPECS_HEADER_HEIGHT_PX = 44;
+export const SPECS_SECTION_TITLE_HEIGHT_PX = 24;
+export const SPECS_SEPARATOR_HEIGHT_PX = 9;
+export const SPECS_ROW_HEIGHT_PX = 20;
+export const SPECS_TOKEN_HEIGHT_PX = 14;
+export const SPECS_FOOTER_HEIGHT_PX = 27;
 export const SPECS_PANEL_MARGIN_PX = 12;
 export const SPECS_PANEL_FALLBACK_HEIGHT_PX = 420;
 export const SPECS_VALUE_MAX_LENGTH = 44;
@@ -539,3 +546,30 @@ export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
 export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;
+
+export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
+  padding: [
+    { property: "padding-top", label: "Top" },
+    { property: "padding-right", label: "Right" },
+    { property: "padding-bottom", label: "Bottom" },
+    { property: "padding-left", label: "Left" },
+  ],
+  margin: [
+    { property: "margin-top", label: "Top" },
+    { property: "margin-right", label: "Right" },
+    { property: "margin-bottom", label: "Bottom" },
+    { property: "margin-left", label: "Left" },
+  ],
+  "border-width": [
+    { property: "border-top-width", label: "Top" },
+    { property: "border-right-width", label: "Right" },
+    { property: "border-bottom-width", label: "Bottom" },
+    { property: "border-left-width", label: "Left" },
+  ],
+  "border-radius": [
+    { property: "border-top-left-radius", label: "Top left" },
+    { property: "border-top-right-radius", label: "Top right" },
+    { property: "border-bottom-right-radius", label: "Bottom right" },
+    { property: "border-bottom-left-radius", label: "Bottom left" },
+  ],
+};

@@ -1,3 +1,4 @@
+import { getSpecShorthandProperty } from "./get-spec-shorthand-property.js";
 import type { ElementSpecRow, StyleOverride } from "../types.js";
 
 interface InlineStyleProperty {
@@ -7,10 +8,10 @@ interface InlineStyleProperty {
 
 interface StoredStyleOverride extends StyleOverride {
   previousInlineProperties: Map<string, InlineStyleProperty>;
-  appliedInlineValues: Map<string, string>;
+  appliedInlineValues: Map<string, InlineStyleProperty>;
 }
 
-type StyledElement = Element & ElementCSSInlineStyle;
+interface StyledElement extends Element, ElementCSSInlineStyle {}
 
 // `unset` drops a property to what it would be with nothing setting it. For
 // display that is `inline`, which rearranges the page around the element
@@ -43,10 +44,12 @@ const getLonghands = (element: Element, property: string): string[] => {
 // A shorthand set to a value with var() in it leaves its longhands empty in
 // the style attribute until computed, so the shorthand itself is read too.
 const readInlineValues = (element: StyledElement, override: StoredStyleOverride) => {
-  const inlineValues = new Map<string, string>();
-  inlineValues.set(override.property, element.style.getPropertyValue(override.property));
-  for (const longhand of override.previousInlineProperties.keys()) {
-    inlineValues.set(longhand, element.style.getPropertyValue(longhand));
+  const inlineValues = new Map<string, InlineStyleProperty>();
+  for (const property of [override.property, ...override.previousInlineProperties.keys()]) {
+    inlineValues.set(property, {
+      value: element.style.getPropertyValue(property),
+      priority: element.style.getPropertyPriority(property),
+    });
   }
   return inlineValues;
 };
@@ -57,9 +60,13 @@ const readInlineValues = (element: StyledElement, override: StoredStyleOverride)
 const isOverrideInPlace = (element: StyledElement, override: StoredStyleOverride): boolean => {
   if (!element.isConnected) return false;
   for (const [property, appliedValue] of override.appliedInlineValues) {
-    if (element.style.getPropertyValue(property) !== appliedValue) return false;
+    if (
+      element.style.getPropertyValue(property) !== appliedValue.value ||
+      element.style.getPropertyPriority(property) !== appliedValue.priority
+    )
+      return false;
   }
-  return element.style.getPropertyPriority(override.property) === IMPORTANT_PRIORITY;
+  return true;
 };
 
 const restoreInlineProperties = (element: StyledElement, override: StoredStyleOverride) => {
@@ -79,6 +86,20 @@ const writeOverride = (element: StyledElement, override: StoredStyleOverride) =>
     element.style.setProperty(override.property, override.value, IMPORTANT_PRIORITY);
   } else {
     restoreInlineProperties(element, override);
+  }
+  if (!override.isOff && override.longhands) {
+    for (const longhand of override.longhands) {
+      if (longhand.isOff)
+        element.style.setProperty(longhand.property, OFF_VALUE, IMPORTANT_PRIORITY);
+      else if (longhand.value !== null)
+        element.style.setProperty(longhand.property, longhand.value, IMPORTANT_PRIORITY);
+      else {
+        const previous = override.previousInlineProperties.get(longhand.property);
+        if (previous?.value)
+          element.style.setProperty(longhand.property, previous.value, previous.priority);
+        else element.style.removeProperty(longhand.property);
+      }
+    }
   }
   override.appliedInlineValues = readInlineValues(element, override);
 };
@@ -116,6 +137,12 @@ const getOrCreateOverride = (
       priority: element.style.getPropertyPriority(longhand),
     });
   }
+  if (row.children && element.style.getPropertyValue(row.property)) {
+    previousInlineProperties.set(row.property, {
+      value: element.style.getPropertyValue(row.property),
+      priority: element.style.getPropertyPriority(row.property),
+    });
+  }
   const { override: _previousOverride, ...original } = row;
   return {
     element,
@@ -130,10 +157,11 @@ const getOrCreateOverride = (
 };
 
 const saveOverride = (element: StyledElement, override: StoredStyleOverride) => {
-  if (!override.isOff && override.value === null) {
+  if (!override.isOff && override.value === null && !override.longhands?.length) {
     resetStyleOverride(element, override.property);
     return;
   }
+  if (override.original.children) restoreInlineProperties(element, override);
   writeOverride(element, override);
   let overrides = overridesByElement.get(element);
   if (!overrides) {
@@ -150,6 +178,7 @@ const toPublicOverride = (override: StoredStyleOverride): StyleOverride => ({
   isOff: override.isOff,
   value: override.value,
   token: override.token,
+  longhands: override.longhands?.map((longhand) => ({ ...longhand })),
 });
 
 export const canOverrideStyles = (element: Element): boolean => isStyledElement(element);
@@ -175,11 +204,33 @@ export const getAllStyleOverrides = (): StyleOverride[] => {
   return allOverrides;
 };
 
-export const setStyleOverrideOff = (element: Element, row: ElementSpecRow, isOff: boolean) => {
+export const setStyleOverrideOff = (
+  element: Element,
+  row: ElementSpecRow,
+  isOff: boolean,
+  shorthandRow: ElementSpecRow = row,
+) => {
   if (!isStyledElement(element)) return;
-  const override = getOrCreateOverride(element, row);
+  const override = getOrCreateOverride(element, shorthandRow);
   if (!override) return;
-  override.isOff = isOff;
+  if (row.property === shorthandRow.property) override.isOff = isOff;
+  else {
+    const previousLonghand = override.longhands?.find(
+      (longhand) => longhand.property === row.property,
+    );
+    const longhand = {
+      property: row.property,
+      isOff,
+      value: previousLonghand ? previousLonghand.value : override.value !== null ? row.value : null,
+      token: previousLonghand?.token ?? override.token,
+    };
+    override.longhands = (override.longhands ?? []).filter(
+      (entry) => entry.property !== row.property,
+    );
+    if (isOff || longhand.value !== null || override.value !== null)
+      override.longhands.push(longhand);
+    override.isOff = false;
+  }
   saveOverride(element, override);
 };
 
@@ -188,22 +239,42 @@ export const setStyleOverrideValue = (
   row: ElementSpecRow,
   value: string,
   token: string | null,
+  shorthandRow: ElementSpecRow = row,
 ): boolean => {
   const trimmedValue = value.trim();
   if (!isStyledElement(element) || !isValidStyleValue(row.property, trimmedValue)) return false;
-  const override = getOrCreateOverride(element, row);
+  const override = getOrCreateOverride(element, shorthandRow);
   if (!override) return false;
   override.isOff = false;
-  override.value = trimmedValue;
-  override.token = token;
+  if (row.property === shorthandRow.property) {
+    override.value = trimmedValue;
+    override.token = token;
+    override.longhands = undefined;
+  } else {
+    override.longhands = [
+      ...(override.longhands ?? []).filter((longhand) => longhand.property !== row.property),
+      { property: row.property, isOff: false, value: trimmedValue, token },
+    ];
+  }
   saveOverride(element, override);
   return true;
 };
 
 export const resetStyleOverride = (element: Element, property: string) => {
   const overrides = overridesByElement.get(element);
-  const override = overrides?.get(property);
+  const shorthandProperty = getSpecShorthandProperty(property);
+  const override = overrides?.get(shorthandProperty);
   if (!overrides || !override || !isStyledElement(element)) return;
+  if (property !== shorthandProperty) {
+    if (!isOverrideInPlace(element, override)) return;
+    override.longhands = (override.longhands ?? []).filter(
+      (longhand) => longhand.property !== property,
+    );
+    if (override.value !== null)
+      override.longhands.push({ property, isOff: false, value: null, token: null });
+    saveOverride(element, override);
+    return;
+  }
   const isInPlace = isOverrideInPlace(element, override);
   overrides.delete(property);
   if (overrides.size === 0) overridesByElement.delete(element);
@@ -229,6 +300,20 @@ export const restoreStyleOverrides = (snapshot: readonly StyleOverride[]) => {
     if (!override.element.isConnected) continue;
     if (override.value !== null) {
       setStyleOverrideValue(override.element, override.original, override.value, override.token);
+    }
+    for (const longhand of override.longhands ?? []) {
+      const row = override.original.children?.find((child) => child.property === longhand.property);
+      if (!row) continue;
+      if (longhand.value !== null)
+        setStyleOverrideValue(
+          override.element,
+          row,
+          longhand.value,
+          longhand.token,
+          override.original,
+        );
+      else resetStyleOverride(override.element, longhand.property);
+      if (longhand.isOff) setStyleOverrideOff(override.element, row, true, override.original);
     }
     if (override.isOff) setStyleOverrideOff(override.element, override.original, true);
   }

@@ -14,6 +14,8 @@ import {
   specRow,
   toggle,
   typeValue,
+  prepareBoxSpecs,
+  expectStyles,
 } from "./specs-panel-fixture.js";
 
 const CHANGES_BUTTON_SELECTOR = '[data-react-grab-toolbar-action="style-changes"]';
@@ -117,5 +119,37 @@ test.describe("style changes", () => {
     await expect(specRow(page, "padding")).toHaveAttribute("data-overridden", "");
     await clickInside(page, '[data-react-grab-spec-row="padding"] [data-react-grab-spec-reset]');
     expect(await getStyle(page, "specs-plain-button", "padding-left")).toBe("8px");
+  });
+  test("side edits share one combined Changes line and removal restores every original", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding-top", "20px");
+    await typeValue(page, "padding-right", "30px");
+    await page.locator(CHANGES_BUTTON_SELECTOR).click();
+    const menu = page.locator(CHANGES_MENU_SELECTOR);
+    await expect(menu.locator("[data-react-grab-change]")).toHaveCount(1);
+    await expect(menu.locator('[data-react-grab-change="padding"]')).toContainText(
+      "4px 8px 12px 16px → 20px 30px 12px 16px",
+    );
+    await menu.locator("[data-react-grab-change-remove]").click();
+    await expectStyles(
+      page,
+      "specs-box-button",
+      ["padding-top", "padding-right", "padding-bottom", "padding-left"],
+      ["4px", "8px", "12px", "16px"],
+    );
+  });
+
+  test("ratio lock lists width and height as two Changes lines", async ({ page }) => {
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    await page.locator("[data-react-grab-specs-ratio-lock]").click();
+    await typeValue(page, "width", "300px");
+    await page.locator(CHANGES_BUTTON_SELECTOR).click();
+    const menu = page.locator(CHANGES_MENU_SELECTOR);
+    await expect(menu.locator("[data-react-grab-change]")).toHaveCount(2);
+    await expect(menu.locator('[data-react-grab-change="width"]')).toContainText("200px → 300px");
+    await expect(menu.locator('[data-react-grab-change="height"]')).toContainText("100px →");
   });
 });

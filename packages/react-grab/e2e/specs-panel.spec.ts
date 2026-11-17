@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 // The specs panel: the design tokens it names for applied properties, the
 // Shift pin that lets the pointer reach it, and the checkbox, value field and
 // token menu a pinned panel gives every row.
@@ -19,6 +20,13 @@ import {
   clickInside,
   toggle,
   typeValue,
+  expandSpecRow,
+  prepareBoxSpecs,
+  resetSpecRow,
+  expectStyles,
+  getRenderedSize,
+  expectRenderedRatio,
+  moveToSpecsElement,
 } from "./specs-panel-fixture.js";
 
 test.describe("specs panel", () => {
@@ -73,7 +81,6 @@ test.describe("specs panel", () => {
     let panelBefore = await panel.boundingBox();
     await expect
       .poll(async () => {
-        await page.waitForTimeout(150);
         const box = await panel.boundingBox();
         const isSettled = JSON.stringify(box) === JSON.stringify(panelBefore);
         panelBefore = box;
@@ -268,5 +275,400 @@ test.describe("specs panel", () => {
     );
     await expect(offRow).toHaveAttribute("data-off", "");
     await expect(specTokens(page, "background-color")).toHaveText(["--ds-background-brand-bold"]);
+  });
+});
+
+const PADDING_PROPERTIES = ["padding-top", "padding-right", "padding-bottom", "padding-left"];
+const CORNER_PROPERTIES = [
+  "border-top-left-radius",
+  "border-top-right-radius",
+  "border-bottom-right-radius",
+  "border-bottom-left-radius",
+];
+const RATIO_LOCK_SELECTOR = "[data-react-grab-specs-ratio-lock]";
+
+const rowValue = (page: Page, property: string) =>
+  specRow(page, property).locator("[data-react-grab-spec-value]");
+
+test.describe("expanded specs and ratio lock", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await installSpecsFixture(page);
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+    await reactGrab.activate();
+    await switchOnSpecs(page);
+  });
+
+  test("expands padding in side order and collapses without changing the shorthand", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    const children = page.locator('[data-react-grab-spec-row^="padding-"]');
+    await expect(children.locator("[data-react-grab-spec-value]")).toHaveText([
+      "4px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await expect(children.locator("span.font-mono")).toHaveText(["Top", "Right", "Bottom", "Left"]);
+    await expect(rowValue(page, "padding")).toHaveText("4px 8px 12px 16px");
+    await specRow(page, "padding").locator("[data-react-grab-spec-expand]").click();
+    await expect(children).toHaveCount(0);
+    await expect(rowValue(page, "padding")).toHaveText("4px 8px 12px 16px");
+  });
+
+  test("collapsing commits valid side drafts, discards invalid drafts and releases focus", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    const expandControl = specRow(page, "padding").locator("[data-react-grab-spec-expand]");
+    await rowValue(page, "padding-top").click();
+    await specRow(page, "padding-top").locator("[data-react-grab-spec-input]").fill("22px");
+    await expandControl.click();
+    await expect(specRow(page, "padding-top")).toHaveCount(0);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "22px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await expandSpecRow(page, "padding");
+    await rowValue(page, "padding-top").click();
+    await specRow(page, "padding-top").locator("[data-react-grab-spec-input]").fill("invalid");
+    await expandControl.click();
+    await expect(specRow(page, "padding-top")).toHaveCount(0);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "22px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y, { steps: 8 });
+    await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(0);
+  });
+
+  test("editing one side updates only that side and the applied shorthand", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding-right", "24px");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "4px",
+      "24px",
+      "12px",
+      "16px",
+    ]);
+    await expect(rowValue(page, "padding")).toHaveText("4px 24px 12px 16px");
+    await expect(
+      page.locator('[data-react-grab-specs-applied] [data-react-grab-spec-row="padding"]'),
+    ).toHaveAttribute("data-overridden", "");
+  });
+
+  test("the last shorthand or side edit wins without changing other sides", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding-right", "24px");
+    await typeValue(page, "padding", "20px");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "20px",
+      "20px",
+      "20px",
+    ]);
+    await expect(
+      page.locator('[data-react-grab-spec-row^="padding-"] [data-react-grab-spec-value]'),
+    ).toHaveText(["20px", "20px", "20px", "20px"]);
+    await typeValue(page, "padding-bottom", "30px");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "20px",
+      "30px",
+      "20px",
+    ]);
+    await expect(rowValue(page, "padding")).toHaveText("20px 20px 30px");
+    await typeValue(page, "padding", "var(--ds-space-050)");
+    await typeValue(page, "padding-bottom", "30px");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, ["2px", "2px", "30px", "2px"]);
+  });
+
+  test("side and row resets restore originals and undo and redo each move one edit", async ({
+    reactGrab,
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding", "20px");
+    await typeValue(page, "padding-right", "30px");
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "20px",
+      "20px",
+      "20px",
+    ]);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "30px",
+      "20px",
+      "20px",
+    ]);
+    await resetSpecRow(page, "padding-right");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "8px",
+      "20px",
+      "20px",
+    ]);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "30px",
+      "20px",
+      "20px",
+    ]);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "20px",
+      "8px",
+      "20px",
+      "20px",
+    ]);
+    await resetSpecRow(page, "padding");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "4px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await expect(specRow(page, "padding")).not.toHaveAttribute("data-overridden");
+  });
+
+  test("the shorthand toggle preserves side overrides", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding-left", "40px");
+    await toggle(page, "padding");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, ["0px", "0px", "0px", "0px"]);
+    await toggle(page, "padding");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "4px",
+      "8px",
+      "12px",
+      "40px",
+    ]);
+  });
+
+  test("a side toggle restores its value and removes its override when turned back on", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    await toggle(page, "padding-top");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "0px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await toggle(page, "padding-top");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "4px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await expect(specRow(page, "padding")).not.toHaveAttribute("data-overridden");
+  });
+
+  test("radius corners follow clockwise order and edit independently", async ({ page }) => {
+    await prepareBoxSpecs(page, "border-radius");
+    await expect(
+      page
+        .locator('[data-react-grab-spec-row$="-radius"] [data-react-grab-spec-value]')
+        .filter({ hasText: /^\d+px$/ }),
+    ).toHaveText(["2px", "4px", "6px", "8px"]);
+    await expect(page.locator('[data-react-grab-spec-row$="-radius"] span.font-mono')).toHaveText([
+      "border-radius",
+      "Top left",
+      "Top right",
+      "Bottom right",
+      "Bottom left",
+    ]);
+    await typeValue(page, "border-bottom-right-radius", "25px");
+    await expectStyles(page, "specs-box-button", CORNER_PROPERTIES, ["2px", "4px", "25px", "8px"]);
+    await expect(rowValue(page, "border-radius")).toHaveText("2px 4px 25px 8px");
+    await typeValue(page, "border-top-left-radius", "10px 20px");
+    await expectStyles(page, "specs-box-button", CORNER_PROPERTIES, [
+      "10px 20px",
+      "4px",
+      "25px",
+      "8px",
+    ]);
+    await expect(rowValue(page, "border-radius")).toHaveText(
+      "10px 4px 25px 8px / 20px 4px 25px 8px",
+    );
+  });
+
+  test("margin and border width sides expand and border width expands without a border", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page, "margin");
+    await typeValue(page, "margin-left", "18px");
+    await expectStyles(
+      page,
+      "specs-box-button",
+      ["margin-top", "margin-right", "margin-bottom", "margin-left"],
+      ["2px", "4px", "6px", "18px"],
+    );
+    await expandSpecRow(page, "border-width");
+    await typeValue(page, "border-left-width", "9px");
+    await expectStyles(
+      page,
+      "specs-box-button",
+      ["border-top-width", "border-right-width", "border-bottom-width", "border-left-width"],
+      ["1px", "2px", "3px", "9px"],
+    );
+    await moveToSpecsElement(page, "specs-plain-button");
+    await expect(
+      specRow(page, "border-width").locator("[data-react-grab-spec-expand]"),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      specRow(page, "border-top-width").locator("[data-react-grab-spec-value]"),
+    ).toHaveText("0px");
+  });
+
+  test("expanded rows stay open on another element", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    await moveToSpecsElement(page, "specs-plain-button");
+    await expect(specRow(page, "padding").locator("[data-react-grab-spec-expand]")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(
+      page.locator('[data-react-grab-spec-row^="padding-"] [data-react-grab-spec-value]'),
+    ).toHaveText(["8px", "8px", "8px", "8px"]);
+  });
+
+  test("sub-row input validates, cancels, commits on blur and tabs in side order", async ({
+    page,
+  }) => {
+    await prepareBoxSpecs(page);
+    await typeValue(page, "padding-top", "invalid");
+    const input = specRow(page, "padding-top").locator("[data-react-grab-specs-input]");
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await input.press("Escape");
+    await expect(input).toHaveCount(0);
+    await rowValue(page, "padding-top").click();
+    await input.fill("invalid");
+    await input.press("Tab");
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "4px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    for (const property of ["padding-right", "padding-bottom", "padding-left"]) {
+      const sideInput = specRow(page, property).locator("[data-react-grab-specs-input]");
+      await expect(sideInput).toBeFocused();
+      await sideInput.press("Tab");
+    }
+    await rowValue(page, "padding-top").click();
+    await input.fill("22px");
+    await rowValue(page, "padding-right").click();
+    await expect(input).toHaveCount(0);
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, [
+      "22px",
+      "8px",
+      "12px",
+      "16px",
+    ]);
+    await rowValue(page, "padding-top").click();
+    await input.fill("invalid");
+    await rowValue(page, "padding-right").click();
+    await expect(input).toHaveCount(0);
+    await expect(rowValue(page, "padding-top")).toHaveText("22px");
+  });
+
+  test("sub-row token menu changes only that side", async ({ page }) => {
+    await prepareBoxSpecs(page);
+    await specRow(page, "padding-left").locator("[data-react-grab-spec-menu-trigger]").click();
+    await page.locator("[data-react-grab-spec-value-filter]").fill("--ds-space-050");
+    await page.locator('[data-react-grab-spec-option="--ds-space-050"]').click();
+    await expectStyles(page, "specs-box-button", PADDING_PROPERTIES, ["4px", "8px", "12px", "2px"]);
+  });
+
+  test("ratio lock scales width and height and undo and redo restore both together", async ({
+    reactGrab,
+    page,
+  }) => {
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    const originalSize = await getRenderedSize(page, "specs-ratio-button");
+    const ratio = originalSize.width / originalSize.height;
+    const lock = page.locator(RATIO_LOCK_SELECTOR);
+    await expect(lock).toHaveAccessibleName("Lock width and height ratio");
+    await lock.click();
+    await expect(lock).toHaveAccessibleName("Unlock width and height ratio");
+    await typeValue(page, "width", "300px");
+    await expectStyles(page, "specs-ratio-button", ["width"], ["300px"]);
+    await expectRenderedRatio(page, "specs-ratio-button", ratio);
+    const widthEditSize = await getRenderedSize(page, "specs-ratio-button");
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expectStyles(page, "specs-ratio-button", ["width", "height"], ["200px", "100px"]);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expectRenderedRatio(page, "specs-ratio-button", ratio);
+    expect(await getRenderedSize(page, "specs-ratio-button")).toEqual(widthEditSize);
+    await typeValue(page, "height", "200px");
+    await expectStyles(page, "specs-ratio-button", ["height"], ["200px"]);
+    await expectRenderedRatio(page, "specs-ratio-button", ratio);
+  });
+
+  test("ratio lock resolves relative units, skips auto and zero and resets rows independently", async ({
+    page,
+  }) => {
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    const originalSize = await getRenderedSize(page, "specs-ratio-button");
+    const ratio = originalSize.width / originalSize.height;
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await typeValue(page, "width", "10rem");
+    await expectRenderedRatio(page, "specs-ratio-button", ratio);
+    await typeValue(page, "width", "50%");
+    await expectRenderedRatio(page, "specs-ratio-button", ratio);
+    const pairedHeight = await getStyle(page, "specs-ratio-button", "height");
+    await typeValue(page, "width", "auto");
+    expect(await getStyle(page, "specs-ratio-button", "height")).toBe(pairedHeight);
+    await typeValue(page, "width", "0px");
+    expect(await getStyle(page, "specs-ratio-button", "height")).toBe(pairedHeight);
+    await resetSpecRow(page, "width");
+    await expectStyles(page, "specs-ratio-button", ["width"], ["200px"]);
+    expect(await getStyle(page, "specs-ratio-button", "height")).toBe(pairedHeight);
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("ratio lock skips pairing when the previous rendered box has a zero dimension", async ({
+    page,
+  }) => {
+    await inspect(page, "specs-box-button");
+    await pinAndReach(page, "width");
+    await typeValue(page, "padding", "0px");
+    await typeValue(page, "border-width", "0px");
+    await typeValue(page, "width", "0px");
+    await expect.poll(async () => (await getRenderedSize(page, "specs-box-button")).width).toBe(0);
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await typeValue(page, "width", "200px");
+    await expectStyles(page, "specs-box-button", ["width", "height"], ["200px", "100px"]);
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("dimensions are independent with ratio lock off and another element starts unlocked", async ({
+    page,
+  }) => {
+    await inspect(page, "specs-ratio-button");
+    await pinAndReach(page, "width");
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "false");
+    await typeValue(page, "width", "300px");
+    await expectStyles(page, "specs-ratio-button", ["width", "height"], ["300px", "100px"]);
+    await page.locator(RATIO_LOCK_SELECTOR).click();
+    await moveToSpecsElement(page, "specs-box-button");
+    await pinAndReach(page, "width");
+    await expect(page.locator(RATIO_LOCK_SELECTOR)).toHaveAttribute("aria-pressed", "false");
+    await typeValue(page, "height", "120px");
+    await expectStyles(page, "specs-box-button", ["width", "height"], ["200px", "120px"]);
   });
 });

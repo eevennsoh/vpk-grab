@@ -1,4 +1,4 @@
-import { SPECS_VALUE_MAX_LENGTH } from "../constants.js";
+import { SPECS_BOX_SIDES, SPECS_VALUE_MAX_LENGTH } from "../constants.js";
 import { getElementAdapter } from "../core/element-adapter.js";
 import type { ElementSpecRow, ElementSpecSection, ElementSpecs } from "../types.js";
 import { collapseCssBoxSides } from "./collapse-css-box-sides.js";
@@ -128,7 +128,9 @@ const createAppearanceRows = (read: ReadStyle, isNonNeutral: (name: string) => b
   rows.push(
     createRow(
       "border-radius",
-      collapseSides(cornerRadii),
+      cornerRadii.some((radius) => radius.includes(" "))
+        ? read("border-radius")
+        : collapseSides(cornerRadii),
       cornerRadii.some((radius) => !isZeroLength(radius)),
     ),
     createRow("opacity", read("opacity"), read("opacity") !== "1"),
@@ -308,7 +310,19 @@ const applyStyleOverrides = (element: Element, sections: ElementSpecSection[]) =
       const override = overrides.get(row.property);
       if (!override) return row;
       overrides.delete(row.property);
-      return override.isOff ? { ...override.original, override } : { ...row, override };
+      const updatedRow = override.isOff ? { ...override.original, override } : { ...row, override };
+      updatedRow.children = updatedRow.children?.map((child) => {
+        const longhand = override.longhands?.find((entry) => entry.property === child.property);
+        const childOverride = longhand
+          ? longhand.value !== null || longhand.isOff
+            ? longhand
+            : undefined
+          : override.value !== null
+            ? { isOff: override.isOff, value: child.value, token: override.token }
+            : undefined;
+        return { ...child, override: childOverride };
+      });
+      return updatedRow;
     });
   }
   for (const override of overrides.values()) {
@@ -372,12 +386,24 @@ export const getElementSpecs = (
     sections.push(createSection("Typography", typographyRows));
   }
 
+  for (const section of sections) {
+    for (const row of section.rows) {
+      row.children = SPECS_BOX_SIDES[row.property]?.map((side) => ({
+        ...createRow(side.property, read(side.property), !isZeroLength(read(side.property))),
+        label: side.label,
+        sectionTitle: section.title,
+      }));
+    }
+  }
+
   applyStyleOverrides(element, sections);
 
   // An off row keeps the tokens it had when it was switched off: looked up
   // again, the unset property would name none.
   const tokenRows = sections.flatMap((section) =>
-    section.rows.filter((row) => (row.override ? !row.override.isOff : row.isApplied)),
+    section.rows
+      .flatMap((row) => [row, ...(row.children ?? [])])
+      .filter((row) => (row.override ? !row.override.isOff : row.isApplied)),
   );
   const tokensBySpecProperty = getSpecTokens(
     element,

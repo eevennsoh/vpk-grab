@@ -712,12 +712,27 @@ export interface ElementSpecRow {
   swatchColor?: string;
   tokens?: string[];
   override?: StyleOverrideState;
+  children?: ElementSpecRow[];
+  label?: string;
 }
 
 export interface StyleOverrideState {
   isOff: boolean;
   value: string | null;
   token: string | null;
+  longhands?: StyleOverrideLonghand[];
+}
+
+export interface StyleOverrideLonghand {
+  property: string;
+  isOff: boolean;
+  value: string | null;
+  token: string | null;
+}
+
+export interface SpecBoxSide {
+  property: string;
+  label: string;
 }
 
 export interface StyleOverride extends StyleOverrideState {
