@@ -2415,18 +2415,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
         labelController.cancelScreenshotCaptures();
-        const blobPromise = getCapturedBlob();
+        const blobPromise = racePromiseWithAbort(getCapturedBlob(), signal).then(
+          (captureResult) => {
+            if (captureResult === ABORTED_PROMISE_RESULT) {
+              throw new Error("Screenshot capture cancelled");
+            }
+            return captureResult;
+          },
+        );
         const [blobOutcome, deliveryOutcome] = await Promise.allSettled([
           blobPromise,
           deliverPngBlob(blobPromise),
         ]);
+        if (signal.aborted) return CANCELLED_COPY_RESULT;
         if (blobOutcome.status === "rejected") {
           throw new Error("Couldn't capture image", { cause: blobOutcome.reason });
         }
         if (deliveryOutcome.status === "rejected") {
           throw new Error("Couldn't copy image", { cause: deliveryOutcome.reason });
         }
-        if (signal.aborted) return CANCELLED_COPY_RESULT;
         labelController.setImage(
           labelInstanceId,
           deliveryOutcome.value === "saved" ? "Image saved" : "Image copied",

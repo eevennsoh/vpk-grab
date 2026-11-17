@@ -29,7 +29,9 @@ import {
   getClipboardWriteCallCount,
   getCopyEventCount,
   getImageWrites,
+  getPendingImageEncodingCount,
   getRevokedObjectUrls,
+  getSettledClipboardWriteCount,
   getUnhandledRejections,
   installClipboardRecorder,
   openClipboardGate,
@@ -76,6 +78,7 @@ const CAMERA_CURSOR_HOTSPOT = "3 6, crosshair";
 const HELD_ACTIVATION_KEY = "F8";
 const CAPTURE_START = { x: 250, y: 280 };
 const CAPTURE_END = { x: 610, y: 380 };
+const SECOND_CAPTURE_END = { x: 520, y: 360 };
 const LINE_START = { x: 300, y: 320 };
 const LINE_END = { x: 520, y: 320 };
 const NOTE_POSITION = { x: 300, y: 330 };
@@ -284,6 +287,31 @@ const captureAroundColorBlock = async (page: Page, outerBox: ClientBox) => {
   await shiftDrag(page, captureStart, captureEnd);
   await expect.poll(() => getImageWrites(page)).toHaveLength(1);
   return { captureStart, captureWidth: captureEnd.x - captureStart.x };
+};
+
+const startGatedScreenshot = async (page: Page) => {
+  await controlImageEncoding(page, { isGated: true });
+  await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+  await expect.poll(() => getClipboardWriteCallCount(page)).toBe(1);
+  await expect.poll(() => getPendingImageEncodingCount(page)).toBe(1);
+};
+
+const expectScreenshotCancelled = async (
+  reactGrab: ReactGrabPageObject,
+  page: Page,
+  pageErrors: string[],
+) => {
+  await openImageEncodingGate(page);
+  await expect.poll(() => getSettledClipboardWriteCount(page)).toBe(1);
+  expect(await getImageWrites(page)).toHaveLength(0);
+  const overlayHost = reactGrab.getOverlayHost();
+  await expect(
+    overlayHost.locator(COMPLETION_SELECTOR).filter({ hasText: "Image copied" }),
+  ).toHaveCount(0);
+  await expect(overlayHost.locator(ERROR_SELECTOR)).toHaveCount(0);
+  await expect(overlayHost.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+  expect(await getUnhandledRejections(page)).toEqual([]);
+  expect(pageErrors).toEqual([]);
 };
 
 const parseRgb = (cssColor: string) => {
@@ -718,6 +746,79 @@ test.describe("Screenshot capture", () => {
 
     await page.keyboard.up("Shift");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+  });
+
+  test("Escape while the image renders drops it silently and switches Grab off", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await startGatedScreenshot(page);
+
+    await page.keyboard.press("Escape");
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    await expectScreenshotCancelled(reactGrab, page, pageErrors);
+  });
+
+  test("deactivating Grab through the API while the image renders drops it silently", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await startGatedScreenshot(page);
+
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    await expectScreenshotCancelled(reactGrab, page, pageErrors);
+  });
+
+  test("a grab made while the image renders keeps its text and drops the image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await startGatedScreenshot(page);
+
+    const todoCenter = await getTodoItemCenter(page, 0);
+    await page.mouse.click(todoCenter.x, todoCenter.y);
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    const clickedText = await reactGrab.getClipboardContent();
+
+    await expectScreenshotCancelled(reactGrab, page, pageErrors);
+    expect(await reactGrab.getClipboardContent()).toBe(clickedText);
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toHaveCount(1);
+    await expect(completion).toContainText("Copied");
+  });
+
+  test("a second Shift+drag while the first image renders delivers only the second", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await startGatedScreenshot(page);
+
+    await shiftDrag(page, CAPTURE_START, SECOND_CAPTURE_END);
+    await expect.poll(() => getClipboardWriteCallCount(page)).toBe(2);
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(2);
+    await openImageEncodingGate(page);
+
+    await expect.poll(() => getSettledClipboardWriteCount(page)).toBe(2);
+    const completion = getCompletion(reactGrab);
+    await expect(completion.filter({ hasText: "Image copied" })).toHaveCount(1);
+    const imageWrites = await getImageWrites(page);
+    expect(imageWrites).toHaveLength(1);
+    const expectedSize = await getExpectedPixelSize(
+      page,
+      SECOND_CAPTURE_END.x - CAPTURE_START.x,
+      SECOND_CAPTURE_END.y - CAPTURE_START.y,
+    );
+    expect({ width: imageWrites[0].width, height: imageWrites[0].height }).toEqual(expectedSize);
+    await expect(reactGrab.getOverlayHost().locator(ERROR_SELECTOR)).toHaveCount(0);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 
   test("Shift let go just before an undersized drag ends copies it like a plain drag", async ({

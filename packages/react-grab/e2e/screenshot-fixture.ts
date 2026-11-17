@@ -15,6 +15,7 @@ interface ScreenshotRecorder {
   imageWrites: RecordedImageWrite[];
   imageBlobs: Blob[];
   writeCallCount: number;
+  settledWriteCount: number;
   copyEventCount: number;
   unhandledRejections: string[];
   revokedObjectUrls: string[];
@@ -24,6 +25,7 @@ interface ScreenshotRecorder {
 interface ScreenshotRecorderWindow extends Window {
   __screenshotRecorder?: ScreenshotRecorder;
   __openImageEncodingGate?: () => void;
+  __getPendingImageEncodingCount?: () => number;
 }
 
 interface ImageEncodingOptions {
@@ -72,6 +74,7 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
       imageWrites: [],
       imageBlobs: [],
       writeCallCount: 0,
+      settledWriteCount: 0,
       copyEventCount: 0,
       unhandledRejections: [],
       revokedObjectUrls: [],
@@ -95,21 +98,25 @@ export const installClipboardRecorder = (page: Page, options: ClipboardRecorderO
     });
     navigator.clipboard.write = async (items: ClipboardItem[]) => {
       recorder.writeCallCount += 1;
-      if (shouldReject) throw new DOMException("Write permission denied.", "NotAllowedError");
-      await gate;
-      for (const item of items) {
-        const readText = async (type: string) =>
-          item.types.includes(type) ? (await item.getType(type)).text() : null;
-        const blob = await item.getType("image/png");
-        const bitmap = await createImageBitmap(blob);
-        recorder.imageBlobs.push(blob);
-        recorder.imageWrites.push({
-          types: [...item.types],
-          width: bitmap.width,
-          height: bitmap.height,
-          plainText: await readText("text/plain"),
-          html: await readText("text/html"),
-        });
+      try {
+        if (shouldReject) throw new DOMException("Write permission denied.", "NotAllowedError");
+        await gate;
+        for (const item of items) {
+          const readText = async (type: string) =>
+            item.types.includes(type) ? (await item.getType(type)).text() : null;
+          const blob = await item.getType("image/png");
+          const bitmap = await createImageBitmap(blob);
+          recorder.imageBlobs.push(blob);
+          recorder.imageWrites.push({
+            types: [...item.types],
+            width: bitmap.width,
+            height: bitmap.height,
+            plainText: await readText("text/plain"),
+            html: await readText("text/html"),
+          });
+        }
+      } finally {
+        recorder.settledWriteCount += 1;
       }
     };
   }, options);
@@ -126,6 +133,7 @@ export const controlImageEncoding = (page: Page, options: ImageEncodingOptions) 
       isGateOpen = true;
       for (const runEncoding of pendingEncodings.splice(0)) runEncoding();
     };
+    recorderWindow.__getPendingImageEncodingCount = () => pendingEncodings.length;
     HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
       const runEncoding = () => {
         if (shouldFail) callback(null);
@@ -146,6 +154,18 @@ export const openClipboardGate = (page: Page) =>
   page.evaluate(() => {
     const recorderWindow: ScreenshotRecorderWindow = window;
     recorderWindow.__screenshotRecorder?.openGate();
+  });
+
+export const getPendingImageEncodingCount = (page: Page) =>
+  page.evaluate(() => {
+    const recorderWindow: ScreenshotRecorderWindow = window;
+    return recorderWindow.__getPendingImageEncodingCount?.() ?? 0;
+  });
+
+export const getSettledClipboardWriteCount = (page: Page) =>
+  page.evaluate(() => {
+    const recorderWindow: ScreenshotRecorderWindow = window;
+    return recorderWindow.__screenshotRecorder?.settledWriteCount ?? 0;
   });
 
 export const getImageWrites = (page: Page) =>
