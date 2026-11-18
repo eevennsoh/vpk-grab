@@ -103,9 +103,10 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
   };
 
   return (
-    <div data-react-grab-pill-prompt class="flex flex-1 items-center min-w-[96px] ml-1.5">
+    <div data-react-grab-pill-prompt class="flex items-center min-w-0 ml-1.5">
       <PromptTextarea
         ref={(element) => (textareaRef = element)}
+        class="min-w-0"
         value={promptText()}
         shouldFocusOnMount={props.shouldFocus}
         onValueChange={setPromptText}
@@ -239,6 +240,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
           </Show>
           <span
             class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-sans font-medium h-fit tabular-nums overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
+            classList={{ "shrink-0": Boolean(props.onSubmitPrompt) }}
             textContent={displayStatusText()}
           />
           <Show when={props.onSubmitPrompt}>

@@ -84,13 +84,14 @@ const relinkElement = (element: Element): Element => {
 };
 
 // Re-resolves every element the overlay anchors to — the selection, the hover
-// target, the context-menu target, and the post-copy "Copied" labels and
-// grabbed-box flashes — so they all follow the same DOM swaps. Run on the
-// recalc interval; assigning the same reference back is a no-op for solid, so
-// connected elements produce no store notifications. Each slot is relinked in
-// place: frozenElement is NOT re-derived from frozenElements[0] here, because
-// enterPromptMode sets it standalone (prompt on a non-first multi-selected
-// element) and re-deriving would snap the prompt back to the first selection.
+// target, the context-menu target, the post-copy "Copied" labels and what
+// their prompt copies, and grabbed-box flashes — so they all follow the same
+// DOM swaps. Run on the recalc interval; assigning the same reference back is
+// a no-op for solid, so connected elements produce no store notifications.
+// Each slot is relinked in place: frozenElement is NOT re-derived from
+// frozenElements[0] here, because enterPromptMode sets it standalone (prompt
+// on a non-first multi-selected element) and re-deriving would snap the
+// prompt back to the first selection.
 const relinkSlots = (draft: GrabStore): void => {
   for (let index = 0; index < draft.frozenElements.length; index += 1) {
     draft.frozenElements[index] = relinkElement(draft.frozenElements[index]);
@@ -104,6 +105,13 @@ const relinkSlots = (draft: GrabStore): void => {
     if (instance.elements) {
       for (let index = 0; index < instance.elements.length; index += 1) {
         instance.elements[index] = relinkElement(instance.elements[index]);
+      }
+    }
+    if (instance.promptTarget) {
+      const promptTarget = instance.promptTarget;
+      promptTarget.primaryElement = relinkElement(promptTarget.primaryElement);
+      for (let index = 0; index < promptTarget.elements.length; index += 1) {
+        promptTarget.elements[index] = relinkElement(promptTarget.elements[index]);
       }
     }
   }
@@ -617,6 +625,9 @@ const createGrabStore = (input: GrabStoreInput) => {
       if (instance.element) trackElementAnchor(instance.element);
       for (const instanceElement of instance.elements ?? []) {
         trackElementAnchor(instanceElement);
+      }
+      for (const promptTargetElement of instance.promptTarget?.elements ?? []) {
+        trackElementAnchor(promptTargetElement);
       }
       setStore("labelInstances", (instances) => [...instances, instance]);
     },

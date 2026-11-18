@@ -182,6 +182,30 @@ describe("createLabelController", () => {
     expect(labelInstances[0]?.status).toBe("copied");
   });
 
+  it("cancels one label's screenshot capture and leaves the others running", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const elements = [createElementAt(0, 40), createElementAt(100, 40)];
+    const [firstInstanceId, secondInstanceId] = controller.createPerElementInstances(
+      elements.map((element) => ({ element, tagName: "li" })),
+      "copying",
+    );
+    controller.updateAfterCopy(firstInstanceId, true);
+    controller.updateAfterCopy(secondInstanceId, true);
+    const firstCaptureSignal = controller.startScreenshotCapture(firstInstanceId);
+    const secondCaptureSignal = controller.startScreenshotCapture(secondInstanceId);
+
+    controller.cancelScreenshotCapture(firstInstanceId);
+
+    expect(firstCaptureSignal.aborted).toBe(true);
+    expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
+    expect(secondCaptureSignal.aborted).toBe(false);
+    expect(labelInstances[1]?.isCapturingScreenshot).toBe(true);
+  });
+
   it("cancels a label's screenshot capture when the label is dismissed or replaced", () => {
     const labelInstances: SelectionLabelInstance[] = [];
     const controller = createLabelController(

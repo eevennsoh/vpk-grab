@@ -7,6 +7,7 @@ const LIVE_LABEL_SELECTOR =
   "[data-react-grab-selection-label]:not([data-react-grab-label-instance])";
 const INSTANCE_LABEL_SELECTOR = "[data-react-grab-selection-label][data-react-grab-label-instance]";
 const COMPLETION_SELECTOR = "[data-react-grab-completion]";
+const REDLINE_SIZE_SELECTOR = "[data-react-grab-redline-size]";
 const SPACING_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-redlines"]';
 const OUTER_BLOCK_ID = "hover-label-outer";
 const INNER_BLOCK_ID = "hover-label-inner";
@@ -130,17 +131,6 @@ const clickAt = async (reactGrab: ReactGrabPageObject, page: Page, point: Point)
   );
 };
 
-// A press on the toolbar dismisses every pill and leaves Grab on; the second
-// press puts the spacing toggle back as it was.
-const dismissPillsKeepingGrabOn = async (reactGrab: ReactGrabPageObject, page: Page) => {
-  const spacingToggle = page.locator(SPACING_TOGGLE_SELECTOR);
-  await spacingToggle.click();
-  await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
-  await spacingToggle.click();
-  await expect(spacingToggle).toHaveAttribute("aria-pressed", "false");
-  expect(await reactGrab.getState()).toMatchObject({ isActive: true });
-};
-
 test.describe("Hover label beside a Copied pill", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await injectBlocks(page);
@@ -164,7 +154,8 @@ test.describe("Hover label beside a Copied pill", () => {
     await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
 
-    await dismissPillsKeepingGrabOn(reactGrab, page);
+    await reactGrab.dismissCopiedPills();
+    expect(await reactGrab.getState()).toMatchObject({ isActive: true });
     await moveTo(page, getCellCenter(0));
     await expectLiveLabelFor(reactGrab, "article");
   });
@@ -254,5 +245,25 @@ test.describe("Hover label beside a Copied pill", () => {
       liveZIndex: stacking?.instanceZIndex,
       instanceZIndex: stacking?.instanceZIndex,
     });
+  });
+
+  test("with spacing on, the copied element keeps its size readout", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.locator(SPACING_TOGGLE_SELECTOR).click();
+    await moveTo(page, getCellCenter(1));
+    await expectLiveLabelFor(reactGrab, "article");
+    await expect(getLiveLabels(reactGrab)).toContainText(
+      `${CELL_SIZE.width} × ${CELL_SIZE.height}`,
+    );
+    await expect(page.locator(REDLINE_SIZE_SELECTOR)).toHaveCount(0);
+
+    await clickAt(reactGrab, page, getCellCenter(0));
+
+    await expect(getLiveLabels(reactGrab)).toHaveCount(0);
+    await expect(page.locator(REDLINE_SIZE_SELECTOR)).toHaveText(
+      `${CELL_SIZE.width} × ${CELL_SIZE.height}`,
+    );
   });
 });

@@ -30,7 +30,7 @@ export const PromptTextarea: Component<PromptTextareaProps> = (props) => {
       aria-label="Add context for selected element"
       aria-keyshortcuts="Enter Escape"
       class={cn(
-        "text-[var(--rg-text-primary)] text-[13px] leading-4 font-medium bg-transparent border-none resize-none flex-1 p-0 m-0 wrap-break-word overflow-y-auto",
+        "text-[var(--rg-text-primary)] text-[13px] leading-4 font-medium bg-transparent border-none resize-none p-0 m-0 wrap-break-word overflow-y-auto",
         props.class,
       )}
       style={{

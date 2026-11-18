@@ -37,6 +37,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
     Boolean(
       props.selectionLabelVisible &&
       props.selectionBounds &&
+      !props.isSelectionLabelCovered &&
       (props.frozenLabelEntryAccessors?.length ?? 0) === 0,
     );
   const selectionSizeText = () => {
@@ -174,7 +175,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           />
         )}
       </Show>
-      <Show when={isSelectionLabelShown() && !props.isSelectionLabelCovered}>
+      <Show when={isSelectionLabelShown()}>
         <SelectionLabel
           tagName={props.selectionTagName}
           componentName={props.selectionComponentName}

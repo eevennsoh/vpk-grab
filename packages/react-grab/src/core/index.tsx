@@ -200,6 +200,8 @@ import { collectCleanupError } from "../utils/collect-cleanup-error.js";
 import { throwCollectedErrors } from "../utils/throw-collected-errors.js";
 import { doesLabelInstanceCoverElement } from "../utils/does-label-instance-cover-element.js";
 import { isKeyOwnedByPillPrompt } from "../utils/is-key-owned-by-pill-prompt.js";
+import { blurFocusedPillPrompt } from "../utils/blur-focused-pill-prompt.js";
+import { getConnectedPromptTarget } from "../utils/get-connected-prompt-target.js";
 import { isPillPromptEvent } from "../utils/is-pill-prompt-event.js";
 import { isTextFieldKeyEvent } from "../utils/is-text-field-key-event.js";
 
@@ -401,15 +403,24 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
     // Shift and Alt typed into a specs field are text, not a pin or a measure,
-    // and so is one pressed while the pill's prompt holds text. Its release
-    // always counts, so a key let go once the prompt has filled up cannot
-    // leave the modifier stuck.
+    // and so is one pressed while the pill's prompt holds text. A keyup from
+    // the prompt may only clear a modifier: whichever key is let go, a release
+    // cannot leave one stuck, and a letter let go while Shift is still down
+    // cannot adopt the Shift its keydown was not allowed to set.
     const isSpecsFieldEvent = (event: KeyboardEvent) =>
       isEventFromOverlay(event, SPECS_INPUT_ATTRIBUTE);
-    const isTypedModifierEvent = (event: KeyboardEvent) =>
-      isSpecsFieldEvent(event) || (event.type === "keydown" && isKeyOwnedByPillPrompt(event));
-    const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey, isTypedModifierEvent);
-    const isAltKeyHeld = createModifierTracker((event) => event.altKey, isTypedModifierEvent);
+    const createTypedModifierFilter =
+      (readModifier: (event: KeyboardEvent) => boolean) => (event: KeyboardEvent) =>
+        isSpecsFieldEvent(event) ||
+        (isPillPromptEvent(event) &&
+          (event.type === "keyup" ? readModifier(event) : isKeyOwnedByPillPrompt(event)));
+    const readShiftKey = (event: KeyboardEvent) => event.shiftKey;
+    const readAltKey = (event: KeyboardEvent) => event.altKey;
+    const isShiftKeyHeld = createModifierTracker(
+      readShiftKey,
+      createTypedModifierFilter(readShiftKey),
+    );
+    const isAltKeyHeld = createModifierTracker(readAltKey, createTypedModifierFilter(readAltKey));
     const inspect = createInspectController({
       isShiftKeyHeld,
       getElementAtPosition,
@@ -987,15 +998,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const handleSubmitPromptInstance = (instanceId: string, prompt: string) => {
+      actions.relinkLiveElements();
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
       );
-      const promptTarget = instance?.promptTarget;
-      if (instance?.status !== "copied" || !promptTarget) return;
+      if (instance?.status !== "copied" || !instance.promptTarget) return;
+      const promptTarget = getConnectedPromptTarget(instance.promptTarget);
+      if (!promptTarget) {
+        actions.patchLabelInstance(instanceId, { promptTarget: undefined });
+        return;
+      }
+      labelController.cancelScreenshotCapture(instanceId);
       labelController.startPromptCopy(instanceId, "Copied with prompt");
       runLabeledCopy({
         primaryElement: promptTarget.primaryElement,
-        targetElements: [...promptTarget.elements],
+        targetElements: promptTarget.elements,
         labelInstanceIds: [instanceId],
         extraPrompt: prompt,
       });
@@ -1907,6 +1924,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
       if (keydownSpamTimerId) window.clearTimeout(keydownSpamTimerId);
       autoScroller.stop();
+      blurFocusedPillPrompt();
       returnFocusToPage(previousFocused);
       pluginRegistry.hooks.onDeactivate();
     };
@@ -3354,8 +3372,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: KeyboardEvent) => {
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
-        if (isKeyOwnedByPillPrompt(event)) return;
-        if (blockEnterIfNeeded(event)) return;
+        // A key the pill's prompt owns is still a release: it may end a hold
+        // session or a Shift multi-selection, which only a keyup can do.
+        const isOwnedByPillPrompt = isKeyOwnedByPillPrompt(event);
+        if (!isOwnedByPillPrompt && blockEnterIfNeeded(event)) return;
 
         if (event.key === "Shift" && isShiftMultiSelecting()) {
           // If shift is released mid-drag, abort the in-progress drag
@@ -3392,6 +3412,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         const isReleasingActivationKey = pluginRegistry.store.options.activationKey
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
+        if (isOwnedByPillPrompt && !isReleasingActivationKey && !isReleasingModifier) return;
 
         if (
           toggleShortcutPressTimestampMs !== null &&
@@ -4260,6 +4281,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           ));
       if (
         previousInstance &&
+        previousInstance.element === instance.element &&
         previousInstance.status === instance.status &&
         previousInstance.errorMessage === instance.errorMessage &&
         previousInstance.statusText === instance.statusText &&

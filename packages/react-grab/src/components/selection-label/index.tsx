@@ -441,6 +441,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
                 <div class="shrink-0 flex justify-between items-end w-full min-h-4">
                   <PromptTextarea
                     ref={(element) => (inputRef = element)}
+                    class="flex-1"
                     value={props.inputValue ?? ""}
                     readOnly={!props.onSubmit}
                     shouldFocusOnMount={Boolean(props.onSubmit)}

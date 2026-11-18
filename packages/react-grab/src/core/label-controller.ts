@@ -82,6 +82,7 @@ interface LabelController {
   setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
   startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
+  cancelScreenshotCapture: (instanceId: string) => void;
   cancelScreenshotCaptures: () => void;
   dismissInstance: (instanceId: string) => void;
   dismissCompleted: () => void;
@@ -305,10 +306,15 @@ export const createLabelController = (
     });
   };
 
+  const cancelScreenshotCapture = (instanceId: string) => {
+    if (!screenshotCaptureControllers.has(instanceId)) return;
+    abortScreenshotCapture(instanceId);
+    store.patchLabelInstance(instanceId, { isCapturingScreenshot: undefined });
+  };
+
   const cancelScreenshotCaptures = () => {
     for (const instanceId of [...screenshotCaptureControllers.keys()]) {
-      abortScreenshotCapture(instanceId);
-      store.patchLabelInstance(instanceId, { isCapturingScreenshot: undefined });
+      cancelScreenshotCapture(instanceId);
     }
   };
 
@@ -344,6 +350,7 @@ export const createLabelController = (
     setImage,
     startScreenshotCapture,
     failScreenshotCapture,
+    cancelScreenshotCapture,
     cancelScreenshotCaptures,
     dismissInstance,
     dismissCompleted,
