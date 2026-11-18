@@ -153,6 +153,11 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
 
   const elementIdentity = () => `${props.tagName ?? ""}:${props.componentName ?? ""}`;
 
+  const getLabelViewport = () => {
+    viewportVersion();
+    return getVisualViewport();
+  };
+
   // This reducer-style memo preserves position state across reactive updates,
   // resetting to offscreen on element identity change and keeping the last
   // good position when measurements briefly fail (via hadValidBounds). It
@@ -160,7 +165,6 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
   // @see https://github.com/aidenybai/react-grab/pull/245
   const positionComputation = createMemo(
     (previousResult: PositionResult): PositionResult => {
-      viewportVersion();
       const currentElementIdentity = elementIdentity();
       const didReset = currentElementIdentity !== previousResult.elementIdentity;
       const cached: PositionResult = didReset
@@ -190,7 +194,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
       // Scope-aware: inside a scoped instance (demo showcases) the container's
       // box is the viewport, so the label stays within the showcase card
       // instead of spilling over the host page.
-      const viewport = getVisualViewport();
+      const viewport = getLabelViewport();
       const viewportLeft = viewport.offsetLeft;
       const viewportTop = viewport.offsetTop;
       const viewportRight = viewportLeft + viewport.width;
@@ -378,6 +382,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
         <Show when={isCompletedStatus() && !props.error}>
           <CompletionView
             statusText={props.statusText ?? "Copied"}
+            availableWidth={Math.max(0, getLabelViewport().width - 2 * VIEWPORT_MARGIN_PX)}
             thumbnailUrl={props.thumbnailUrl}
             isCapturingScreenshot={props.isCapturingScreenshot}
             screenshotError={props.screenshotError}

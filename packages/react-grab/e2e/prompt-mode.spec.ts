@@ -1,6 +1,10 @@
 import { test, expect } from "./fixtures.js";
 import { MOUNT_ROOT_RECHECK_DELAY_MS } from "../src/constants.js";
-import { NON_NATIVE_ACTIVATION_KEY, OUTSIDE_WINDOW_POSITION_PX } from "./constants.js";
+import {
+  NON_NATIVE_ACTIVATION_KEY,
+  OUTSIDE_WINDOW_POSITION_PX,
+  POINTER_SETTLE_DELAY_MS,
+} from "./constants.js";
 import { getCopyEventCount, installClipboardRecorder } from "./screenshot-fixture.js";
 import { installSpecsFixture, pinAndReach, specRow, switchOnSpecs } from "./specs-panel-fixture.js";
 
@@ -476,48 +480,62 @@ test.describe("Enter copies first", () => {
     );
   });
 
-  test("trusted Enter during IME composition never submits or copies", async ({
-    reactGrab,
-    page,
-  }) => {
-    await page.clock.install();
-    await reactGrab.reinitialize();
-    await installClipboardRecorder(page);
-    await reactGrab.activate();
-    await reactGrab.hoverUntilSelected(targetSelector);
-    await page.keyboard.press("Enter");
-    await expect(page.locator(pillPromptSelector)).toBeFocused();
-    const browserSession = await page.context().newCDPSession(page);
-    await browserSession.send("Input.imeSetComposition", {
-      text: "青",
-      selectionStart: 1,
-      selectionEnd: 1,
+  for (const restackHost of [false, true]) {
+    const title = restackHost
+      ? "restacking the host preserves focus and a trusted composing Enter"
+      : "trusted Enter during IME composition never submits or copies";
+    test(title, async ({ reactGrab, page }) => {
+      await page.clock.install({ time: new Date(0) });
+      await page.clock.pauseAt(Date.now());
+      await reactGrab.reinitialize();
+      await installClipboardRecorder(page);
+      await reactGrab.activate();
+      await page.locator(targetSelector).hover({ force: true });
+      await page.clock.runFor(POINTER_SETTLE_DELAY_MS);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(pillPromptSelector)).toBeFocused();
+      const host = reactGrab.getOverlayHost();
+      await host.evaluate((element) => document.body.moveBefore(element, null));
+      const isHostLast = () =>
+        host.evaluate((element) => element === document.body.lastElementChild);
+      const browserSession = await page.context().newCDPSession(page);
+      await browserSession.send("Input.imeSetComposition", {
+        text: "青",
+        selectionStart: 1,
+        selectionEnd: 1,
+      });
+      if (restackHost) {
+        await page.evaluate(() => document.body.append(document.createElement("div")));
+      }
+      expect(await isHostLast()).toBe(!restackHost);
+      await page.clock.fastForward(MOUNT_ROOT_RECHECK_DELAY_MS);
+      expect(await isHostLast()).toBe(true);
+      await expect(page.locator(pillPromptSelector)).toBeFocused();
+      await page.locator(pillPromptSelector).evaluate((textarea) => {
+        textarea.addEventListener(
+          "keydown",
+          (event) => {
+            if (event instanceof KeyboardEvent)
+              document.documentElement.dataset.composingEnter = String(
+                event.isTrusted && event.isComposing,
+              );
+          },
+          { once: true },
+        );
+      });
+      await page.keyboard.press("Enter");
+      await expect(page.locator("html")).toHaveAttribute("data-composing-enter", "true");
+      expect(await page.locator(pillPromptSelector).inputValue()).toContain("青");
+      expect(await getCopyEventCount(page)).toBe(1);
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
+      await browserSession.send("Input.imeSetComposition", {
+        text: "",
+        selectionStart: 0,
+        selectionEnd: 0,
+      });
+      await browserSession.detach();
     });
-    await page.clock.fastForward(MOUNT_ROOT_RECHECK_DELAY_MS);
-    await page.locator(pillPromptSelector).evaluate((textarea) => {
-      textarea.addEventListener(
-        "keydown",
-        (event) => {
-          if (event instanceof KeyboardEvent)
-            document.documentElement.dataset.composingEnter = String(
-              event.isTrusted && event.isComposing,
-            );
-        },
-        { once: true },
-      );
-    });
-    await page.keyboard.press("Enter");
-    await expect(page.locator("html")).toHaveAttribute("data-composing-enter", "true");
-    expect(await page.locator(pillPromptSelector).inputValue()).toContain("青");
-    expect(await getCopyEventCount(page)).toBe(1);
-    expect(await reactGrab.isPromptModeActive()).toBe(false);
-    await browserSession.send("Input.imeSetComposition", {
-      text: "",
-      selectionStart: 0,
-      selectionEnd: 0,
-    });
-    await browserSession.detach();
-  });
+  }
 });
 
 test.describe("Enter and Escape review corrections", () => {

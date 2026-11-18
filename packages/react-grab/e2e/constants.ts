@@ -118,3 +118,4 @@ export const IMAGE_AND_TEXT_TYPES = ["image/png", "text/html", "text/plain"];
 export const IMAGE_AND_GRAB_TYPES = [...IMAGE_AND_TEXT_TYPES, WEB_GRAB_CLIPBOARD_TYPE];
 
 export const SAVED_IMAGE_PILL_MIN_SLACK_PX = 8;
+export const NARROW_PILL_VIEWPORT_PX = { width: 250, height: 720 };

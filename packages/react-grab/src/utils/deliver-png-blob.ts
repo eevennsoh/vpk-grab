@@ -34,7 +34,8 @@ export const deliverPngBlob = async (
           "text/plain": new Blob([textContent], { type: "text/plain" }),
           "text/html": new Blob([getClipboardHtml(textContent)], { type: "text/html" }),
         };
-  // Chromium can prompt for a custom format even inside a click. Use only an existing grant.
+  // Without an existing unsanitized write grant, Chromium rejects the entire write
+  // with NotAllowedError when it includes a custom format, even inside a click.
   if (
     unsanitizedWritePermission === "granted" &&
     textContent !== undefined &&

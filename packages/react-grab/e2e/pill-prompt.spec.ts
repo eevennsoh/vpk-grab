@@ -1,9 +1,12 @@
 // A text copy's Copied pill carries a prompt input: Enter with text copies the
 // same elements again with the prompt, as prompt mode would.
 import type { Page } from "@playwright/test";
+import { VIEWPORT_MARGIN_PX } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
+  NARROW_PILL_VIEWPORT_PX,
+  NON_NATIVE_ACTIVATION_KEY,
   PILL_DISMISS_PARENT_RECT_PX,
   PILL_DISMISS_TARGET_HEIGHT_PX,
   PILL_DISMISS_Z_INDEX,
@@ -50,7 +53,6 @@ const SINGLE_LINE_HEIGHT_PX = 16;
 const PILL_MAX_WIDTH_PX = 280;
 const PILL_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
 const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
-const HELD_ACTIVATION_KEY = "F8";
 const PROMPT_TEXT = "make this blue";
 const LONG_PROMPT_TEXT = "make this button blue and give it a little more room on both sides";
 const EDGE_TARGET_ID = "pill-prompt-edge-target";
@@ -336,13 +338,16 @@ test.describe("Copied pill prompt", () => {
   });
 
   test("Dismiss leaves a released hold session off", async ({ reactGrab, page }) => {
-    await reactGrab.updateOptions({ activationMode: "hold", activationKey: HELD_ACTIVATION_KEY });
-    await page.keyboard.down(HELD_ACTIVATION_KEY);
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     try {
       await expect.poll(() => isReactGrabActive(page)).toBe(true);
       await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     } finally {
-      await page.keyboard.up(HELD_ACTIVATION_KEY);
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
     }
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
 
@@ -631,8 +636,11 @@ test.describe("Copied pill prompt", () => {
   });
 
   test("a hold session shows the prompt without taking focus", async ({ reactGrab, page }) => {
-    await reactGrab.updateOptions({ activationMode: "hold", activationKey: HELD_ACTIVATION_KEY });
-    await page.keyboard.down(HELD_ACTIVATION_KEY);
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     try {
       await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
       await expect.poll(() => isReactGrabActive(page)).toBe(true);
@@ -640,7 +648,7 @@ test.describe("Copied pill prompt", () => {
       await page.waitForTimeout(NO_SECOND_COPY_WAIT_MS);
       expect(await isFocusInOverlay(page)).toBe(false);
     } finally {
-      await page.keyboard.up(HELD_ACTIVATION_KEY);
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
     }
 
     await getPillPrompt(reactGrab).click();
@@ -729,6 +737,50 @@ test.describe("Copied pill prompt", () => {
     await expect(getPillPrompt(reactGrab)).toHaveValue(LONG_PROMPT_TEXT);
     await expectInsideViewport();
   });
+
+  for (const status of ["Copied", "Copied with image"]) {
+    test(`the ${status} pill fits a narrow viewport and Dismiss is clickable`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await installClipboardRecorder(page);
+      await reactGrab.activate();
+      if (status === "Copied with image") await switchOnScreenshotToggle(page);
+      await page.setViewportSize(NARROW_PILL_VIEWPORT_PX);
+      await addEdgeTarget(page);
+      await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
+      const completion = getCompletion(reactGrab);
+      await expect(completion).toContainText(status);
+      await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(
+        status === "Copied with image" ? 1 : 0,
+      );
+      const expectPillWithinMargins = () =>
+        expect
+          .poll(() =>
+            completion.evaluate((pill) => {
+              const { left, right } = pill.getBoundingClientRect();
+              return Math.min(left, window.innerWidth - right);
+            }),
+          )
+          .toBeGreaterThanOrEqual(VIEWPORT_MARGIN_PX);
+      await expectPillWithinMargins();
+      await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
+      await expectPillWithinMargins();
+      expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
+        SINGLE_LINE_HEIGHT_PX,
+      );
+
+      if (status === "Copied") {
+        const camera = completion.locator(CAMERA_BUTTON_SELECTOR);
+        await expect(camera).toBeInViewport({ ratio: 1 });
+        await camera.click({ trial: true });
+      }
+      const dismiss = completion.locator(DISMISS_BUTTON_SELECTOR);
+      await expect(dismiss).toBeInViewport({ ratio: 1 });
+      await dismiss.click();
+      await expect(completion).toHaveCount(0);
+    });
+  }
 
   test("a copy inside a same-origin frame takes a prompt", async ({ reactGrab, page }) => {
     await reactGrab.activate();
@@ -859,8 +911,11 @@ test.describe("Copied pill prompt", () => {
     reactGrab,
     page,
   }) => {
-    await reactGrab.updateOptions({ activationMode: "hold", activationKey: HELD_ACTIVATION_KEY });
-    await page.keyboard.down(HELD_ACTIVATION_KEY);
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     try {
       await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
       await expect.poll(() => isReactGrabActive(page)).toBe(true);
@@ -870,7 +925,7 @@ test.describe("Copied pill prompt", () => {
       await expect(getPillPrompt(reactGrab)).toHaveValue("ab");
       expect(await isReactGrabActive(page)).toBe(true);
     } finally {
-      await page.keyboard.up(HELD_ACTIVATION_KEY);
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
     }
 
     await expect.poll(() => isReactGrabActive(page)).toBe(false);

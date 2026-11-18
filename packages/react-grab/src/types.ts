@@ -608,6 +608,7 @@ export interface ErrorViewProps {
 
 export interface CompletionViewProps {
   statusText: string;
+  availableWidth: number;
   thumbnailUrl?: string;
   isCapturingScreenshot?: boolean;
   screenshotError?: string;
