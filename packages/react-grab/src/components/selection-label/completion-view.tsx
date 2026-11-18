@@ -166,7 +166,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
         "max-width": hasThumbnailBesidePrompt()
           ? `${COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX}px`
           : undefined,
-        width: hasThumbnailBesidePrompt() ? "max-content" : undefined,
+        width: props.onSubmitPrompt ? "max-content" : undefined,
       }}
       onPointerDown={claimFocus}
       onClick={claimFocus}

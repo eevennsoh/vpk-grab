@@ -10,6 +10,7 @@ import {
   PILL_MODIFIER_RELEASE_DELAY_MS,
   SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS,
   SHIFT_LABEL_SETTLE_DELAY_MS,
+  SAVED_IMAGE_PILL_MIN_SLACK_PX,
 } from "./constants.js";
 import {
   controlImageEncoding,
@@ -47,7 +48,7 @@ const SHORT_PROMPT_TEXT = "make this a bit wider";
 const PLACEHOLDER_SLACK_PX = 2;
 const SINGLE_LINE_HEIGHT_PX = 16;
 const PILL_MAX_WIDTH_PX = 280;
-const PILL_WITH_THUMBNAIL_MAX_WIDTH_PX = 300;
+const PILL_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
 const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
 const HELD_ACTIVATION_KEY = "F8";
 const PROMPT_TEXT = "make this blue";
@@ -151,6 +152,7 @@ const measurePillPrompt = (reactGrab: ReactGrabPageObject) =>
     return {
       isStatusTextClipped: Boolean(statusText && statusText.scrollWidth > statusText.clientWidth),
       pillWidth: completion.getBoundingClientRect().width,
+      maxWidth: Number.parseFloat(getComputedStyle(completion).maxWidth),
       promptWidth: promptContainer.getBoundingClientRect().width,
       textareaHeight: textarea.getBoundingClientRect().height,
       placeholderWidth: measuringContext.measureText(textarea.placeholder).width,
@@ -980,27 +982,42 @@ test.describe("Copied pill prompt", () => {
     expect(longPrompt.isStatusTextClipped).toBe(false);
   });
 
-  test("with an image at the right edge the pill keeps the whole placeholder inside the viewport", async ({
-    reactGrab,
-    page,
-  }) => {
-    await installClipboardRecorder(page);
-    await addEdgeTarget(page);
-    await reactGrab.activate();
-    await switchOnScreenshotToggle(page);
-    await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+  for (const status of ["Copied", "Copied with image", "Copied, image saved"]) {
+    test(`the ${status} pill at the right edge keeps the whole placeholder inside the viewport`, async ({
+      reactGrab,
+      page,
+    }) => {
+      if (status === "Copied, image saved") {
+        await page.evaluate(() => {
+          Object.defineProperty(navigator.clipboard, "write", { value: undefined });
+        });
+      } else if (status === "Copied with image") {
+        await installClipboardRecorder(page);
+      }
+      await addEdgeTarget(page);
+      await reactGrab.activate();
+      if (status !== "Copied") await switchOnScreenshotToggle(page);
+      await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
+      await expect(getCompletion(reactGrab)).toContainText(status);
+      await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(
+        status === "Copied" ? 0 : 1,
+      );
 
-    await expect
-      .poll(async () => {
-        const emptyPrompt = await measurePillPrompt(reactGrab);
-        return emptyPrompt.promptWidth >= emptyPrompt.placeholderWidth;
-      })
-      .toBe(true);
-    const pillBox = await getCompletion(reactGrab).boundingBox();
-    if (!pillBox) throw new Error("No pill box");
-    expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
-  });
+      const emptyPrompt = await measurePillPrompt(reactGrab);
+      if (status === "Copied, image saved") {
+        expect(emptyPrompt.maxWidth - emptyPrompt.pillWidth).toBeGreaterThanOrEqual(
+          SAVED_IMAGE_PILL_MIN_SLACK_PX,
+        );
+      }
+      expect(emptyPrompt.promptWidth).toBeGreaterThanOrEqual(emptyPrompt.placeholderWidth);
+      expect(emptyPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
+      expect(emptyPrompt.isStatusTextClipped).toBe(false);
+      const pillBox = await getCompletion(reactGrab).boundingBox();
+      if (!pillBox) throw new Error("No pill box");
+      expect(pillBox.x).toBeGreaterThanOrEqual(0);
+      expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
+    });
+  }
 });
 
 test.describe("Copied pill prompt on touch", () => {
