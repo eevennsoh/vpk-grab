@@ -167,10 +167,11 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      class="shrink-0 flex flex-col justify-center items-end w-fit h-fit transition-opacity duration-100 ease-out"
+      class="shrink-0 flex flex-col justify-center items-end w-fit h-fit max-w-(--completion-max-width) has-placeholder-shown:max-w-(--available-width) transition-opacity duration-100 ease-out"
       style={{
         opacity: isFading() ? 0 : 1,
-        "max-width": `${maxWidth()}px`,
+        "--completion-max-width": `${maxWidth()}px`,
+        "--available-width": `${props.availableWidth}px`,
         width: props.onSubmitPrompt ? "max-content" : undefined,
       }}
       onPointerDown={claimFocus}

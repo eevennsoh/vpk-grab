@@ -10,10 +10,10 @@ import {
   PILL_DISMISS_PARENT_RECT_PX,
   PILL_DISMISS_TARGET_HEIGHT_PX,
   PILL_DISMISS_Z_INDEX,
+  PILL_MARGIN_TOLERANCE_PX,
   PILL_MODIFIER_RELEASE_DELAY_MS,
   SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS,
   SHIFT_LABEL_SETTLE_DELAY_MS,
-  SAVED_IMAGE_PILL_MIN_SLACK_PX,
 } from "./constants.js";
 import {
   controlImageEncoding,
@@ -145,21 +145,31 @@ const measurePillPrompt = (reactGrab: ReactGrabPageObject) =>
   getCompletion(reactGrab).evaluate((completion) => {
     const promptContainer = completion.querySelector<HTMLElement>("[data-react-grab-pill-prompt]");
     const textarea = promptContainer?.querySelector("textarea");
-    if (!promptContainer || !textarea) throw new Error("No pill prompt");
+    const statusText = promptContainer?.previousElementSibling;
+    if (!statusText || !textarea) throw new Error("No pill status or prompt");
     const textareaStyle = getComputedStyle(textarea);
     const measuringContext = document.createElement("canvas").getContext("2d");
     if (!measuringContext) throw new Error("No canvas context");
     measuringContext.font = textareaStyle.font;
-    const statusText = promptContainer.previousElementSibling;
     return {
-      isStatusTextClipped: Boolean(statusText && statusText.scrollWidth > statusText.clientWidth),
+      isStatusTextClipped: statusText.scrollWidth > statusText.clientWidth,
       pillWidth: completion.getBoundingClientRect().width,
-      maxWidth: Number.parseFloat(getComputedStyle(completion).maxWidth),
-      promptWidth: promptContainer.getBoundingClientRect().width,
+      promptWidth: textarea.getBoundingClientRect().width,
       textareaHeight: textarea.getBoundingClientRect().height,
+      textareaScrollHeight: textarea.scrollHeight,
       placeholderWidth: measuringContext.measureText(textarea.placeholder).width,
     };
   });
+
+const expectPillWithinMargins = (reactGrab: ReactGrabPageObject) =>
+  expect
+    .poll(() =>
+      getCompletion(reactGrab).evaluate((pill) => {
+        const { left, right } = pill.getBoundingClientRect();
+        return Math.min(left, window.innerWidth - right);
+      }),
+    )
+    .toBeGreaterThanOrEqual(VIEWPORT_MARGIN_PX - PILL_MARGIN_TOLERANCE_PX);
 
 const addEdgeTarget = (page: Page) =>
   page.evaluate(
@@ -754,18 +764,9 @@ test.describe("Copied pill prompt", () => {
       await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(
         status === "Copied with image" ? 1 : 0,
       );
-      const expectPillWithinMargins = () =>
-        expect
-          .poll(() =>
-            completion.evaluate((pill) => {
-              const { left, right } = pill.getBoundingClientRect();
-              return Math.min(left, window.innerWidth - right);
-            }),
-          )
-          .toBeGreaterThanOrEqual(VIEWPORT_MARGIN_PX);
-      await expectPillWithinMargins();
+      await expectPillWithinMargins(reactGrab);
       await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
-      await expectPillWithinMargins();
+      await expectPillWithinMargins(reactGrab);
       expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
         SINGLE_LINE_HEIGHT_PX,
       );
@@ -1027,7 +1028,7 @@ test.describe("Copied pill prompt", () => {
     expect(emptyPrompt.promptWidth).toBeGreaterThanOrEqual(emptyPrompt.placeholderWidth);
     expect(emptyPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
     expect(emptyPrompt.isStatusTextClipped).toBe(false);
-    expect(emptyPrompt.pillWidth).toBeLessThanOrEqual(PILL_WITH_THUMBNAIL_MAX_WIDTH_PX);
+    expect(emptyPrompt.textareaScrollHeight).toBe(SINGLE_LINE_HEIGHT_PX);
 
     await getPillPrompt(reactGrab).click();
     await page.keyboard.type(LONG_PROMPT_TEXT);
@@ -1037,8 +1038,13 @@ test.describe("Copied pill prompt", () => {
     expect(longPrompt.isStatusTextClipped).toBe(false);
   });
 
-  for (const status of ["Copied", "Copied with image", "Copied, image saved"]) {
-    test(`the ${status} pill at the right edge keeps the whole placeholder inside the viewport`, async ({
+  for (const { status, fontFamily } of [
+    { status: "Copied" },
+    { status: "Copied with image" },
+    { status: "Copied, image saved" },
+    { status: "Copied, image saved", fontFamily: "monospace" },
+  ]) {
+    test(`the ${status} pill at the right edge keeps the whole placeholder inside the viewport${fontFamily ? ` with ${fontFamily}` : ""}`, async ({
       reactGrab,
       page,
     }) => {
@@ -1057,20 +1063,30 @@ test.describe("Copied pill prompt", () => {
       await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(
         status === "Copied" ? 0 : 1,
       );
+      const prompt = getPillPrompt(reactGrab);
+      if (fontFamily) {
+        await reactGrab.getOverlayHost().evaluate((host, font) => {
+          host.style.setProperty("--font-sans", font);
+        }, fontFamily);
+        await expect(prompt).toHaveCSS("font-family", fontFamily);
+      }
 
       const emptyPrompt = await measurePillPrompt(reactGrab);
-      if (status === "Copied, image saved") {
-        expect(emptyPrompt.maxWidth - emptyPrompt.pillWidth).toBeGreaterThanOrEqual(
-          SAVED_IMAGE_PILL_MIN_SLACK_PX,
-        );
-      }
       expect(emptyPrompt.promptWidth).toBeGreaterThanOrEqual(emptyPrompt.placeholderWidth);
       expect(emptyPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
+      expect(emptyPrompt.textareaScrollHeight).toBe(SINGLE_LINE_HEIGHT_PX);
       expect(emptyPrompt.isStatusTextClipped).toBe(false);
-      const pillBox = await getCompletion(reactGrab).boundingBox();
-      if (!pillBox) throw new Error("No pill box");
-      expect(pillBox.x).toBeGreaterThanOrEqual(0);
-      expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
+      await expectPillWithinMargins(reactGrab);
+
+      await prompt.fill(LONG_PROMPT_TEXT);
+      const longPrompt = await measurePillPrompt(reactGrab);
+      expect(longPrompt.pillWidth).toBeCloseTo(
+        status === "Copied" ? PILL_MAX_WIDTH_PX : PILL_WITH_THUMBNAIL_MAX_WIDTH_PX,
+        0,
+      );
+      expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
+      expect(longPrompt.isStatusTextClipped).toBe(false);
+      await expectPillWithinMargins(reactGrab);
     });
   }
 });
