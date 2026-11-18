@@ -387,6 +387,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             onCopyScreenshot={props.onCopyScreenshot}
             onSubmitPrompt={props.onSubmitPrompt}
             shouldFocusPrompt={props.shouldFocusPrompt}
+            isGrabActive={props.isGrabActive}
             onPromptFocusRelease={props.onPromptFocusRelease}
           />
         </Show>
@@ -470,17 +471,11 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
           <Show when={props.discardPrompt} keyed>
             {(discardPrompt) => (
               <DiscardPrompt
-                label={
-                  discardPrompt.isKeyboardSelection ? "Discard selection?" : discardPrompt.label
-                }
-                showCancel={!discardPrompt.isKeyboardSelection}
+                label={discardPrompt.label}
                 cancelOnEscape={discardPrompt.cancelOnEscape}
                 onConfirm={discardPrompt.onConfirm}
-                onCopy={discardPrompt.onCopy}
                 onCancel={() => {
-                  if (!discardPrompt.isKeyboardSelection) {
-                    discardPrompt.onCancel?.();
-                  }
+                  discardPrompt.onCancel?.();
                   focusInOverlay(inputRef, { preventScroll: true });
                 }}
               />

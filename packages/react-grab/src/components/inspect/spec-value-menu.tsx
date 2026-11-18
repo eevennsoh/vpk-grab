@@ -11,6 +11,7 @@ import type { ElementSpecRow, SpecValueOption } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { getSpecValueOptions } from "../../utils/get-spec-value-options.js";
 import { getVisualViewport } from "../../utils/get-visual-viewport.js";
+import { registerOverlayDismiss } from "../../utils/register-overlay-dismiss.js";
 import { IconCheck } from "../icons/icon-check.js";
 
 interface SpecValueMenuProps {
@@ -94,15 +95,15 @@ export const SpecValueMenu: Component<SpecValueMenuProps> = (props) => {
         event.preventDefault();
         selectOption(filteredOptions()[highlightedIndex()]);
         return;
-      case "Escape":
-        event.preventDefault();
-        event.stopPropagation();
-        props.onClose();
-        return;
     }
   };
 
   onMount(() => {
+    const unregisterDismiss = registerOverlayDismiss({
+      isOpen: () => true,
+      onDismiss: () => props.onClose(),
+    });
+    onCleanup(unregisterDismiss);
     filterInputRef?.focus();
     const handleOutsidePress = (event: PointerEvent) => {
       if (menuRef && event.composedPath().includes(menuRef)) return;

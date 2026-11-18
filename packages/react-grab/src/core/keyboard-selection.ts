@@ -1,21 +1,15 @@
-import { createSignal, type Accessor } from "solid-js";
-import { createPointerMovePromptHandoff } from "../utils/create-pointer-move-prompt-handoff.js";
+import { createSignal } from "solid-js";
 import { isElementConnected } from "../utils/is-element-connected.js";
 
 interface KeyboardSelectionController {
   selectedElement: () => Element | null;
-  isPendingDismiss: Accessor<boolean>;
-  select: (element: Element, options?: { shouldPromptBeforeMouseHandoff?: boolean }) => void;
+  select: (element: Element) => void;
   clear: () => void;
-  consumeMouseHandoff: () => boolean;
-  showDismissPrompt: () => boolean;
   takeSelection: (fallbackElement?: Element | null) => Element | null;
 }
 
 export const createKeyboardSelectionController = (): KeyboardSelectionController => {
-  const [isPendingDismiss, setIsPendingDismiss] = createSignal(false);
   const [selectedElement, setSelectedElement] = createSignal<Element | null>(null);
-  const mouseHandoff = createPointerMovePromptHandoff();
 
   const connectedSelection = (): Element | null => {
     const element = selectedElement();
@@ -24,8 +18,6 @@ export const createKeyboardSelectionController = (): KeyboardSelectionController
 
   const clear = () => {
     setSelectedElement(null);
-    mouseHandoff.clear();
-    setIsPendingDismiss(false);
   };
 
   const takeSelection = (fallbackElement?: Element | null): Element | null => {
@@ -37,24 +29,8 @@ export const createKeyboardSelectionController = (): KeyboardSelectionController
 
   return {
     selectedElement: connectedSelection,
-    isPendingDismiss,
-    select: (element, options) => {
-      setSelectedElement(element);
-      setIsPendingDismiss(false);
-      if (options?.shouldPromptBeforeMouseHandoff) mouseHandoff.arm();
-      else mouseHandoff.clear();
-    },
+    select: setSelectedElement,
     clear,
-    consumeMouseHandoff: () => mouseHandoff.consume() && connectedSelection() !== null,
-    showDismissPrompt: () => {
-      if (!connectedSelection()) {
-        clear();
-        return false;
-      }
-      if (isPendingDismiss()) return false;
-      setIsPendingDismiss(true);
-      return true;
-    },
     takeSelection,
   };
 };

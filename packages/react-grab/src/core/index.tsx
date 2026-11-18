@@ -12,6 +12,7 @@ import {
 } from "solid-js";
 import { render } from "solid-js/web";
 import { createGrabStore } from "./store.js";
+import { overlayDismiss } from "./overlay-dismiss.js";
 import { CopyFailedError, RecoverableError } from "../errors.js";
 import {
   isKeyboardEventTriggeredByInput,
@@ -113,6 +114,7 @@ import {
   PREVIEW_TEXT_MAX_LENGTH,
   NEXTJS_REVALIDATION_DELAY_MS,
   TOOLBAR_DEFAULT_POSITION_RATIO,
+  TOOLBAR_MENU_MIN_ACTION_COUNT,
   DEFAULT_ACTION_ID,
   COMMENT_ACTION_ID,
   REACT_GRAB_INPUT_ATTRIBUTE,
@@ -401,6 +403,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       initialToolbarState,
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
+    const [isPointerOverOverlay, setIsPointerOverOverlay] = createSignal(false);
     // Shift and Alt typed into a specs field are text, not a pin or a measure,
     // and so is one pressed while the pill's prompt holds text. A keyup from
     // the prompt may only clear a modifier: whichever key is let go, a release
@@ -454,8 +457,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       null,
     );
 
-    const isAnyPopoverOpen = () =>
-      toolbarMenuActions().length > 1 && toolbarMenuPosition() !== null;
+    const isAnyPopoverOpen = () => toolbarMenuPosition() !== null || overlayDismiss.isOpen();
     let toolbarElement: HTMLDivElement | undefined;
     let stopToolbarMenuTracking: (() => void) | null = null;
 
@@ -466,7 +468,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !isEnabled() ||
       isPromptMode() ||
       isSelectionInteractionLocked() ||
-      keyboardSelection.isPendingDismiss() ||
       inspect.pinnedSpecsElement() !== null ||
       inspect.measureAnchorElement() !== null;
 
@@ -816,17 +817,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
       if (isEventFromOverlay(event, "data-react-grab-completion")) return;
+      const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
         isActivated() &&
         !isAnnotating() &&
-        toolbarActiveActionId() === (currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID) &&
+        toolbarActiveActionId() === defaultActionId &&
         event
           .composedPath()
           .some(
             (target) =>
               target instanceof Element &&
-              target.getAttribute("data-react-grab-toolbar-action") ===
-                (currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID),
+              target.getAttribute("data-react-grab-toolbar-action") === defaultActionId,
           )
       )
         return;
@@ -839,15 +840,28 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       returnFocusToPage();
     };
 
+    const dismissPopoverOnEscape = (event: KeyboardEvent): boolean => {
+      if (isKeyboardEventComposing(event)) return false;
+      if (overlayDismiss.onEscape(event)) return true;
+      if (event.code !== "Escape" || hierarchyMenuPosition() === null) return false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      clearKeyboardNavigation();
+      actions.unfreeze();
+      return true;
+    };
+
     const dismissCompletedLabelsOnEscape = (event: KeyboardEvent): boolean => {
       if (
         event.code !== "Escape" ||
         isKeyboardEventComposing(event) ||
-        !store.labelInstances.some(
-          (instance) => instance.status === "copied" || instance.status === "fading",
-        )
+        !store.labelInstances.some((instance) => instance.status === "copied")
       )
         return false;
+      if (!isActivated() && !isHoldingKeys() && !isCopying()) {
+        labelController.dismissCompleted();
+        return false;
+      }
       dismissCompletedPills();
       if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
       return !isDragging();
@@ -1311,8 +1325,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         !isRendererActive() ||
         isAnnotating() ||
         isDraggingBeyondThreshold() ||
-        isSelectionInteractionLocked() ||
-        keyboardSelection.isPendingDismiss()
+        isSelectionInteractionLocked()
       )
         return null;
       const element = store.detectedElement;
@@ -1333,7 +1346,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (!isActivated()) return null;
       if (isPromptMode() || isShiftMultiSelecting() || isCopying()) return null;
       if (isAnyPopoverOpen()) return null;
-      if (keyboardSelection.isPendingDismiss()) return null;
       if (isAnnotating()) return null;
       // The tree follows an arrow-key selection: Up and Down walk the element's
       // ancestors and children with the tree open beside them. It is not shown
@@ -1935,7 +1947,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
-    const deactivateRenderer = () => {
+    const deactivateRenderer = (shouldPreservePillPromptFocus = false) => {
       clearCopyFeedbackCooldown();
       cancelPendingCopies();
       toggleShortcutPressTimestampMs = null;
@@ -1956,10 +1968,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
       if (keydownSpamTimerId) window.clearTimeout(keydownSpamTimerId);
       autoScroller.stop();
-      blurFocusedPillPrompt();
-      returnFocusToPage(previousFocused);
+      if (!shouldPreservePillPromptFocus) {
+        blurFocusedPillPrompt();
+        returnFocusToPage(previousFocused);
+      }
       pluginRegistry.hooks.onDeactivate();
     };
+
+    const releaseHoldSession = () => deactivateRenderer(shouldFocusPromptAfterEnter());
 
     const forceDeactivateAll = () => {
       if (isHoldingKeys()) {
@@ -2024,10 +2040,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const handleConfirmDismiss = () => {
-      if (keyboardSelection.isPendingDismiss()) {
-        discardKeyboardSelection();
-        return;
-      }
       actions.clearInputText();
       deactivateRenderer();
     };
@@ -2747,7 +2759,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
-        return dismissCompletedLabelsOnEscape(event);
+        return dismissPopoverOnEscape(event) || dismissCompletedLabelsOnEscape(event);
       },
       shouldForwardViewportEvent: (frameDocument) => {
         const activeElement = store.frozenElement ?? targetElement();
@@ -2795,10 +2807,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isEnterKey &&
         isOverlayActive &&
         !isPromptMode() &&
-        !keyboardSelection.isPendingDismiss() &&
-        !store.wasActivatedByToggle;
+        (!isTextFieldKeyEvent(event) || isPillPromptEvent(event) || isCopying());
 
       if (shouldBlockEnter) {
+        if (isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event))
+          return false;
         // The prompt input keeps Enter so its textarea handler can submit.
         if (isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE)) return false;
         if (isEventFromOverlay(event, "data-react-grab-completion-action")) return false;
@@ -2828,19 +2841,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       keyboardSelection.clear();
     };
 
-    const selectAndFocusElement = (element: Element, shouldPromptBeforeMouseHandoff = false) => {
+    const selectAndFocusElement = (element: Element) => {
       actions.setFrozenElement(element);
       actions.freeze();
-      keyboardSelection.select(element, { shouldPromptBeforeMouseHandoff });
+      keyboardSelection.select(element);
 
       const center = getBoundsCenter(createElementBounds(element));
       actions.setPointer(center);
-    };
-
-    const showKeyboardSelectionDismissPrompt = () => {
-      if (keyboardSelection.showDismissPrompt()) {
-        setSelectionLabelShakeCount((count) => count + 1);
-      }
     };
 
     const discardKeyboardSelection = () => {
@@ -2849,7 +2856,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       clearKeyboardNavigation();
     };
 
-    const copyKeyboardSelection = (shouldFocusPrompt = false) => {
+    const copyKeyboardSelection = () => {
       const selectedElement = keyboardSelection.takeSelection(store.frozenElement);
       if (!selectedElement) {
         discardKeyboardSelection();
@@ -2861,17 +2868,30 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithLabel({
         element: selectedElement,
         cursorX: center.x,
-        shouldFocusPrompt,
+        shouldFocusPrompt: true,
         shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
 
     const tryHandleEnterCopy = (event: KeyboardEvent): boolean => {
       if (!isEnterCode(event.code)) return false;
-      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return false;
+      const activationModifiers = store.wasActivatedByToggle
+        ? null
+        : getModifiersFromActivationKey(pluginRegistry.store.options.activationKey);
+      if (
+        event.repeat ||
+        (event.metaKey && !activationModifiers?.metaKey) ||
+        (event.ctrlKey && !activationModifiers?.ctrlKey) ||
+        (event.altKey && !activationModifiers?.altKey) ||
+        (event.shiftKey &&
+          !activationModifiers?.shiftKey &&
+          (!store.wasActivatedByToggle || !isShiftMultiSelecting()))
+      )
+        return false;
       if (!isActivated() || isAnnotating() || isPromptMode() || isCopying()) return false;
       if (isDragging() || isSelectionInteractionLocked() || isAnyPopoverOpen()) return false;
       if (isTextFieldKeyEvent(event)) return false;
+      if (isPointerOverOverlay()) return false;
       if (isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event))
         return false;
       if (store.labelInstances.some((instance) => instance.status === "error")) return false;
@@ -2889,6 +2909,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         : frozenElements.length > 0
           ? frozenElements
           : [element];
+      if (store.pendingCommentMode) {
+        enterCommentModeForElement(element, pointer().x, pointer().y);
+        clearKeyboardNavigation();
+        return true;
+      }
       if (isPillPromptEvent(event)) {
         const promptTarget = store.labelInstances.find(
           (instance) => instance.promptTarget,
@@ -2904,7 +2929,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (isShiftMultiSelecting()) {
         commitShiftMultiSelection(true);
       } else if (selectedElement) {
-        copyKeyboardSelection(true);
+        copyKeyboardSelection();
       } else {
         actions.setLastGrabbed(element);
         performCopyWithLabel({
@@ -2926,16 +2951,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       return null;
     };
 
-    const tryHandleNavigationKey = (
-      event: KeyboardEvent,
-      options: { allowPendingKeyboardSelection?: boolean } = {},
-    ): boolean => {
+    const tryHandleNavigationKey = (event: KeyboardEvent): boolean => {
       if (!isActivated()) return false;
       if (isAnnotating()) return false;
       if (isPromptMode()) return false;
       if (isShiftMultiSelecting()) return false;
-      if (keyboardSelection.isPendingDismiss() && !options.allowPendingKeyboardSelection)
-        return false;
       const navigationKey = resolveNavigationKey(event);
       if (!navigationKey) return false;
       if (isAnyPopoverOpen()) return false;
@@ -3167,41 +3187,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
-    const tryHandleKeyboardSelectionPromptPassThrough = (event: KeyboardEvent): boolean => {
-      if (!keyboardSelection.isPendingDismiss()) return false;
-      // Enter belongs to the discard prompt's own confirmation handler: its
-      // "Yes" button shows the return key, so Enter confirms the discard (or
-      // copies when the Copy button is focused) and returns to selection.
-      // Handing it off here keeps Enter from running a bare-key shortcut (e.g.
-      // the default action) and dropping into that mode instead.
-      //
-      // Invariant: this yields the event rather than consuming it. DiscardPrompt
-      // registers its own window keydown (capture) listener after this one, so
-      // returning early WITHOUT stopping propagation lets that later listener
-      // resolve Copy-vs-Discard from button focus. Do not add stopPropagation on
-      // this path, or the prompt will never see Enter.
-      if (isEnterCode(event.code)) return true;
-
-      // Only arrows continue navigation through the discard prompt; Tab and
-      // Shift+Tab are not treated as sibling navigation here so that focus
-      // already inside the prompt can traverse its Copy/Discard buttons
-      // natively.
-      const shouldHandleArrow = ARROW_KEYS.has(event.key);
-      const shouldHandleBareShortcut = getBareKeyShortcut(event) !== null;
-      if (!shouldHandleArrow && !shouldHandleBareShortcut) return false;
-
-      if (shouldHandleArrow) {
-        return tryHandleNavigationKey(event, { allowPendingKeyboardSelection: true });
-      }
-
-      if (!tryHandleBareKeyShortcut(event)) return false;
-      clearKeyboardNavigation();
-      return true;
-    };
-
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (dismissPopoverOnEscape(event)) return;
+        if (event.code === "Escape" && !isActivated() && !isHoldingKeys() && !isCopying()) {
+          dismissCompletedLabelsOnEscape(event);
+          return;
+        }
         if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
@@ -3282,11 +3275,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         // Editable controls keep their native arrow/Tab keys (caret movement,
-        // focus traversal). This one guard covers every navigation path in this
-        // handler — the discard-prompt pass-through, the overlay branch, and the
-        // main path — and precedes the active-mode preventDefault below.
-        if (resolveNavigationKey(event) && isTextFieldKeyEvent(event)) return;
-        if (tryHandleKeyboardSelectionPromptPassThrough(event)) return;
+        // focus traversal) and Enter. This one guard covers every navigation
+        // path in this handler, including the overlay branch, and precedes
+        // the active-mode preventDefault below.
+        if (
+          (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
+          isTextFieldKeyEvent(event)
+        )
+          return;
 
         blockEnterIfNeeded(event);
 
@@ -3296,8 +3292,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           }
           return;
         }
-
-        const isEnterToCopy = isEnterCode(event.code) && isHoldingKeys() && !isPromptMode();
 
         const isFromReactGrabInput = isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE);
         if (
@@ -3317,16 +3311,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        if (event.key === "Escape" && isAnyPopoverOpen()) {
-          if (toolbarMenuPosition() !== null) dismissToolbarMenu();
-          return;
-        }
-
         const isFromPillPrompt = isPillPromptEvent(event);
         const isFromOverlay =
-          isEventFromOverlay(event, "data-react-grab-ignore-events") &&
-          !isEnterToCopy &&
-          !isFromPillPrompt;
+          isEventFromOverlay(event, "data-react-grab-ignore-events") && !isFromPillPrompt;
 
         if (isPromptMode() || isFromOverlay) {
           if (isPromptMode() && !isFromReactGrabInput && tryHandleBareKeyShortcut(event)) return;
@@ -3409,12 +3396,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           pluginRegistry.store.options.activationKey,
         );
         const isReleasingModifier =
-          requiredModifiers.metaKey || requiredModifiers.ctrlKey
-            ? isMac()
-              ? !event.metaKey
-              : !event.ctrlKey
-            : (requiredModifiers.shiftKey && !event.shiftKey) ||
-              (requiredModifiers.altKey && !event.altKey);
+          (requiredModifiers.metaKey && !event.metaKey) ||
+          (requiredModifiers.ctrlKey && !event.ctrlKey) ||
+          (requiredModifiers.shiftKey && !event.shiftKey) ||
+          (requiredModifiers.altKey && !event.altKey);
 
         const isReleasingActivationKey = pluginRegistry.store.options.activationKey
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
@@ -3444,7 +3429,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         ) {
           if (isReleasingActivationKey || isReleasingModifier) {
             clearCopyFeedbackCooldown();
-            deactivateRenderer();
+            releaseHoldSession();
           }
           return;
         }
@@ -3464,14 +3449,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               pluginRegistry.store.options.activationMode !== "hold"
             )
               return;
-            deactivateRenderer();
+            releaseHoldSession();
           } else if (isHoldMode && isReleasingActivationKey) {
             if (keydownSpamTimerId !== null) {
               window.clearTimeout(keydownSpamTimerId);
               keydownSpamTimerId = null;
             }
             if (isDragGestureInProgress) return;
-            deactivateRenderer();
+            releaseHoldSession();
           } else if (
             !hasCustomShortcut &&
             isReleasingActivationKey &&
@@ -3530,13 +3515,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "pointermove",
       ignoreRealInput((event: PointerEvent) => {
         if (!event.isPrimary) return;
+        const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
+        setIsPointerOverOverlay(isFromOverlay);
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
         if (isAnnotating()) {
           inspect.handlePointerMove(event);
           return;
         }
-        if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
+        if (isFromOverlay) return;
         // The selection stays on the anchor while Alt is held; the pointer
         // only picks what the anchor is measured against.
         if (inspect.measureAnchorElement() !== null) {
@@ -3570,10 +3557,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           !event.shiftKey &&
           !isShiftMultiSelecting()
         ) {
-          if (keyboardSelection.consumeMouseHandoff()) {
-            showKeyboardSelectionDismissPrompt();
-            return;
-          }
           actions.unfreeze();
           clearKeyboardNavigation();
         }
@@ -3639,12 +3622,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           } else {
             handleInputCancel();
           }
-          return;
-        }
-
-        if (keyboardSelection.isPendingDismiss()) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
           return;
         }
 
@@ -4602,8 +4579,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       pluginRegistry.store.actions.filter((action) => action.showInToolbarMenu === true),
     );
 
+    createEffect(() => {
+      if (toolbarMenuActions().length < TOOLBAR_MENU_MIN_ACTION_COUNT) dismissToolbarMenu();
+    });
+
     const handleToggleToolbarMenu = () => {
-      if (toolbarMenuActions().length <= 1) return;
+      if (toolbarMenuActions().length < TOOLBAR_MENU_MIN_ACTION_COUNT) return;
       if (toolbarMenuPosition() !== null) {
         dismissToolbarMenu();
       } else {
@@ -4747,7 +4728,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     (store.wasActivatedByToggle &&
                       pluginRegistry.store.options.activationMode !== "hold"))
                 }
-                onInstancePromptFocusRelease={() => returnFocusToPage()}
+                onInstancePromptFocusRelease={() => {
+                  if (isActivated()) returnFocusToPage();
+                }}
                 onDismissPill={(event) => {
                   dismissCompletedPills();
                   if (isActivated() && !isAnnotating() && event.detail > 0) {
@@ -4762,18 +4745,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onConfirmDismiss={handleConfirmDismiss}
                 onOpenSelectionFile={openSelectionFile}
                 discardPrompt={
-                  keyboardSelection.isPendingDismiss()
+                  isPendingDismiss()
                     ? {
-                        isKeyboardSelection: true,
                         onConfirm: handleConfirmDismiss,
-                        onCopy: () => copyKeyboardSelection(),
+                        onCancel: handleCancelDismiss,
                       }
-                    : isPendingDismiss()
-                      ? {
-                          onConfirm: handleConfirmDismiss,
-                          onCancel: handleCancelDismiss,
-                        }
-                      : undefined
+                    : undefined
                 }
                 toolbarVisible={pluginRegistry.store.theme.toolbar.enabled}
                 isActive={isActivated()}
@@ -4802,7 +4779,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onToolbarRef={(element) => {
                   toolbarElement = element;
                 }}
-                toolbarMenuPosition={isAnyPopoverOpen() ? toolbarMenuPosition() : null}
+                toolbarMenuPosition={toolbarMenuPosition()}
                 toolbarMenuActions={toolbarMenuActions()}
                 defaultActionId={currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID}
                 defaultActionLabel={defaultToolbarActionLabel()}

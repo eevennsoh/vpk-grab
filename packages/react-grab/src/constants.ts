@@ -257,8 +257,10 @@ export const TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS = 140;
 export const TOOLBAR_DEFAULT_WIDTH_PX = 38;
 export const TOOLBAR_DEFAULT_HEIGHT_PX = 28;
 export const TOOLBAR_DEFAULT_POSITION_RATIO = 0.5;
+export const TOOLBAR_MENU_MIN_ACTION_COUNT = 2;
 export const DEFAULT_ACTION_ID = "copy";
 export const COMMENT_ACTION_ID = "comment";
+export const OPEN_ACTION_ID = "open";
 export const LEGACY_STYLE_ACTION_ID = "edit";
 
 export const TOOLTIP_DELAY_MS = 400;

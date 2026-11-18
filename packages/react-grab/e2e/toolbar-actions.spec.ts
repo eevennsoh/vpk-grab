@@ -129,12 +129,31 @@ test.describe("Toolbar Action Buttons", () => {
 
 for (const selectionRoute of ["click", "marquee", "prompt"]) {
   for (const fallbackReason of ["unknown", "disabled"]) {
-    test(`Copy fallback for ${fallbackReason} action via ${selectionRoute}`, async ({
-      reactGrab,
-      page,
-    }) => {
+    const shouldCopy = selectionRoute !== "prompt" || fallbackReason !== "disabled";
+    const testName = shouldCopy
+      ? `Copy fallback for ${fallbackReason} action via ${selectionRoute}`
+      : "Disabled action leaves the prompt without copying";
+    test(testName, async ({ reactGrab, page }) => {
       await waitForToolbar(reactGrab);
       await page.evaluate((reason) => {
+        document.documentElement.dataset.toolbarCopyCount = "0";
+        document.addEventListener(
+          "copy",
+          (event) => {
+            const previousCount = Number(document.documentElement.dataset.toolbarCopyCount);
+            document.documentElement.dataset.toolbarCopyCount = String(previousCount + 1);
+            const clipboardData = event.clipboardData;
+            if (!clipboardData) return;
+            const originalSetData = clipboardData.setData.bind(clipboardData);
+            clipboardData.setData = (format, content) => {
+              if (format === "text/plain") {
+                document.documentElement.dataset.toolbarCopiedText = content;
+              }
+              originalSetData(format, content);
+            };
+          },
+          { capture: true },
+        );
         if (reason === "disabled") {
           window.__REACT_GRAB__?.registerPlugin({
             name: "disabled-default",
@@ -154,22 +173,30 @@ for (const selectionRoute of ["click", "marquee", "prompt"]) {
       }, fallbackReason);
       if (selectionRoute === "prompt") {
         await reactGrab.enterPromptMode("[data-testid='todo-list'] h1");
-        await reactGrab.clickToolbarAction("fallback-action");
       } else {
         await reactGrab.clickToolbarAction("fallback-action");
         await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
-        if (selectionRoute === "marquee") {
-          await reactGrab.dragSelect(
-            "[data-testid='todo-list'] h1",
-            "[data-testid='todo-list'] li:last-child",
-          );
-        } else {
-          await reactGrab.clickElement("[data-testid='todo-list'] h1");
-        }
       }
-      await expect
-        .poll(() => reactGrab.getClipboardContent())
-        .toContain(selectionRoute === "marquee" ? "TodoList" : "Todo List");
+      if (selectionRoute === "prompt") {
+        await reactGrab.clickToolbarAction("fallback-action");
+      } else if (selectionRoute === "marquee") {
+        await reactGrab.dragSelect(
+          "[data-testid='todo-list'] h1",
+          "[data-testid='todo-list'] li:last-child",
+        );
+      } else {
+        await reactGrab.clickElement("[data-testid='todo-list'] h1");
+      }
+      if (shouldCopy) {
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-toolbar-copied-text",
+          selectionRoute === "marquee" ? /TodoList/ : /Todo List/,
+        );
+      } else {
+        await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+        expect(await reactGrab.isPromptModeActive()).toBe(false);
+        await expect(page.locator("html")).toHaveAttribute("data-toolbar-copy-count", "0");
+      }
       await expect(page.locator("[data-react-grab-context-menu]")).toHaveCount(0);
     });
   }

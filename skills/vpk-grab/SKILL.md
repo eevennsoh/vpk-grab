@@ -104,11 +104,17 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
   press Enter to copy the same elements with that context. Its camera adds an
   image. Its Dismiss close button or Esc dismisses the pill while leaving
-  Grab on if it was on; the next Esc leaves Grab. With text in Optional
-  context, Esc first clears it and returns focus to the page, then a second
-  Esc dismisses the pill. Bare Enter copies the hovered or keyboard-selected
-  elements first, then focuses Optional context, including in a hold session. With an empty
-  field, arrow keys navigate and Enter copies a different selection. Use
+  Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
+  menu takes Esc first; otherwise text in Optional context is cleared before
+  another Esc dismisses the pill. With Grab off, Esc dismisses the pill without
+  consuming the page's Escape or moving focus, so page dialogs still close.
+  Enter copies the hovered or keyboard-selected elements first, then focuses
+  Optional context, including while the hold shortcut's modifiers are down.
+  Releasing the shortcut switches Grab off but keeps that field focused: type
+  and submit context without reactivating Grab. Explicitly switching Grab off
+  releases focus. With an empty field and the pointer over the page, arrow keys
+  navigate and Enter copies a different selection; page inputs keep their own
+  arrow keys and Enter. Use
   ⌘O / Ctrl+O or the hover label’s component name to open the source.
   Right-click keeps the browser’s menu.
 - **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,

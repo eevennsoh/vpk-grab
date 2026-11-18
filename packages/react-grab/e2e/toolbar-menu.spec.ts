@@ -26,6 +26,31 @@ test.describe("Toolbar Menu", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(false);
   });
 
+  test("a removed menu stays dismissed when a plugin choice returns", async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await page.locator('[data-react-grab-toolbar-action="copy"]').click({ button: "right" });
+    await expect(page.locator("[data-react-grab-toolbar-menu]")).toBeVisible();
+    await page.evaluate(() => window.__REACT_GRAB__?.unregisterPlugin("custom-default"));
+    await expect(page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
+    await page.evaluate(() =>
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "returning-choice",
+        actions: [
+          {
+            id: "returning-choice",
+            label: "Returning choice",
+            showInToolbarMenu: true,
+            onAction: () => {},
+          },
+        ],
+      }),
+    );
+    await expect(page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
+  });
+
   test.beforeEach(async ({ reactGrab }) => {
     await reactGrab.page.evaluate(() =>
       window.__REACT_GRAB__?.registerPlugin({

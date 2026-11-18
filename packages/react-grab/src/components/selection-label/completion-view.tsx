@@ -77,6 +77,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (isKeyboardEventComposing(event)) return;
+    if (event.code === "Escape" && !props.isGrabActive) return;
     event.stopImmediatePropagation();
     if (isEnterCode(event.code) && !event.shiftKey) {
       event.preventDefault();
@@ -226,6 +227,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             {(onSubmitPrompt) => (
               <PillPrompt
                 shouldFocus={props.shouldFocusPrompt}
+                isGrabActive={props.isGrabActive}
                 onSubmit={onSubmitPrompt()}
                 onFocusRelease={props.onPromptFocusRelease}
               />

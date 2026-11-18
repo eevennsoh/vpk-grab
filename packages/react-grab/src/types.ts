@@ -586,20 +586,16 @@ export interface BottomSectionProps {
 
 export interface DiscardPromptProps {
   label?: string;
-  showCancel?: boolean;
   cancelOnEscape?: boolean;
   onConfirm?: () => void;
   onCancel?: () => void;
-  onCopy?: () => void;
 }
 
 export interface SelectionDiscardPrompt {
-  isKeyboardSelection?: boolean;
   label?: string;
   cancelOnEscape?: boolean;
   onConfirm?: () => void;
   onCancel?: () => void;
-  onCopy?: () => void;
 }
 
 export interface ErrorViewProps {
@@ -619,6 +615,7 @@ export interface CompletionViewProps {
   onCopyScreenshot?: () => void;
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
+  isGrabActive?: boolean;
   onPromptFocusRelease?: () => void;
 }
 
@@ -637,6 +634,7 @@ export interface PromptTextareaProps {
 
 export interface PillPromptProps {
   shouldFocus?: boolean;
+  isGrabActive?: boolean;
   onSubmit: (prompt: string) => void;
   onFocusRelease?: () => void;
 }
@@ -675,6 +673,7 @@ export interface SelectionLabelProps {
   isLabelInstance?: boolean;
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
+  isGrabActive?: boolean;
   onPromptFocusRelease?: () => void;
 }
 

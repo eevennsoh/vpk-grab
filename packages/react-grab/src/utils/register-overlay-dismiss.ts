@@ -1,8 +1,10 @@
 import type { OverlayDismissSource } from "../types.js";
-import { ignoreRealInput } from "./runtime-mode.js";
+import { ignoreRealInput, IS_DEMO } from "./runtime-mode.js";
 import { isEventFromOverlay } from "./is-event-from-overlay.js";
 import { isKeyboardEventTriggeredByInput } from "./is-keyboard-event-triggered-by-input.js";
 import { nativeCancelAnimationFrame, nativeRequestAnimationFrame } from "./native-raf.js";
+import { overlayDismiss } from "../core/overlay-dismiss.js";
+import { isKeyboardEventComposing } from "./is-keyboard-event-composing.js";
 
 interface RegisterOverlayDismissOptions {
   isOpen: () => boolean;
@@ -12,18 +14,26 @@ interface RegisterOverlayDismissOptions {
 }
 
 export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): (() => void) => {
-  const handleKeyDown = ignoreRealInput((event: KeyboardEvent) => {
-    if (!options.isOpen()) return;
-    if (options.shouldIgnoreKeyboardEvent?.(event)) return;
+  const dismissOnEscape = (event: KeyboardEvent): boolean => {
+    if (IS_DEMO && event.isTrusted) return false;
+    if (!options.isOpen() || isKeyboardEventComposing(event)) return false;
+    if (options.shouldIgnoreKeyboardEvent?.(event)) return false;
     if (options.shouldIgnoreInputEvents && isKeyboardEventTriggeredByInput(event)) {
-      return;
+      return false;
     }
 
     if (event.code === "Escape") {
       event.preventDefault();
       event.stopImmediatePropagation();
       options.onDismiss("keyboard");
+      return true;
     }
+    return false;
+  };
+  const handleKeyDown = ignoreRealInput(dismissOnEscape);
+  const unregisterDismiss = overlayDismiss.register({
+    isOpen: options.isOpen,
+    onEscape: dismissOnEscape,
   });
 
   const handleClickOutside = ignoreRealInput((event: MouseEvent | TouchEvent) => {
@@ -46,6 +56,7 @@ export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): 
   window.addEventListener("keydown", handleKeyDown, { capture: true });
 
   return () => {
+    unregisterDismiss();
     nativeCancelAnimationFrame(frameId);
     window.removeEventListener("keydown", handleKeyDown, { capture: true });
     window.removeEventListener("mousedown", handleClickOutside, {
