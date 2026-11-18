@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures.js";
+import { MOUNT_ROOT_RECHECK_DELAY_MS } from "../src/constants.js";
 import { NON_NATIVE_ACTIVATION_KEY, OUTSIDE_WINDOW_POSITION_PX } from "./constants.js";
 import { getCopyEventCount, installClipboardRecorder } from "./screenshot-fixture.js";
 import { installSpecsFixture, pinAndReach, specRow, switchOnSpecs } from "./specs-panel-fixture.js";
@@ -479,6 +480,8 @@ test.describe("Enter copies first", () => {
     reactGrab,
     page,
   }) => {
+    await page.clock.install();
+    await reactGrab.reinitialize();
     await installClipboardRecorder(page);
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected(targetSelector);
@@ -490,6 +493,7 @@ test.describe("Enter copies first", () => {
       selectionStart: 1,
       selectionEnd: 1,
     });
+    await page.clock.fastForward(MOUNT_ROOT_RECHECK_DELAY_MS);
     await page.locator(pillPromptSelector).evaluate((textarea) => {
       textarea.addEventListener(
         "keydown",
