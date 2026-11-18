@@ -686,7 +686,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !isPromptMode() &&
       !isShiftMultiSelecting() &&
       !store.pendingCommentMode;
-    const isScreenshotMode = createMemo(() => isShiftKeyHeld() && canTakeScreenshot());
+    const isScreenshotMode = createMemo(
+      () =>
+        isShiftKeyHeld() && canTakeScreenshot() && (isDragging() || !inspect.isSpecsPanelHovered()),
+    );
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
     const [pendingToolbarActionId, setPendingToolbarActionId] = createSignal<string | null>(null);

@@ -692,6 +692,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     isSpecsPinLocked,
     lockSpecsPin,
     toggleSpecsPinLock,
+    isSpecsPanelHovered,
     setSpecsPanelHovered,
     setSpecsPanelEngaged,
     styleOverridesVersion,

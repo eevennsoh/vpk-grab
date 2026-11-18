@@ -590,6 +590,85 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.up("Shift");
   });
 
+  test("Shift suspends the camera over Specs and its value menu, then rearms on the page", async ({
+    page,
+  }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    const pageCenter = await getCenter(page, "[data-testid='specs-token-button']");
+    const grabCursor = await readPageCursor(page);
+
+    await page.keyboard.down("Shift");
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    const rowCenter = await getCenter(page, '[data-react-grab-spec-row="background-color"]');
+    await page.mouse.move(rowCenter.x, rowCenter.y, { steps: DRAG_STEPS });
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+
+    await page.mouse.move(pageCenter.x, pageCenter.y, { steps: DRAG_STEPS });
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    await page.keyboard.up("Shift");
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+
+    await page.keyboard.down("Shift");
+    await page.mouse.move(rowCenter.x, rowCenter.y, { steps: DRAG_STEPS });
+    const valueMenuTrigger = page.getByRole("button", {
+      name: "Choose a background-color token or value",
+      exact: true,
+    });
+    await expect(valueMenuTrigger).toHaveCSS("cursor", "pointer");
+    await valueMenuTrigger.click();
+    const menuOption = page.locator('[data-react-grab-spec-option="--ds-background-brand-bold"]');
+    await menuOption.hover();
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+    await expect(page.getByRole("textbox", { name: "Filter tokens and values" })).toHaveCSS(
+      "cursor",
+      "text",
+    );
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.up("Shift");
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+  });
+
+  test("a Shift+drag starting on Specs never starts a screenshot", async ({ reactGrab, page }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    await page.keyboard.down("Shift");
+    const panelCenter = await getCenter(page, "[data-react-grab-specs-header]");
+    await page.mouse.move(panelCenter.x, panelCenter.y);
+    await page.mouse.down();
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y, { steps: DRAG_STEPS });
+    expect((await reactGrab.getState()).isDragging).toBe(false);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getImageWrites(page)).toHaveLength(0);
+  });
+
+  test("a screenshot started on the page continues over Specs and captures on release", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    await page.keyboard.down("Shift");
+    const panelCenter = await getCenter(page, "[data-react-grab-specs-header]");
+    await page.mouse.down();
+    await page.mouse.move(panelCenter.x, panelCenter.y);
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(1);
+    expect((await reactGrab.getState()).isDragging).toBe(true);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    expect((await reactGrab.getState()).isDragging).toBe(false);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+  });
+
   test("a Shift+drag under the minimum size acts as a Shift+click", async ({ reactGrab, page }) => {
     const firstBox = await getTodoItemBox(page, 0);
     const pressX = firstBox.x + firstBox.width / 2;
