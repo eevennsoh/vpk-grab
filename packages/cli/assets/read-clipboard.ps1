@@ -1,7 +1,7 @@
 # Windows clipboard reader for `react-grab watch`. Reads CF_UNICODETEXT and the
 # registered "Chromium Web Custom MIME Data Format" (a base::Pickle of web custom
 # data) via Win32, in a single OpenClipboard so the two reads are consistent.
-# Emits { changeCount, text, pickleBase64 } as JSON; the CLI decodes the pickle
+# Emits { changeCount, hasImage, text, pickleBase64 } as JSON; the CLI decodes the pickle
 # (shared with macOS/Linux). GetClipboardSequenceNumber gives a cheap monotonic
 # change token for idle polling.
 
@@ -31,7 +31,9 @@ public static class RgClip {
   [DllImport("kernel32.dll", SetLastError = true)]
   public static extern UIntPtr GlobalSize(IntPtr hMem);
 
+  private const uint CF_DIB = 8;
   private const uint CF_UNICODETEXT = 13;
+  public static bool HasImage;
 
   private static byte[] ReadLocked(uint format) {
     if (!IsClipboardFormatAvailable(format)) return null;
@@ -54,6 +56,7 @@ public static class RgClip {
     byte[][] result = new byte[2][];
     if (!OpenClipboard(IntPtr.Zero)) return result;
     try {
+      HasImage = IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(RegisterClipboardFormat("PNG"));
       result[0] = ReadLocked(CF_UNICODETEXT);
       result[1] = ReadLocked(customFormat);
     } finally {
@@ -104,6 +107,7 @@ if ($null -ne $blobs[1]) {
 
 $payload = [ordered]@{
   changeCount  = [int64]$changeCount
+  hasImage     = [bool][RgClip]::HasImage
   text         = $text
   pickleBase64 = $pickleBase64
 }

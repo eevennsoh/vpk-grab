@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import {
+  type ClipboardSnapshot,
   GRAB_MIME,
   HISTORY_FILE_NAME,
   readLinuxGrab,
@@ -17,7 +18,6 @@ import {
   parseChromiumPickle,
 } from "../src/utils/clipboard.js";
 import * as timer from "../src/utils/sleep.js";
-import { DARWIN_READER_BINARY_NAME } from "../src/utils/constants.js";
 import {
   canUseClipboard,
   encodeChromiumPickle,
@@ -65,9 +65,9 @@ const collectGrabs = (
   new Promise((resolve) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-test-"));
     const logPath = path.join(dir, "history.jsonl");
-    // A copy is newer than the reader's source, so the watcher takes it as up
-    // to date and skips its own compile.
-    if (prebuiltReader) fs.copyFileSync(prebuiltReader, path.join(dir, DARWIN_READER_BINARY_NAME));
+    // The watcher looks for the binary named after the same source hash and skips its own compile.
+    if (prebuiltReader)
+      fs.copyFileSync(prebuiltReader, path.join(dir, path.basename(prebuiltReader)));
     const child = spawn(
       process.execPath,
       [CLI_BIN, "watch", "--dir", dir, "--interval", "120", "--replay-last", ...extraArgs],
@@ -153,7 +153,8 @@ describe("extractGrab", () => {
 const MAP_FORMAT = 'application/web;type="custom/formatmap"';
 const ENTRY_FORMAT = 'application/web;type="custom/format7"';
 const PICKLE_FORMAT = "chromium/x-web-custom-data";
-const REPEATED_TEXT = "[<button> in Button (at App.tsx)]";
+const REPEATED_TEXT =
+  '[<span>Buy groceries</span> in TodoItem (at App.tsx) in App.tsx in TodoList (at App.tsx) key: "1" selector: [data-testid="todo-list"]]';
 
 const metadataAt = (timestamp: number) =>
   JSON.stringify({ content: REPEATED_TEXT, entries: [], timestamp });
@@ -229,43 +230,180 @@ describe("readLinuxGrab", () => {
 });
 
 describe("runWatchLoop image polling", () => {
+  const baseline = { changeCount: 1, text: "Previously copied text" };
+  const textWrite = { changeCount: 2, text: REPEATED_TEXT, grab: metadataAt(2), hasImage: false };
+  const imageWrite = { changeCount: 3, text: REPEATED_TEXT, hasImage: true };
+  const repeatImageWrite = { ...imageWrite, changeCount: 4 };
+  const customRecord = { source: "custom", content: REPEATED_TEXT, timestamp: 2 };
+  const textRecord = { source: "text", content: REPEATED_TEXT };
+  const prompt = "Make this item bold";
+  const promptContent = `${prompt}\n${REPEATED_TEXT}`;
+  const promptTextWrite = {
+    changeCount: 4,
+    text: promptContent,
+    hasImage: false,
+    grab: JSON.stringify({
+      content: promptContent,
+      entries: [{ commentText: prompt }],
+      timestamp: 3,
+    }),
+  };
+  const promptImageWrite = { changeCount: 5, text: promptContent, hasImage: true };
+  const windowsPromptImageWrite = { ...promptImageWrite, text: `${prompt}\r\n${REPEATED_TEXT}` };
+
+  const collectRecords = async (polls: ClipboardSnapshot[]): Promise<CapturedRecord[]> => {
+    const finished = new Error("Finished polling");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-polls-"));
+    const sleep = vi.spyOn(timer, "sleep").mockImplementation(async () => {
+      if (!polls.length) throw finished;
+    });
+    try {
+      await expect(
+        runWatchLoop({
+          reader: { mode: "fake", read: () => polls.shift() ?? null },
+          dir,
+          intervalMs: POLL_MS,
+          replayLast: false,
+        }),
+      ).rejects.toBe(finished);
+      const historyPath = path.join(dir, HISTORY_FILE_NAME);
+      if (!fs.existsSync(historyPath)) return [];
+      return fs
+        .readFileSync(historyPath, "utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    } finally {
+      sleep.mockRestore();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
   for (const seeTextWrite of [true, false]) {
-    it(`records a repeat grab once when the poll sees ${seeTextWrite ? "both writes" : "only the image"}`, async () => {
+    it(`records a repeat grab once when the poll sees ${seeTextWrite ? "both writes" : "only the image"} with metadata`, async () => {
       const formats = webFormats(2);
       const imageGrab = readLinuxGrab(
         [...formats.keys()].join("\n"),
         (format) => formats.get(format) ?? null,
       );
-      const baseline = { changeCount: 1, text: REPEATED_TEXT, grab: metadataAt(1) };
-      const textWrite = { changeCount: 2, text: REPEATED_TEXT, grab: metadataAt(2) };
-      const imageWrite = { changeCount: 3, text: REPEATED_TEXT, grab: imageGrab };
-      const polls = [baseline, ...(seeTextWrite ? [textWrite] : []), imageWrite];
-      const finished = new Error("Finished polling");
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-polls-"));
-      const sleep = vi.spyOn(timer, "sleep").mockImplementation(async () => {
-        if (!polls.length) throw finished;
-      });
-      try {
-        await expect(
-          runWatchLoop({
-            reader: { mode: "fake", read: () => polls.shift() ?? null },
-            dir,
-            intervalMs: POLL_MS,
-            replayLast: false,
-          }),
-        ).rejects.toBe(finished);
-        const records = fs
-          .readFileSync(path.join(dir, HISTORY_FILE_NAME), "utf8")
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line));
-        expect(records).toMatchObject([{ source: "custom", timestamp: 2, content: REPEATED_TEXT }]);
-      } finally {
-        sleep.mockRestore();
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
+      const previousGrab = { ...textWrite, changeCount: 1, grab: metadataAt(1) };
+      const polls = [
+        previousGrab,
+        ...(seeTextWrite ? [textWrite] : []),
+        { ...imageWrite, grab: imageGrab },
+      ];
+      expect(await collectRecords(polls)).toMatchObject([customRecord]);
     });
   }
+
+  it("absorbs the image following a recorded text write", async () => {
+    expect(await collectRecords([baseline, textWrite, imageWrite])).toMatchObject([customRecord]);
+  });
+
+  it("records a grab seen only through its image", async () => {
+    expect(await collectRecords([baseline, imageWrite])).toMatchObject([textRecord]);
+  });
+
+  it("records both image-only grabs when the same element is grabbed twice", async () => {
+    expect(await collectRecords([baseline, imageWrite, repeatImageWrite])).toMatchObject([
+      textRecord,
+      textRecord,
+    ]);
+  });
+
+  it("records an identical image-only grab after seeing both writes of the first grab", async () => {
+    expect(await collectRecords([baseline, textWrite, imageWrite, repeatImageWrite])).toMatchObject(
+      [customRecord, textRecord],
+    );
+  });
+
+  for (const seePromptTextWrite of [true, false]) {
+    it(`records a prompt once when the poll sees ${seePromptTextWrite ? "both writes" : "only its image"}`, async () => {
+      const records = await collectRecords([
+        baseline,
+        textWrite,
+        imageWrite,
+        ...(seePromptTextWrite ? [promptTextWrite] : []),
+        promptImageWrite,
+      ]);
+      expect(records).toMatchObject([
+        customRecord,
+        { source: seePromptTextWrite ? "custom" : "text", content: promptContent, prompt },
+      ]);
+    });
+  }
+
+  it("absorbs a CRLF image write following an LF prompt text write", async () => {
+    const records = await collectRecords([baseline, promptTextWrite, windowsPromptImageWrite]);
+    expect(records).toMatchObject([{ source: "custom", content: promptContent, prompt }]);
+  });
+
+  it("records LF content and extracts the prompt from a CRLF image write", async () => {
+    const records = await collectRecords([baseline, windowsPromptImageWrite]);
+    expect(records).toMatchObject([{ source: "text", content: promptContent, prompt }]);
+  });
+
+  it("ignores ordinary copies, including repeats and copies with an image", async () => {
+    const ordinaryWrite = { changeCount: 2, text: "Shopping list", hasImage: false };
+    expect(
+      await collectRecords([
+        baseline,
+        ordinaryWrite,
+        { ...ordinaryWrite, changeCount: 3 },
+        { ...ordinaryWrite, changeCount: 4, hasImage: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("absorbs the image of a grab already on the clipboard at startup", async () => {
+    expect(await collectRecords([textWrite, imageWrite])).toEqual([]);
+  });
+
+  it("records a repeat when the baseline already holds the grab with its image", async () => {
+    expect(await collectRecords([imageWrite, repeatImageWrite])).toMatchObject([textRecord]);
+  });
+
+  it("records both writes of a grab once when neither has metadata", async () => {
+    expect(
+      await collectRecords([baseline, { ...textWrite, grab: undefined }, imageWrite]),
+    ).toMatchObject([textRecord]);
+  });
+
+  it("keeps awaiting the image when the same plain text is re-copied", async () => {
+    const plainCopy = { changeCount: 3, text: REPEATED_TEXT, hasImage: false };
+    expect(await collectRecords([baseline, textWrite, plainCopy, repeatImageWrite])).toMatchObject([
+      customRecord,
+    ]);
+  });
+
+  it("ignores a plain re-copy of the same text after an image write", async () => {
+    const plainCopy = { ...repeatImageWrite, hasImage: false };
+    expect(await collectRecords([baseline, imageWrite, plainCopy])).toMatchObject([textRecord]);
+  });
+
+  for (const seeTextWrite of [true, false]) {
+    it(`records once without a change count when the poll sees ${seeTextWrite ? "both writes" : "only the image"}`, async () => {
+      const textOnly = { changeCount: null, text: REPEATED_TEXT };
+      const records = await collectRecords([
+        { ...baseline, changeCount: null },
+        ...(seeTextWrite ? [{ ...textOnly, grab: textWrite.grab }] : []),
+        textOnly,
+        textOnly,
+        textOnly,
+      ]);
+      expect(records).toMatchObject([seeTextWrite ? customRecord : textRecord]);
+    });
+  }
+
+  it("ignores an image polled twice with the same change count", async () => {
+    expect(await collectRecords([baseline, imageWrite, imageWrite])).toMatchObject([textRecord]);
+  });
+
+  it("records a repeatedly polled image once when the reader has no change count", async () => {
+    const image = { ...imageWrite, changeCount: null };
+    const records = await collectRecords([{ ...baseline, changeCount: null }, image, image, image]);
+    expect(records).toMatchObject([textRecord]);
+  });
 });
 
 describe("extractPrompt", () => {
@@ -309,6 +447,43 @@ describe("isGrabText", () => {
 
   it("matches a frame with parentheses in the path (Next.js route groups)", () => {
     expect(isGrabText("in LoginForm (at src/app/(auth)/login/page.tsx:22:7)")).toBe(true);
+  });
+
+  const selectorReference = '[<button id="go">Go</button> selector: #go]';
+
+  it.each([
+    REPEATED_TEXT,
+    "[<span>Buy groceries</span> in TodoItem (at App.tsx)]",
+    `Update these elements\n${REPEATED_TEXT}\n${selectorReference}`,
+    selectorReference,
+    '[<input name="q" /> selector: [name="q"]]',
+    '[<mesh name="cube" /> in Scene (at Scene.tsx)]',
+    '[<li>Milk</li> key: "2" selector: #list]',
+    `${REPEATED_TEXT}\r\n`,
+  ])("matches the copied reference in %s", (text) => {
+    expect(isGrabText(text)).toBe(true);
+  });
+
+  it.each([
+    "we met in Paris (at night)",
+    "  in App (at App.js)",
+    '[<img src="a.png">](https://example.com)',
+    "[<div />]",
+    '[<li key="a" />, <li key="b" />]',
+    '[<a href="/login">Sign in here</a>]',
+    "[<p>Made in USA</p>]",
+  ])("ignores %s", (text) => {
+    expect(isGrabText(text)).toBe(false);
+  });
+
+  it("quickly rejects bracketed lines without context and oversized unterminated text", () => {
+    const bracketedLines = "[<a in]\n".repeat(1_000) + `[<a${" in".repeat(8_000)}]`;
+    const unterminatedText = "[<a in x ".repeat(500_000);
+    for (const text of [bracketedLines, unterminatedText]) {
+      const startedAt = performance.now();
+      expect(isGrabText(text)).toBe(false);
+      expect(performance.now() - startedAt).toBeLessThan(1_000);
+    }
   });
 
   it("rejects ordinary copied text", () => {
