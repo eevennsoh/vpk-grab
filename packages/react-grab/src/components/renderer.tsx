@@ -132,6 +132,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 })()}
                 shouldFocusPrompt={props.shouldFocusInstancePrompt}
                 onPromptFocusRelease={props.onInstancePromptFocusRelease}
+                onDismissPill={props.onDismissPill}
                 onRetry={() => props.onRetryInstance?.(instance().id)}
                 onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
               />

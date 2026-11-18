@@ -809,6 +809,9 @@ test.describe("Screenshot capture", () => {
   }) => {
     const pageErrors = trackPageErrors(page);
     await startGatedScreenshot(page);
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "Dismiss", exact: true }),
+    ).toHaveCount(0);
 
     await page.keyboard.press("Escape");
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
@@ -1515,28 +1518,36 @@ test.describe("Copied pill", () => {
     await expect(frameTarget).toHaveAttribute("data-press-received", "true");
   });
 
-  test("Escape inside a same-origin frame dismisses the pill", async ({ reactGrab, page }) => {
-    await grabFirstTodo(reactGrab, page);
-    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
-    await expect.poll(() => isReactGrabActive(page)).toBe(false);
-    const frameTarget = page
-      .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
-      .locator(IFRAME_TARGET_SELECTOR);
-    await frameTarget.evaluate((target) => {
-      target.addEventListener("keydown", (event) => {
-        if (event instanceof KeyboardEvent && event.key === "Escape") {
-          target.setAttribute("data-escape-received", "true");
-        }
+  for (const isGrabActive of [false, true]) {
+    test(`Escape inside a same-origin frame dismisses the pill while Grab is ${isGrabActive ? "on" : "off"}`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await grabFirstTodo(reactGrab, page);
+      if (!isGrabActive) {
+        await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+        await expect.poll(() => isReactGrabActive(page)).toBe(false);
+      }
+      const frameTarget = page
+        .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
+        .locator(IFRAME_TARGET_SELECTOR);
+      await frameTarget.evaluate((target) => {
+        target.addEventListener("keydown", (event) => {
+          if (event instanceof KeyboardEvent && event.key === "Escape") {
+            target.setAttribute("data-escape-received", "true");
+          }
+        });
       });
+      await frameTarget.focus();
+      await expect(getCompletion(reactGrab)).toHaveCount(1);
+
+      await page.keyboard.press("Escape");
+
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      await expect(frameTarget).toHaveAttribute("data-escape-received", "true");
+      expect(await isReactGrabActive(page)).toBe(isGrabActive);
     });
-    await frameTarget.focus();
-    await expect(getCompletion(reactGrab)).toHaveCount(1);
-
-    await page.keyboard.press("Escape");
-
-    await expect(getCompletion(reactGrab)).toHaveCount(0);
-    await expect(frameTarget).toHaveAttribute("data-escape-received", "true");
-  });
+  }
 
   test("Escape dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);

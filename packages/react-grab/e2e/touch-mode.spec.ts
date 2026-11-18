@@ -104,6 +104,14 @@ test.describe("Touch Mode", () => {
 
       await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
       await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
+      await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(
+        1,
+      );
+      await reactGrab.pressEscape();
+      await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(
+        0,
+      );
+      expect((await reactGrab.getState()).isActive).toBe(true);
       await reactGrab.deactivate();
 
       await reactGrab.activate();

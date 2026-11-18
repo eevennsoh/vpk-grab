@@ -51,7 +51,8 @@ test.describe("heavy-ui: tanstack table", () => {
     await reactGrab.activate();
 
     await filterInput.click({ force: true });
-    await reactGrab.deactivate();
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    expect((await reactGrab.getState()).isActive).toBe(false);
     await filterInput.click();
     await page.keyboard.type("refactor");
     await expect(filterInput).toHaveValue("refactor");

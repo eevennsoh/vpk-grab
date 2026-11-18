@@ -812,12 +812,41 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
       if (isEventFromOverlay(event, "data-react-grab-completion")) return;
+      if (
+        isActivated() &&
+        !isAnnotating() &&
+        toolbarActiveActionId() === (currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID) &&
+        event
+          .composedPath()
+          .some(
+            (target) =>
+              target instanceof Element &&
+              target.getAttribute("data-react-grab-toolbar-action") ===
+                (currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID),
+          )
+      )
+        return;
       labelController.dismissCompleted();
     };
 
-    const dismissCompletedLabelsOnEscape = (event: KeyboardEvent) => {
-      if (event.code !== "Escape" || isKeyboardEventComposing(event)) return;
+    const dismissCompletedPills = () => {
       labelController.dismissCompleted();
+      blurFocusedPillPrompt();
+      returnFocusToPage();
+    };
+
+    const dismissCompletedLabelsOnEscape = (event: KeyboardEvent): boolean => {
+      if (
+        event.code !== "Escape" ||
+        isKeyboardEventComposing(event) ||
+        !store.labelInstances.some(
+          (instance) => instance.status === "copied" || instance.status === "fading",
+        )
+      )
+        return false;
+      dismissCompletedPills();
+      if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
+      return !isDragging();
     };
 
     const dismissCopyingLabels = (labelInstanceIds: string[]) => {
@@ -2715,7 +2744,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       shouldForwardKeyboardEvent: (event) =>
         isTargetKeyCombination(event, pluginRegistry.store.options),
       onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
-      onFrameKeyDown: ignoreRealInput(dismissCompletedLabelsOnEscape),
+      onFrameKeyDown: (event) => {
+        if (IS_DEMO && event.isTrusted) return false;
+        return dismissCompletedLabelsOnEscape(event);
+      },
       shouldForwardViewportEvent: (frameDocument) => {
         const activeElement = store.frozenElement ?? targetElement();
         if (activeElement && isDocumentAncestorOfElement(frameDocument, activeElement)) return true;
@@ -3170,12 +3202,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
         if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
-        dismissCompletedLabelsOnEscape(event);
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
         // being typed into the specs panel.
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         if (isSpecsFieldEvent(event)) return;
+        if (dismissCompletedLabelsOnEscape(event)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (event.key === "Escape" && inspect.isSpecsPinLocked()) {
           event.preventDefault();
           event.stopImmediatePropagation();
@@ -4699,6 +4735,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                       pluginRegistry.store.options.activationMode !== "hold"))
                 }
                 onInstancePromptFocusRelease={() => returnFocusToPage()}
+                onDismissPill={(event) => {
+                  dismissCompletedPills();
+                  if (isActivated() && !isAnnotating() && event.detail > 0) {
+                    handlePointerMove(event.clientX, event.clientY, event.shiftKey);
+                  }
+                }}
                 onRetryInstance={handleRetryInstance}
                 onAcknowledgeErrorInstance={handleAcknowledgeErrorInstance}
                 onInputChange={actions.setInputText}
@@ -4711,7 +4753,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     ? {
                         isKeyboardSelection: true,
                         onConfirm: handleConfirmDismiss,
-                        onCopy: copyKeyboardSelection,
+                        onCopy: () => copyKeyboardSelection(),
                       }
                     : isPendingDismiss()
                       ? {

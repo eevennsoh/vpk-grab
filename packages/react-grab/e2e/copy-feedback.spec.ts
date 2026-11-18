@@ -281,7 +281,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
     });
 
-    test("should deactivate when escape pressed during feedback", async ({ reactGrab }) => {
+    test("should dismiss feedback before Escape deactivates", async ({ reactGrab }) => {
       await reactGrab.activateViaKeyboard();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
 
@@ -291,12 +291,16 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.down("c");
       await reactGrab.clickElement("li:first-child");
 
-      await reactGrab.page.waitForTimeout(100);
-
+      await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(
+        1,
+      );
       await reactGrab.pressEscape();
-
-      await reactGrab.page.waitForTimeout(100);
-      expect(await reactGrab.isOverlayVisible()).toBe(false);
+      await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(
+        0,
+      );
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
+      await reactGrab.pressEscape();
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
 
       await reactGrab.page.keyboard.up("c");
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);

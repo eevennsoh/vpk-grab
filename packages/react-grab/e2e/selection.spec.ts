@@ -338,7 +338,7 @@ test.describe("Selection Bounds and Mutations", () => {
 });
 
 test.describe("Persistent Grab sessions", () => {
-  test("shortcut tap keeps Grab on for consecutive copies until Escape", async ({
+  test("shortcut tap keeps Grab on for consecutive copies until the pill is dismissed and Escape leaves", async ({
     reactGrab,
     page,
   }) => {
@@ -353,8 +353,10 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
     await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
     await page.keyboard.press("Escape");
-    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
     await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(0);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
   });
 
   test("marquee and committed Shift selection keep Grab on", async ({ reactGrab, page }) => {
@@ -677,6 +679,9 @@ test("Escape after copying allows immediate keyboard activation", async ({ react
   await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
   await reactGrab.clickElement("[data-testid='todo-list'] h1");
   await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+  await reactGrab.page.keyboard.press("Escape");
+  await expect(reactGrab.getOverlayHost().locator("[data-react-grab-completion]")).toHaveCount(0);
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
   await reactGrab.deactivate();
   await reactGrab.activateViaKeyboard();
   expect(await reactGrab.isOverlayVisible()).toBe(true);

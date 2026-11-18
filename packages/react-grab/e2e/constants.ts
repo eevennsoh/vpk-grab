@@ -102,3 +102,8 @@ export const RECTANGLE_EDGE_HIT_OFFSET_PX = 5;
 
 export const SCREENSHOT_RECTANGLE_HEIGHT_PX = 20;
 export const SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX = 6;
+
+export const PILL_DISMISS_PARENT_RECT_PX = { x: 300, y: 200, width: 400, height: 180 };
+export const PILL_DISMISS_TARGET_HEIGHT_PX = 30;
+
+export const PILL_DISMISS_Z_INDEX = "2147483000";

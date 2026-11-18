@@ -218,7 +218,8 @@ test.describe("Combinatorial Interactions", () => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("[data-testid='main-title']");
       await reactGrab.clickElement("[data-testid='main-title']");
-      await reactGrab.deactivate();
+      await reactGrab.page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+      expect((await reactGrab.getState()).isActive).toBe(false);
       await reactGrab.activate();
 
       const state = await reactGrab.getState();

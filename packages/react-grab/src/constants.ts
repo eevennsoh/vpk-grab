@@ -593,3 +593,5 @@ export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
     { property: "border-bottom-left-radius", label: "Bottom left" },
   ],
 };
+
+export const COMPLETION_DISMISS_ICON_SIZE_PX = 14;

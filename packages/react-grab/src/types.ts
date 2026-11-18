@@ -487,6 +487,7 @@ export interface ReactGrabRendererProps {
   onSubmitPromptInstance?: (instanceId: string, prompt: string) => void;
   shouldFocusInstancePrompt?: boolean;
   onInstancePromptFocusRelease?: () => void;
+  onDismissPill?: (event: MouseEvent) => void;
   onRetryInstance?: (instanceId: string) => void;
   onAcknowledgeErrorInstance?: (instanceId: string) => void;
   onInputChange?: (value: string) => void;
@@ -621,6 +622,7 @@ export interface CompletionViewProps {
   isCapturingScreenshot?: boolean;
   screenshotError?: string;
   onDismiss?: () => void;
+  onDismissPill?: (event: MouseEvent) => void;
   onFadingChange?: (isFading: boolean) => void;
   onShowContextMenu?: () => void;
   onCopyScreenshot?: () => void;
@@ -664,6 +666,7 @@ export interface SelectionLabelProps {
   onSubmit?: () => void;
   onOpen?: () => void;
   onDismiss?: () => void;
+  onDismissPill?: (event: MouseEvent) => void;
   selectionLabelShakeCount?: number;
   onConfirmDismiss?: () => void;
   discardPrompt?: SelectionDiscardPrompt;

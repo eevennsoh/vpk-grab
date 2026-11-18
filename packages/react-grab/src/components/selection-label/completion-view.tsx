@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } from "solid-js";
 import type { CompletionViewProps, PillPromptProps } from "../../types.js";
 import {
+  COMPLETION_DISMISS_ICON_SIZE_PX,
   FEEDBACK_DURATION_MS,
   FADE_DURATION_MS,
   SCREENSHOT_THUMBNAIL_SIZE_PX,
@@ -18,12 +19,12 @@ import { Surface } from "../ui/surface.js";
 import { IconCheck } from "../icons/icon-check.jsx";
 import { IconLoader } from "../icons/icon-loader.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
-import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { CLOSE_SMALL_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { PromptTextarea } from "./prompt-textarea.js";
 
 interface CompletionActionButtonProps {
   label: string;
-  onClick: () => void;
+  onClick: (event: MouseEvent) => void;
   children: JSX.Element;
 }
 
@@ -47,7 +48,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
       }}
       on:click={(event) => {
         event.stopImmediatePropagation();
-        local.onClick();
+        local.onClick(event);
       }}
       {...attributes}
     >
@@ -263,6 +264,17 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   </CompletionActionButton>
                 </Show>
               </>
+            )}
+          </Show>
+          <Show when={props.onDismissPill}>
+            {(onDismissPill) => (
+              <CompletionActionButton label="Dismiss" onClick={onDismissPill()}>
+                <MaterialIcon
+                  paths={CLOSE_SMALL_ICON_PATHS}
+                  size={COMPLETION_DISMISS_ICON_SIZE_PX}
+                  class={ACTION_ICON_CLASS}
+                />
+              </CompletionActionButton>
             )}
           </Show>
         </div>

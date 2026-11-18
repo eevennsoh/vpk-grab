@@ -99,11 +99,15 @@ example, in `<head>` before the app's own scripts, on development pages only.
 
 ## What the user can do with it
 
-- **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
+- **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
+  context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
   press Enter to copy the same elements with that context. Its camera adds an
-  image. Bare Enter copies the hovered or keyboard-selected elements first,
-  then focuses Optional context, including in a hold session. With an empty
+  image. Its Dismiss close button or Esc dismisses the pill while leaving
+  Grab on if it was on; the next Esc leaves Grab. With text in Optional
+  context, Esc first clears it and returns focus to the page, then a second
+  Esc dismisses the pill. Bare Enter copies the hovered or keyboard-selected
+  elements first, then focuses Optional context, including in a hold session. With an empty
   field, arrow keys navigate and Enter copies a different selection. Use
   ⌘O / Ctrl+O or the hover label’s component name to open the source.
   Right-click keeps the browser’s menu.
