@@ -2,6 +2,7 @@ import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } f
 import type { CompletionViewProps, PillPromptProps } from "../../types.js";
 import {
   COMPLETION_DISMISS_ICON_SIZE_PX,
+  COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX,
   FEEDBACK_DURATION_MS,
   FADE_DURATION_MS,
   SCREENSHOT_THUMBNAIL_SIZE_PX,
@@ -113,6 +114,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
   const [didCopy, setDidCopy] = createSignal(false);
   const [isFading, setIsFading] = createSignal(false);
   const displayStatusText = () => (didCopy() ? "Copied" : props.statusText);
+  const hasThumbnailBesidePrompt = () => Boolean(props.thumbnailUrl && props.onSubmitPrompt);
 
   const handleAccept = () => {
     if (didCopy()) return;
@@ -159,7 +161,13 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
       aria-live="polite"
       aria-atomic="true"
       class="shrink-0 flex flex-col justify-center items-end w-fit h-fit max-w-[280px] transition-opacity duration-100 ease-out"
-      style={{ opacity: isFading() ? 0 : 1 }}
+      style={{
+        opacity: isFading() ? 0 : 1,
+        "max-width": hasThumbnailBesidePrompt()
+          ? `${COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX}px`
+          : undefined,
+        width: hasThumbnailBesidePrompt() ? "max-content" : undefined,
+      }}
       onPointerDown={claimFocus}
       onClick={claimFocus}
     >

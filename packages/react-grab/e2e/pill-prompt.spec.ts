@@ -21,7 +21,7 @@ import {
   installClipboardRecorder,
   openImageEncodingGate,
 } from "./screenshot-fixture.js";
-import { PINNED_PANEL_SELECTOR, switchOnSpecs } from "./specs-panel-fixture.js";
+import { AWAY_POSITION, PINNED_PANEL_SELECTOR, switchOnSpecs } from "./specs-panel-fixture.js";
 
 const FIRST_TODO_SELECTOR = "[data-testid='todo-list'] li:first-child span";
 const SECOND_TODO_SELECTOR = "[data-testid='todo-list'] li:nth-child(2) span";
@@ -39,12 +39,15 @@ const SPECS_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-specs"]'
 const SPACING_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-redlines"]';
 const MEASURE_TARGET_SELECTOR = "[data-react-grab-redline-target]";
 const CAPTURING_SELECTOR = "[data-react-grab-screenshot-capturing]";
+const THUMBNAIL_SELECTOR = "[data-react-grab-screenshot-thumbnail]";
+const AUTO_SCREENSHOT_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="auto-screenshot"]';
 const INNER_HTML_TOKEN_SELECTOR = ".inner-html-token";
 const PAGE_INPUT_ID = "pill-prompt-page-input";
 const SHORT_PROMPT_TEXT = "make this a bit wider";
 const PLACEHOLDER_SLACK_PX = 2;
 const SINGLE_LINE_HEIGHT_PX = 16;
 const PILL_MAX_WIDTH_PX = 280;
+const PILL_WITH_THUMBNAIL_MAX_WIDTH_PX = 300;
 const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
 const HELD_ACTIVATION_KEY = "F8";
 const PROMPT_TEXT = "make this blue";
@@ -153,6 +156,32 @@ const measurePillPrompt = (reactGrab: ReactGrabPageObject) =>
       placeholderWidth: measuringContext.measureText(textarea.placeholder).width,
     };
   });
+
+const addEdgeTarget = (page: Page) =>
+  page.evaluate(
+    ({ edgeTargetId, edgeTargetWidth }) => {
+      const edgeTarget = document.createElement("button");
+      edgeTarget.id = edgeTargetId;
+      edgeTarget.textContent = "Edge";
+      Object.assign(edgeTarget.style, {
+        position: "fixed",
+        right: "2px",
+        top: "320px",
+        width: `${edgeTargetWidth}px`,
+        height: "30px",
+        zIndex: "2147483000",
+      });
+      document.body.append(edgeTarget);
+    },
+    { edgeTargetId: EDGE_TARGET_ID, edgeTargetWidth: EDGE_TARGET_WIDTH_PX },
+  );
+
+const switchOnScreenshotToggle = async (page: Page) => {
+  const screenshotToggle = page.locator(AUTO_SCREENSHOT_TOGGLE_SELECTOR);
+  await screenshotToggle.click();
+  await expect(screenshotToggle).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+};
 
 const getPillAnchor = (reactGrab: ReactGrabPageObject) =>
   getCompletion(reactGrab).evaluate((completion) => {
@@ -682,23 +711,7 @@ test.describe("Copied pill prompt", () => {
     reactGrab,
     page,
   }) => {
-    await page.evaluate(
-      ({ edgeTargetId, edgeTargetWidth }) => {
-        const edgeTarget = document.createElement("button");
-        edgeTarget.id = edgeTargetId;
-        edgeTarget.textContent = "Edge";
-        Object.assign(edgeTarget.style, {
-          position: "fixed",
-          right: "2px",
-          top: "320px",
-          width: `${edgeTargetWidth}px`,
-          height: "30px",
-          zIndex: "2147483000",
-        });
-        document.body.append(edgeTarget);
-      },
-      { edgeTargetId: EDGE_TARGET_ID, edgeTargetWidth: EDGE_TARGET_WIDTH_PX },
-    );
+    await addEdgeTarget(page);
     await reactGrab.activate();
     await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
     const viewportWidth = page.viewportSize()?.width ?? 0;
@@ -940,6 +953,53 @@ test.describe("Copied pill prompt", () => {
     expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
     expect(longPrompt.pillWidth).toBeCloseTo(PILL_MAX_WIDTH_PX, 0);
     expect(longPrompt.isStatusTextClipped).toBe(false);
+  });
+
+  test("with an image the empty prompt still shows its whole placeholder on one line", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await switchOnScreenshotToggle(page);
+    await clickCopy(reactGrab, page, SECOND_TODO_SELECTOR);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+
+    const emptyPrompt = await measurePillPrompt(reactGrab);
+    expect(emptyPrompt.promptWidth).toBeGreaterThanOrEqual(emptyPrompt.placeholderWidth);
+    expect(emptyPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
+    expect(emptyPrompt.isStatusTextClipped).toBe(false);
+    expect(emptyPrompt.pillWidth).toBeLessThanOrEqual(PILL_WITH_THUMBNAIL_MAX_WIDTH_PX);
+
+    await getPillPrompt(reactGrab).click();
+    await page.keyboard.type(LONG_PROMPT_TEXT);
+    const longPrompt = await measurePillPrompt(reactGrab);
+    expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
+    expect(longPrompt.pillWidth).toBeCloseTo(PILL_WITH_THUMBNAIL_MAX_WIDTH_PX, 0);
+    expect(longPrompt.isStatusTextClipped).toBe(false);
+  });
+
+  test("with an image at the right edge the pill keeps the whole placeholder inside the viewport", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await addEdgeTarget(page);
+    await reactGrab.activate();
+    await switchOnScreenshotToggle(page);
+    await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+
+    await expect
+      .poll(async () => {
+        const emptyPrompt = await measurePillPrompt(reactGrab);
+        return emptyPrompt.promptWidth >= emptyPrompt.placeholderWidth;
+      })
+      .toBe(true);
+    const pillBox = await getCompletion(reactGrab).boundingBox();
+    if (!pillBox) throw new Error("No pill box");
+    expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
   });
 });
 
