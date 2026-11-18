@@ -1,5 +1,5 @@
 import { resolveElementReferenceContext } from "./context.js";
-import { copyContent } from "../utils/copy-content.js";
+import { writeClipboardContent } from "../utils/write-clipboard-content.js";
 import { normalizeError } from "../utils/normalize-error.js";
 import { getTagName } from "../utils/get-tag-name.js";
 import { ABORTED_PROMISE_RESULT, racePromiseWithAbort } from "../utils/race-promise-with-abort.js";
@@ -29,6 +29,7 @@ interface CopyPayload {
 export interface CopyFlowResult {
   readonly status: "cancelled" | "failed" | "succeeded";
   readonly copiedContent?: string;
+  readonly copiedMetadata?: string;
 }
 
 const CANCELLED_COPY_FLOW_RESULT: CopyFlowResult = {
@@ -108,6 +109,7 @@ export const runCopyFlow = async (
   if (beforeCopyResult === ABORTED_PROMISE_RESULT) return CANCELLED_COPY_FLOW_RESULT;
 
   let didCopy = false;
+  let copiedMetadata: string | undefined;
   let didStartClipboardWrite = false;
   let finalContent = "";
 
@@ -132,10 +134,10 @@ export const runCopyFlow = async (
         : transformedContent;
       if (finalContent.trim()) {
         didStartClipboardWrite = true;
-        didCopy = copyContent(finalContent, {
+        ({ didCopy, copiedMetadata } = writeClipboardContent(finalContent, {
           componentName: options.componentName,
           entries: getMetadataEntries(payload, finalContent, prependedPrompt),
-        });
+        }));
       }
     }
   } catch (error) {
@@ -147,5 +149,7 @@ export const runCopyFlow = async (
   if (didCopy) hooks.onCopySuccess(elements, finalContent);
   hooks.onAfterCopy(elements, didCopy);
 
-  return didCopy ? { status: "succeeded", copiedContent: finalContent } : { status: "failed" };
+  return didCopy
+    ? { status: "succeeded", copiedContent: finalContent, copiedMetadata }
+    : { status: "failed" };
 };

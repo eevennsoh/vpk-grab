@@ -931,7 +931,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (labelInstanceIds) {
         for (const labelInstanceId of labelInstanceIds) {
           if (copyResult.copiedContent !== undefined) {
-            labelController.setCopiedContent(labelInstanceId, copyResult.copiedContent);
+            labelController.setCopiedContent(
+              labelInstanceId,
+              copyResult.copiedContent,
+              copyResult.copiedMetadata,
+            );
           }
           labelController.updateAfterCopy(
             labelInstanceId,
@@ -4290,6 +4294,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         previousInstance.statusText === instance.statusText &&
         previousInstance.thumbnailUrl === instance.thumbnailUrl &&
         previousInstance.copiedContent === instance.copiedContent &&
+        previousInstance.copiedMetadata === instance.copiedMetadata &&
         previousInstance.isCapturingScreenshot === instance.isCapturingScreenshot &&
         previousInstance.screenshotErrorMessage === instance.screenshotErrorMessage &&
         previousInstance.bounds.x === newBounds.x &&
@@ -4688,7 +4693,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         (labelInstance) => labelInstance.id === instanceId,
       );
       if (!instance || instance.status !== "copied" || instance.isCapturingScreenshot) return;
-      const copiedContent = instance.copiedContent;
+      const { copiedContent, copiedMetadata } = instance;
       if (copiedContent === undefined) return;
       const isAutoScreenshotEnabled = inspect.isAutoScreenshotEnabled();
       const keptStatusText =
@@ -4711,7 +4716,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         return captureResult;
       });
-      const deliveryPromise = deliverPngBlob(blobPromise, copiedContent);
+      const deliveryPromise = deliverPngBlob(blobPromise, copiedContent, copiedMetadata);
 
       void Promise.allSettled([blobPromise, deliveryPromise]).then(
         ([blobOutcome, deliveryOutcome]) => {

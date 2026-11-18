@@ -78,7 +78,7 @@ interface LabelController {
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
   startPromptCopy: (instanceId: string, copiedStatusText: string) => void;
-  setCopiedContent: (instanceId: string, copiedContent: string) => void;
+  setCopiedContent: (instanceId: string, copiedContent: string, copiedMetadata?: string) => void;
   setImage: (
     instanceId: string,
     statusText: string,
@@ -274,8 +274,8 @@ export const createLabelController = (
     markRetrying(instanceId);
   };
 
-  const setCopiedContent = (instanceId: string, copiedContent: string) => {
-    store.patchLabelInstance(instanceId, { copiedContent });
+  const setCopiedContent = (instanceId: string, copiedContent: string, copiedMetadata?: string) => {
+    store.patchLabelInstance(instanceId, { copiedContent, copiedMetadata });
   };
 
   const setImage = (

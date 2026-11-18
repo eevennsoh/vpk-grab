@@ -1,3 +1,4 @@
+import { REACT_GRAB_MIME_TYPE, WEB_REACT_GRAB_MIME_TYPE } from "../constants.js";
 import type { ImageDeliveryResult } from "../types.js";
 import { downloadBlob } from "./download-blob.js";
 import { getClipboardHtml } from "./get-clipboard-html.js";
@@ -11,6 +12,7 @@ import { IS_DEMO } from "./runtime-mode.js";
 export const deliverPngBlob = async (
   blobPromise: Promise<Blob>,
   textContent?: string,
+  copiedMetadata?: string,
 ): Promise<ImageDeliveryResult> => {
   if (IS_DEMO) {
     await blobPromise;
@@ -27,6 +29,15 @@ export const deliverPngBlob = async (
           "text/plain": new Blob([textContent], { type: "text/plain" }),
           "text/html": new Blob([getClipboardHtml(textContent)], { type: "text/html" }),
         };
+  if (
+    textContent !== undefined &&
+    copiedMetadata !== undefined &&
+    ClipboardItem.supports?.(WEB_REACT_GRAB_MIME_TYPE)
+  ) {
+    textRepresentations[WEB_REACT_GRAB_MIME_TYPE] = new Blob([copiedMetadata], {
+      type: REACT_GRAB_MIME_TYPE,
+    });
+  }
   await navigator.clipboard.write([
     new ClipboardItem({ ...textRepresentations, "image/png": blobPromise }),
   ]);

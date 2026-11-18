@@ -110,3 +110,8 @@ export const PILL_DISMISS_PARENT_RECT_PX = { x: 300, y: 200, width: 400, height:
 export const PILL_DISMISS_TARGET_HEIGHT_PX = 30;
 
 export const PILL_DISMISS_Z_INDEX = "2147483000";
+
+export const GRAB_CLIPBOARD_TYPE = "application/x-react-grab";
+export const WEB_GRAB_CLIPBOARD_TYPE = `web ${GRAB_CLIPBOARD_TYPE}`;
+export const IMAGE_AND_TEXT_TYPES = ["image/png", "text/html", "text/plain"];
+export const IMAGE_AND_GRAB_TYPES = [...IMAGE_AND_TEXT_TYPES, WEB_GRAB_CLIPBOARD_TYPE];

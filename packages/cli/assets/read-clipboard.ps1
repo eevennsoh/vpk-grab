@@ -1,11 +1,12 @@
 # Windows clipboard reader for `react-grab watch`. Reads CF_UNICODETEXT and the
-# registered "Chromium Web Custom MIME Data Format" (a base::Pickle of web custom
-# data) via Win32, in a single OpenClipboard so the two reads are consistent.
-# Emits { changeCount, text, pickleBase64 } as JSON; the CLI decodes the pickle
+# legacy Chromium pickle and the mapped async web custom format via Win32,
+# in a single OpenClipboard so the reads are consistent.
+# Emits { changeCount, text, pickleBase64, grab } as JSON; the CLI decodes the pickle
 # (shared with macOS/Linux). GetClipboardSequenceNumber gives a cheap monotonic
 # change token for idle polling.
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $source = @"
 using System;
@@ -31,9 +32,9 @@ public static class RgClip {
   [DllImport("kernel32.dll", SetLastError = true)]
   public static extern UIntPtr GlobalSize(IntPtr hMem);
 
-  private const uint CF_UNICODETEXT = 13;
+  public const uint UnicodeTextFormat = 13;
 
-  private static byte[] ReadLocked(uint format) {
+  public static byte[] ReadLocked(uint format) {
     if (!IsClipboardFormatAvailable(format)) return null;
     IntPtr handle = GetClipboardData(format);
     if (handle == IntPtr.Zero) return null;
@@ -48,18 +49,6 @@ public static class RgClip {
     } finally {
       GlobalUnlock(handle);
     }
-  }
-
-  public static byte[][] ReadAll(uint customFormat) {
-    byte[][] result = new byte[2][];
-    if (!OpenClipboard(IntPtr.Zero)) return result;
-    try {
-      result[0] = ReadLocked(CF_UNICODETEXT);
-      result[1] = ReadLocked(customFormat);
-    } finally {
-      CloseClipboard();
-    }
-    return result;
   }
 }
 "@
@@ -88,24 +77,42 @@ if (-not $loaded) {
   Add-Type -TypeDefinition $source -Language CSharp | Out-Null
 }
 
-$changeCount = [RgClip]::GetClipboardSequenceNumber()
-$customFormat = [RgClip]::RegisterClipboardFormat("Chromium Web Custom MIME Data Format")
-$blobs = [RgClip]::ReadAll($customFormat)
-
 $text = $null
-if ($null -ne $blobs[0]) {
-  $text = [System.Text.Encoding]::Unicode.GetString($blobs[0]).TrimEnd([char]0)
-}
-
 $pickleBase64 = $null
-if ($null -ne $blobs[1]) {
-  $pickleBase64 = [System.Convert]::ToBase64String($blobs[1])
+$grab = $null
+if (-not [RgClip]::OpenClipboard([IntPtr]::Zero)) { exit 1 }
+try {
+  $changeCount = [RgClip]::GetClipboardSequenceNumber()
+  $textBytes = [RgClip]::ReadLocked([RgClip]::UnicodeTextFormat)
+  if ($null -ne $textBytes) {
+    $text = [System.Text.Encoding]::Unicode.GetString($textBytes).TrimEnd([char]0)
+  }
+  $pickle = [RgClip]::ReadLocked([RgClip]::RegisterClipboardFormat("Chromium Web Custom MIME Data Format"))
+  if ($null -ne $pickle) {
+    $pickleBase64 = [System.Convert]::ToBase64String($pickle)
+  }
+  $mapBytes = [RgClip]::ReadLocked([RgClip]::RegisterClipboardFormat("Web Custom Format Map"))
+  if ($null -ne $mapBytes) {
+    try {
+      $formatMap = [System.Text.Encoding]::UTF8.GetString($mapBytes).TrimEnd([char]0) | ConvertFrom-Json
+      $entry = $formatMap.'application/x-react-grab'
+      if ($entry -is [string] -and $entry -cmatch '\AWeb Custom Format(?:0|[1-9][0-9]?)\z') {
+        $grabBytes = [RgClip]::ReadLocked([RgClip]::RegisterClipboardFormat($entry))
+        if ($null -ne $grabBytes) {
+          $grab = [System.Text.Encoding]::UTF8.GetString($grabBytes).TrimEnd([char]0)
+        }
+      }
+    } catch {}
+  }
+} finally {
+  [RgClip]::CloseClipboard() | Out-Null
 }
 
 $payload = [ordered]@{
   changeCount  = [int64]$changeCount
   text         = $text
   pickleBase64 = $pickleBase64
+  grab         = $grab
 }
 
 $payload | ConvertTo-Json -Compress

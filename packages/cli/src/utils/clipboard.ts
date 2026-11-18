@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DARWIN_READER_BINARY_NAME } from "./constants.js";
+import { getNewerGrab } from "./get-newer-grab.js";
+import {
+  DARWIN_READER_BINARY_NAME,
+  LINUX_WEB_FORMAT_MAP,
+  LINUX_WEB_FORMAT_ENTRY,
+} from "./constants.js";
 import { sleep } from "./sleep.js";
 
 export const HISTORY_FILE_NAME = "history.jsonl";
@@ -79,7 +84,7 @@ interface ClipboardReader {
 interface LinuxTool {
   name: string;
   readText: () => string | null;
-  readCustom: (() => Buffer | null) | null;
+  readCustom: ((format: string) => Buffer | null) | null;
 }
 
 interface CreateReaderOptions {
@@ -123,10 +128,10 @@ export const parseChromiumPickle = (buffer: Buffer | null | undefined): Record<s
 };
 
 export const extractGrab = (raw: NativeRead): string | undefined => {
-  if (raw.grab) return raw.grab;
-  if (raw.pickleBase64)
-    return parseChromiumPickle(Buffer.from(raw.pickleBase64, "base64"))[GRAB_MIME];
-  return undefined;
+  const pickleGrab = raw.pickleBase64
+    ? parseChromiumPickle(Buffer.from(raw.pickleBase64, "base64"))[GRAB_MIME]
+    : undefined;
+  return getNewerGrab(raw.grab, pickleGrab);
 };
 
 export const isGrabText = (text: string): boolean =>
@@ -227,15 +232,14 @@ export const detectLinuxTool = (): LinuxTool | null => {
       name: "wl-paste",
       readText: () =>
         runText("wl-paste", ["-n", "-t", "text/plain"]) ?? runText("wl-paste", ["-n"]),
-      readCustom: () => runBuffer("wl-paste", ["-n", "-t", CHROMIUM_CUSTOM_FORMAT]),
+      readCustom: (format) => runBuffer("wl-paste", ["-n", "-t", format]),
     };
   }
   if (hasCommand("xclip")) {
     return {
       name: "xclip",
       readText: () => runText("xclip", ["-selection", "clipboard", "-o"]),
-      readCustom: () =>
-        runBuffer("xclip", ["-selection", "clipboard", "-t", CHROMIUM_CUSTOM_FORMAT, "-o"]),
+      readCustom: (format) => runBuffer("xclip", ["-selection", "clipboard", "-t", format, "-o"]),
     };
   }
   if (hasCommand("xsel")) {
@@ -246,6 +250,22 @@ export const detectLinuxTool = (): LinuxTool | null => {
     };
   }
   return null;
+};
+
+export const readLinuxGrab = (
+  readFormat: (format: string) => Buffer | null,
+): string | undefined => {
+  const pickleGrab = parseChromiumPickle(readFormat(CHROMIUM_CUSTOM_FORMAT))[GRAB_MIME];
+  const map = readFormat(LINUX_WEB_FORMAT_MAP);
+  if (!map) return pickleGrab;
+  let entry: unknown;
+  try {
+    entry = JSON.parse(map.toString("utf8"))?.[GRAB_MIME];
+  } catch {
+    return pickleGrab;
+  }
+  if (typeof entry !== "string" || !LINUX_WEB_FORMAT_ENTRY.test(entry)) return pickleGrab;
+  return getNewerGrab(readFormat(entry)?.toString("utf8"), pickleGrab);
 };
 
 const createLinuxReader = (options: CreateReaderOptions): ClipboardReader | null => {
@@ -259,10 +279,7 @@ const createLinuxReader = (options: CreateReaderOptions): ClipboardReader | null
       if (text == null) return null;
       // No clipboard sequence number on X11/Wayland, so always read the custom
       // blob; its timestamp dedups re-grabs of the identical element.
-      const grab =
-        useCustom && tool.readCustom
-          ? parseChromiumPickle(tool.readCustom())[GRAB_MIME]
-          : undefined;
+      const grab = useCustom && tool.readCustom ? readLinuxGrab(tool.readCustom) : undefined;
       return { changeCount: null, text, grab };
     },
   };

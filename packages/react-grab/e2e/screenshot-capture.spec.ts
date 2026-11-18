@@ -3,6 +3,10 @@
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject, type ReactGrabState } from "./fixtures.js";
 import {
+  GRAB_CLIPBOARD_TYPE,
+  IMAGE_AND_GRAB_TYPES,
+  IMAGE_AND_TEXT_TYPES,
+  WEB_GRAB_CLIPBOARD_TYPE,
   SCREENSHOT_RECTANGLE_HEIGHT_PX,
   SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
@@ -1227,6 +1231,7 @@ interface CopiedPillGrab {
   captureRect: ClientBox;
   copiedText: string;
   copiedHtml: string;
+  copiedMetadata: string;
 }
 
 const waitForGrabbedBoxes = async (
@@ -1426,6 +1431,7 @@ const grabFirstTodo = async (
     captureRect: padBox(getGrabbedBoxesUnion(grabbedBoxes)),
     copiedText: copyPayload["text/plain"],
     copiedHtml: copyPayload["text/html"],
+    copiedMetadata: copyPayload[GRAB_CLIPBOARD_TYPE],
   };
 };
 
@@ -1469,7 +1475,7 @@ const expectCameraCaptureCompleted = async (
   await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
   const imageWrites = await getImageWrites(page);
   expect(imageWrites).toHaveLength(1);
-  expect([...imageWrites[0].types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+  expect([...imageWrites[0].types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
   expect(await getUnhandledRejections(page)).toEqual([]);
   expect(pageErrors).toEqual([]);
 };
@@ -1751,7 +1757,7 @@ test.describe("Copied pill", () => {
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     expect(await getClipboardWriteCallCount(page)).toBe(1);
     const [imageWrite] = await getImageWrites(page);
-    expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+    expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
     expect(copiedText).toContain("TodoItem");
     expect(imageWrite.plainText).toBe(copiedText);
     expect(imageWrite.html).toBe(copiedHtml);
@@ -2133,7 +2139,7 @@ test.describe("Copied pill camera after a real activation", () => {
       ).toHaveCount(0);
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       const [imageWrite] = await getImageWrites(page);
-      expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+      expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
       expect(imageWrite.plainText).toContain("TodoItem");
       expect(await getClipboardWriteCallCount(page)).toBe(1);
       expect(await isReactGrabActive(page)).toBe(true);
@@ -2209,6 +2215,7 @@ const clickCopyFirstTodo = async (
     captureRect: padBox(getGrabbedBoxesUnion(grabbedBoxes)),
     copiedText: copyPayload["text/plain"],
     copiedHtml: copyPayload["text/html"],
+    copiedMetadata: copyPayload[GRAB_CLIPBOARD_TYPE],
   };
 };
 
@@ -2255,7 +2262,7 @@ const submitPromptOnPill = async (reactGrab: ReactGrabPageObject, page: Page) =>
   await page.keyboard.press("Enter");
   const promptCopy = await waitForPromptCopy();
   expect(promptCopy["text/plain"].startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
-  return promptCopy["text/plain"];
+  return promptCopy;
 };
 
 test.describe("Copied pill camera cancellation", () => {
@@ -2473,7 +2480,7 @@ test.describe("Screenshot with every grab", () => {
 
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     const [imageWrite] = await getImageWrites(page);
-    expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+    expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
     expect(imageWrite.plainText).toBe(copiedText);
     expect(imageWrite.html).toBe(copiedHtml);
     const expectedSize = await getExpectedPixelSize(page, captureRect.width, captureRect.height);
@@ -2584,12 +2591,12 @@ test.describe("Screenshot with every grab", () => {
     await expect(completion).toContainText("Copied with image");
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
 
-    const promptText = await submitPromptOnPill(reactGrab, page);
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
 
     await expect.poll(() => getImageWrites(page)).toHaveLength(2);
     const imageWrites = await getImageWrites(page);
     expect(imageWrites[1].plainText).toBe(promptText);
-    expect([...imageWrites[1].types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+    expect([...imageWrites[1].types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
     await expect(completion).toHaveText(/^Copied with prompt/);
     await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
@@ -2609,7 +2616,7 @@ test.describe("Screenshot with every grab", () => {
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
     await expect.poll(() => getPendingImageEncodingCount(page)).toBe(1);
 
-    const promptText = await submitPromptOnPill(reactGrab, page);
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
     await expect(completion.filter({ hasText: "Copied with prompt" })).toHaveCount(1);
     await expect.poll(() => getPendingImageEncodingCount(page)).toBe(2);
     await openImageEncodingGate(page);
@@ -2716,7 +2723,7 @@ test.describe("Screenshot with every grab", () => {
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
     await installClipboardRecorder(page, { shouldReject: true });
 
-    const promptText = await submitPromptOnPill(reactGrab, page);
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
 
     await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
     await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(0);
@@ -2825,31 +2832,96 @@ test.describe("Screenshot with every grab", () => {
   });
 });
 
-test.describe("Screenshot with every grab on the real clipboard", () => {
-  test("a trusted click's delayed image write is allowed and holds the text and the image", async ({
-    reactGrab,
-    page,
-  }) => {
+const readImageClipboard = (page: Page) =>
+  page.evaluate(async (customType) => {
+    const items = await navigator.clipboard.read();
+    const [item] = items;
+    return {
+      itemCount: items.length,
+      types: [...item.types].sort(),
+      plainText: await (await item.getType("text/plain")).text(),
+      metadata: item.types.includes(customType)
+        ? await (await item.getType(customType)).text()
+        : null,
+    };
+  }, WEB_GRAB_CLIPBOARD_TYPE);
+
+test.describe("Screenshot on the browser clipboard", () => {
+  test.beforeEach(async ({ reactGrab }) => {
     await expect
       .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
       .toBe(true);
-    const pageErrors = trackPageErrors(page);
     await reactGrab.activate();
+  });
+
+  for (const automatic of [true, false]) {
+    test(`the ${automatic ? "automatic screenshot" : "pill camera"} preserves the text copy's metadata`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const pageErrors = trackPageErrors(page);
+      if (automatic) await switchOnScreenshotToggle(page);
+      const { copiedText, copiedMetadata } = await clickCopyFirstTodo(reactGrab, page);
+      const completion = getCompletion(reactGrab);
+      if (!automatic) await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+      await expect(completion).toContainText("Copied with image");
+
+      expect(await readImageClipboard(page)).toEqual({
+        itemCount: 1,
+        types: IMAGE_AND_GRAB_TYPES,
+        plainText: copiedText,
+        metadata: copiedMetadata,
+      });
+      expect(JSON.parse(copiedMetadata)).toMatchObject({
+        timestamp: expect.any(Number),
+        content: copiedText,
+        entries: [expect.objectContaining({ componentName: "TodoItem" })],
+      });
+      await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+      expect(pageErrors).toEqual([]);
+    });
+  }
+
+  test("the prompt screenshot preserves the prompt copy's newer metadata", async ({
+    reactGrab,
+    page,
+  }) => {
+    await switchOnScreenshotToggle(page);
+    const { copiedMetadata } = await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toContainText("Copied with image");
+    const promptCopy = await submitPromptOnPill(reactGrab, page);
+    await expect(completion).toContainText("Copied with prompt");
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+
+    expect(await readImageClipboard(page)).toEqual({
+      itemCount: 1,
+      types: IMAGE_AND_GRAB_TYPES,
+      plainText: promptCopy["text/plain"],
+      metadata: promptCopy[GRAB_CLIPBOARD_TYPE],
+    });
+    const promptMetadata = JSON.parse(promptCopy[GRAB_CLIPBOARD_TYPE]);
+    expect(promptMetadata.timestamp).toBeGreaterThan(JSON.parse(copiedMetadata).timestamp);
+    expect(promptMetadata.entries).toMatchObject([{ commentText: PROMPT_TEXT }]);
+  });
+
+  test("an unsupported metadata type still copies the text and image", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate((customType) => {
+      const supports = ClipboardItem.supports.bind(ClipboardItem);
+      ClipboardItem.supports = (type) => type !== customType && supports(type);
+    }, WEB_GRAB_CLIPBOARD_TYPE);
     await switchOnScreenshotToggle(page);
     const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
-
     await expect(getCompletion(reactGrab)).toContainText("Copied with image");
-    const clipboardItem = await page.evaluate(async () => {
-      const [item] = await navigator.clipboard.read();
-      return {
-        types: [...item.types].sort(),
-        plainText: await (await item.getType("text/plain")).text(),
-      };
+    expect(await readImageClipboard(page)).toEqual({
+      itemCount: 1,
+      types: IMAGE_AND_TEXT_TYPES,
+      plainText: copiedText,
+      metadata: null,
     });
-    expect(clipboardItem.types).toEqual(["image/png", "text/html", "text/plain"]);
-    expect(clipboardItem.plainText).toBe(copiedText);
-    await expect(getCompletion(reactGrab).locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
-    expect(pageErrors).toEqual([]);
   });
 });
 

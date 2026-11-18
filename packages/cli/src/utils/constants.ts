@@ -16,3 +16,6 @@ export const MAX_READ_HISTORY_BYTES = 128 * 1024 * 1024;
 // Buffer size for the legacy-cursor migration's chunked newline scan, which
 // counts newline bytes without materializing the whole history as a string.
 export const MIGRATION_SCAN_CHUNK_BYTES = 1024 * 1024;
+
+export const LINUX_WEB_FORMAT_MAP = 'application/web;type="custom/formatmap"';
+export const LINUX_WEB_FORMAT_ENTRY = /^application\/web;type="custom\/format(?:0|[1-9]\d?)"$/;

@@ -128,7 +128,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   container edges, with its size in the name tag.
 - **Screenshot** (toolbar toggle, key 4 with Grab in hand, off by default and
   remembered): every grab copies its references at once, then the pill's camera
-  runs by itself so the clipboard ends with the references and a PNG. A copy
+  runs by itself so the clipboard ends with the references and a PNG. Browsers
+  that report support for web custom formats keep the grab metadata with the PNG
+  so the watcher can recognize the same grab after the image arrives. A copy
   with several pills takes one image, on the pill with Optional context, and
   Optional context stays after the image; a prompt is copied with a fresh
   image. Over plain HTTP each grab downloads its image instead.

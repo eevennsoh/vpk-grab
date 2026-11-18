@@ -425,6 +425,7 @@ export interface SelectionLabelInstance {
   thumbnailUrl?: string;
   selectionPageRect?: PageRect;
   copiedContent?: string;
+  copiedMetadata?: string;
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
   promptTarget?: PromptCopyTarget;
@@ -434,6 +435,7 @@ export interface SelectionLabelInstancePatch {
   statusText?: string;
   thumbnailUrl?: string;
   copiedContent?: string;
+  copiedMetadata?: string;
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
   promptTarget?: PromptCopyTarget;
