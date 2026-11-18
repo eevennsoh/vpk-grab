@@ -696,7 +696,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
     marqueeRect,
     isEditPressing,
     pinnedSpecsElement,
-    pinSpecs: setPinnedSpecsElement,
+    pinSpecs: (element: Element, isPointerOverPanel: boolean) =>
+      batch(() => {
+        setIsSpecsPanelHovered(isPointerOverPanel);
+        setPinnedSpecsElement(element);
+      }),
     unpinSpecs,
     releaseSpecsPin,
     isSpecsPinLocked,

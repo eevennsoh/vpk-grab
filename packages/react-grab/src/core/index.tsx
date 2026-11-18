@@ -12,7 +12,10 @@ import {
 } from "solid-js";
 import { render } from "solid-js/web";
 import { createGrabStore } from "./store.js";
-import { overlayDismiss } from "./overlay-dismiss.js";
+import { overlayDismiss } from "../utils/overlay-dismiss.js";
+import { getFocusedPillPrompt } from "../utils/get-focused-pill-prompt.js";
+import { createPointerPositionTracker } from "../utils/create-pointer-position-tracker.js";
+import { isPositionInsideElement } from "../utils/is-position-inside-element.js";
 import { CopyFailedError, RecoverableError } from "../errors.js";
 import {
   isKeyboardEventTriggeredByInput,
@@ -405,7 +408,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       initialToolbarState,
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
-    const [isPointerOverOverlay, setIsPointerOverOverlay] = createSignal(false);
+    const getPointerPosition = createPointerPositionTracker();
+    let preservedPillPromptFocusTarget: Element | null = null;
     // Shift and Alt typed into a specs field are text, not a pin or a measure,
     // and so is one pressed while the pill's prompt holds text. A keyup from
     // the prompt may only clear a modifier: whichever key is let go, a release
@@ -860,7 +864,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         !store.labelInstances.some((instance) => instance.status === "copied")
       )
         return false;
-      if (!isActivated() && !isHoldingKeys() && !isCopying()) {
+      if (!isActivated() && !isHoldingKeys() && !isCopying() && !isPillPromptEvent(event)) {
         labelController.dismissCompleted();
         return false;
       }
@@ -1932,7 +1936,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
-    const returnFocusToPage = (previousFocused = store.previouslyFocusedElement) => {
+    const returnFocusToPage = (
+      previousFocused = store.previouslyFocusedElement ?? preservedPillPromptFocusTarget,
+    ) => {
+      preservedPillPromptFocusTarget = null;
       // Calling .focus() forces a synchronous focus event dispatch and a style
       // recalc. Skip it when the target is <body> or already the active
       // element — both cases produce no observable focus change but were
@@ -1956,6 +1963,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
+      if (shouldPreservePillPromptFocus) preservedPillPromptFocusTarget = previousFocused;
       stopSpaceDragRepositioning();
       actions.deactivate();
       dismissToolbarMenu();
@@ -1978,7 +1986,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       pluginRegistry.hooks.onDeactivate();
     };
 
-    const releaseHoldSession = () => deactivateRenderer(shouldFocusPromptAfterEnter());
+    const releaseHoldSession = () => deactivateRenderer(Boolean(getFocusedPillPrompt()));
 
     const forceDeactivateAll = () => {
       if (isHoldingKeys()) {
@@ -2894,16 +2902,30 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (!isActivated() || isAnnotating() || isPromptMode() || isCopying()) return false;
       if (isDragging() || isSelectionInteractionLocked() || isAnyPopoverOpen()) return false;
       if (isTextFieldKeyEvent(event)) return false;
-      if (isPointerOverOverlay()) return false;
-      if (isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event))
-        return false;
       if (store.labelInstances.some((instance) => instance.status === "error")) return false;
 
-      event.preventDefault();
-      event.stopImmediatePropagation();
       actions.relinkLiveElements();
       const selectedElement = keyboardSelection.selectedElement();
       const frozenElements = store.frozenElements.filter(isElementConnected);
+      if (
+        isEventFromOverlay(event, "data-react-grab-ignore-events") &&
+        !isPillPromptEvent(event) &&
+        (!isEventFromOverlay(event, "data-react-grab-toolbar") ||
+          (!selectedElement && frozenElements.length === 0))
+      )
+        return false;
+      if (!selectedElement && frozenElements.length === 0) {
+        const pointerPosition = getPointerPosition();
+        if (
+          pointerPosition &&
+          rendererHost.shadowRoot
+            ?.elementFromPoint(pointerPosition.x, pointerPosition.y)
+            ?.closest("[data-react-grab-ignore-events]")
+        )
+          return false;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
       const element =
         selectedElement ?? frozenElements[0] ?? store.frozenElement ?? targetElement();
       if (!element || !isElementConnected(element)) return true;
@@ -3194,7 +3216,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
         if (dismissPopoverOnEscape(event)) return;
-        if (event.code === "Escape" && !isActivated() && !isHoldingKeys() && !isCopying()) {
+        if (
+          event.code === "Escape" &&
+          !isActivated() &&
+          !isHoldingKeys() &&
+          !isCopying() &&
+          !isPillPromptEvent(event)
+        ) {
           dismissCompletedLabelsOnEscape(event);
           return;
         }
@@ -3337,6 +3365,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           if (isFromOverlay && ARROW_KEYS.has(event.key)) {
             if (tryHandleNavigationKey(event)) return;
           }
+          if (isFromOverlay && tryHandleEnterCopy(event)) return;
 
           return;
         }
@@ -3524,7 +3553,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: PointerEvent) => {
         if (!event.isPrimary) return;
         const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
-        setIsPointerOverOverlay(isFromOverlay);
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
         if (isAnnotating()) {
@@ -4035,7 +4063,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           }
           if (!inspect.isSpecsEnabled() || isPromptMode() || isDragging()) return;
           const element = inspectElement();
-          if (element) inspect.pinSpecs(element);
+          if (element)
+            inspect.pinSpecs(
+              element,
+              isPositionInsideElement(
+                getPointerPosition(),
+                rendererHost.shadowRoot?.querySelector("[data-react-grab-specs-panel]"),
+              ),
+            );
         },
         { defer: true },
       ),
@@ -4762,9 +4797,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     (store.wasActivatedByToggle &&
                       pluginRegistry.store.options.activationMode !== "hold"))
                 }
-                onInstancePromptFocusRelease={() => {
-                  if (isActivated()) returnFocusToPage();
-                }}
+                onInstancePromptFocusRelease={() => returnFocusToPage()}
                 onDismissPill={(event) => {
                   dismissCompletedPills();
                   if (isActivated() && !isAnnotating() && event.detail > 0) {

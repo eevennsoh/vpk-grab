@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.js";
-import { NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
+import { NON_NATIVE_ACTIVATION_KEY, OUTSIDE_WINDOW_POSITION_PX } from "./constants.js";
 import { getCopyEventCount, installClipboardRecorder } from "./screenshot-fixture.js";
 import { installSpecsFixture, pinAndReach, specRow, switchOnSpecs } from "./specs-panel-fixture.js";
 
@@ -410,7 +410,10 @@ test.describe("Enter copies first", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(false);
   });
 
-  test("Enter copies every element of a frozen marquee selection", async ({ reactGrab, page }) => {
+  test("Enter copies a frozen marquee selection while the pointer rests on the toolbar", async ({
+    reactGrab,
+    page,
+  }) => {
     await installClipboardRecorder(page);
     await page.evaluate(() => {
       window.__REACT_GRAB__?.registerPlugin({
@@ -436,6 +439,7 @@ test.describe("Enter copies first", () => {
     ).toHaveCount(2);
     expect(await getCopyEventCount(page)).toBe(0);
 
+    await page.locator('[data-react-grab-toolbar-action="freeze-selection"]').hover();
     await page.keyboard.press("Enter");
 
     await expect.poll(() => getCopyEventCount(page)).toBe(1);
@@ -831,10 +835,16 @@ test.describe("Enter and Escape review corrections", () => {
     await expect(page.locator("[data-react-grab-label-instance]")).toHaveCount(1);
   });
 
-  test("Grab off dismisses a focused context field without consuming Escape", async ({
+  test("Grab off owns Escape in a focused context field until the pill is dismissed", async ({
     reactGrab,
     page,
   }) => {
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.id = "review-return-focus";
+      document.body.append(button);
+      button.focus();
+    });
     await reactGrab.updateOptions({
       activationMode: "hold",
       activationKey: NON_NATIVE_ACTIVATION_KEY,
@@ -854,7 +864,160 @@ test.describe("Enter and Escape review corrections", () => {
       }),
     );
     await page.keyboard.press("Escape");
-    await expect(page.locator("html")).toHaveAttribute("data-review-escape", "false");
+    await expect(page.locator(promptSelector)).toHaveValue("");
+    await expect(page.locator(promptSelector)).toBeFocused();
+    await expect(page.locator(completionSelector)).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-review-escape");
+    await page.keyboard.press("Escape");
     await expect(page.locator(completionSelector)).toHaveCount(0);
+    await expect(page.locator("#review-return-focus")).toBeFocused();
+    await expect(page.locator("html")).not.toHaveAttribute("data-review-escape");
+  });
+
+  test("toolbar activation copies the arrow selection without moving the pointer", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.locator('[data-react-grab-toolbar-action="copy"]').click();
+    await page.keyboard.press("ArrowDown");
+    await reactGrab.waitForSelectionBox();
+    const selectedTagName = (await reactGrab.getSelectionLabelInfo()).tagName;
+    expect(selectedTagName).toBeTruthy();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(promptSelector)).toBeFocused();
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain(`[<${selectedTagName}`);
+  });
+
+  test("Enter hit tests the page exposed by Dismiss without a pointer move", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(promptSelector)).toBeFocused();
+    await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+    await expect(page.locator(completionSelector)).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => getCopyEventCount(page)).toBe(2);
+    await expect(page.locator(promptSelector)).toBeFocused();
+  });
+
+  test("Enter is not blocked after the pointer leaves the window over the toolbar", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    await page.locator('[data-react-grab-toolbar-action="copy"]').hover();
+    await page.mouse.move(OUTSIDE_WINDOW_POSITION_PX.x, OUTSIDE_WINDOW_POSITION_PX.y);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => getCopyEventCount(page)).toBe(1);
+  });
+
+  test("hold release restores page focus after the copied pill is dismissed", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.id = "review-return-focus";
+      document.body.append(button);
+      button.focus();
+    });
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    try {
+      await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
+      await reactGrab.hoverUntilSelected(targetSelector);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(promptSelector)).toBeFocused();
+      await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await expect(page.locator(completionSelector)).toHaveCount(0);
+    } finally {
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    }
+    await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+    await expect(page.locator("#review-return-focus")).toBeFocused();
+  });
+
+  test("hold release checks current field focus rather than the last Enter copy", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(() => {
+      for (const buttonId of ["review-return-focus", "review-other-focus"]) {
+        const button = document.createElement("button");
+        button.id = buttonId;
+        document.body.append(button);
+      }
+      document.getElementById("review-return-focus")?.focus();
+    });
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    try {
+      await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
+      await reactGrab.hoverUntilSelected(targetSelector);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(promptSelector)).toBeFocused();
+      await page.locator("#review-other-focus").focus();
+      await expect(page.locator("#review-other-focus")).toBeFocused();
+    } finally {
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    }
+    await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+    await expect(page.locator("#review-return-focus")).toBeFocused();
+  });
+
+  test("context submitted with Grab off releases focus and the next activation starts clean", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.id = "review-return-focus";
+      button.textContent = "Page focus target";
+      document.body.append(button);
+      button.focus();
+    });
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    try {
+      await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
+      await reactGrab.hoverUntilSelected(targetSelector);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(promptSelector)).toBeFocused();
+    } finally {
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    }
+    await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+    await page.keyboard.type("context while off");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(completionSelector)).toContainText("Copied with prompt");
+    await expect(page.locator(promptSelector)).toHaveCount(0);
+    expect(
+      await page.evaluate(() => Boolean(document.activeElement?.shadowRoot?.activeElement)),
+    ).toBe(false);
+    await page.locator("#review-return-focus").click();
+    await expect(page.locator(completionSelector)).toHaveCount(0);
+    await reactGrab.activate();
+    await expect(page.locator(promptSelector)).toHaveCount(0);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+    await reactGrab.hoverUntilSelected(targetSelector);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(promptSelector)).toHaveValue("");
+    await expect(page.locator(promptSelector)).toBeFocused();
   });
 });

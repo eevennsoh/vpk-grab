@@ -59,8 +59,6 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
 
 const ACTION_ICON_CLASS = "opacity-50 group-hover:opacity-100 transition-opacity";
 
-// An empty prompt leaves every key but text to the page (the overlay's keydown
-// handler sees to that), so Escape only has work here once there is text.
 const PillPrompt: Component<PillPromptProps> = (props) => {
   let textareaRef: HTMLTextAreaElement | undefined;
   let hasFocus = false;
@@ -77,7 +75,6 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (isKeyboardEventComposing(event)) return;
-    if (event.code === "Escape" && !props.isGrabActive) return;
     event.stopImmediatePropagation();
     if (isEnterCode(event.code) && !event.shiftKey) {
       event.preventDefault();
@@ -89,7 +86,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
       event.preventDefault();
       setPromptText("");
       if (textareaRef) autoResizeTextarea(textareaRef, TEXTAREA_MAX_HEIGHT_PX);
-      releaseFocus();
+      if (props.isGrabActive) releaseFocus();
     }
   };
 

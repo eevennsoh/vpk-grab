@@ -9,6 +9,7 @@ import {
   MARQUEE_SCREENSHOT_MOVE_PX,
   MARQUEE_OUTSET_SIDE_COUNT,
   NON_NATIVE_ACTIVATION_KEY,
+  MOTIONLESS_SPECS_VIEWPORT_PX,
   PILL_PAGE_BUTTON_POSITION_PX,
   SCREENSHOT_SELECTION_PADDING_PX,
   PILL_PERSISTENCE_CHECK_MS,
@@ -633,6 +634,59 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.up("Shift");
     await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
   });
+
+  for (const isAlreadyPinned of [false, true]) {
+    test(`Shift over motionless Specs suspends the camera when ${isAlreadyPinned ? "already pinned" : "Shift pins it"}`, async ({
+      page,
+    }) => {
+      await installSpecsFixture(page);
+      await switchOnSpecs(page);
+      await inspect(page, "specs-token-button");
+      if (!isAlreadyPinned) await page.setViewportSize(MOTIONLESS_SPECS_VIEWPORT_PX);
+      if (isAlreadyPinned) {
+        await pinAndReach(page, "padding");
+        await page.locator(SPECS_PIN_SELECTOR).click();
+      }
+      const panelCenter = isAlreadyPinned
+        ? await getCenter(page, "[data-react-grab-specs-panel]")
+        : {
+            x: MOTIONLESS_SPECS_VIEWPORT_PX.width / 2,
+            y: MOTIONLESS_SPECS_VIEWPORT_PX.height / 2,
+          };
+      await page.mouse.move(panelCenter.x, panelCenter.y);
+      await expect(page.locator("[data-react-grab-specs-panel]")).toBeVisible();
+      const panelBounds = await page.locator("[data-react-grab-specs-panel]").boundingBox();
+      if (!panelBounds) throw new Error("Specs panel has no bounds");
+      expect(panelCenter.x).toBeGreaterThan(panelBounds.x);
+      expect(panelCenter.x).toBeLessThan(panelBounds.x + panelBounds.width);
+      expect(panelCenter.y).toBeGreaterThan(panelBounds.y);
+      expect(panelCenter.y).toBeLessThan(panelBounds.y + panelBounds.height);
+      const grabCursor = await readPageCursor(page);
+      await page.evaluate(() => {
+        window.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.code !== "ShiftLeft") return;
+            document.documentElement.dataset.specsShiftCursor =
+              document.querySelector("[data-react-grab-cursor]")?.textContent ?? "";
+          },
+          { capture: true },
+        );
+      });
+      await page.keyboard.down("Shift");
+      try {
+        await expect(page.locator(PINNED_PANEL_SELECTOR)).toBeVisible();
+        await expect(page.locator("html")).toHaveAttribute("data-specs-shift-cursor", grabCursor);
+        await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+      } finally {
+        await page.keyboard.up("Shift");
+      }
+      if (!isAlreadyPinned) {
+        await page.mouse.move(0, 0);
+        await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(0);
+      }
+    });
+  }
 
   test("a Shift+drag starting on Specs never starts a screenshot", async ({ reactGrab, page }) => {
     await installSpecsFixture(page);

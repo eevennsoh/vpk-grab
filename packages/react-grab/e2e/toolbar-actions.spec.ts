@@ -1,4 +1,5 @@
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
+import { TOOLBAR_NO_COPY_SETTLE_MS } from "./constants.js";
 
 const BUTTON_SELECTOR = "button";
 
@@ -196,6 +197,8 @@ for (const selectionRoute of ["click", "marquee", "prompt"]) {
       } else {
         await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
         expect(await reactGrab.isPromptModeActive()).toBe(false);
+        await expect(page.locator("[data-react-grab-selection-label]")).toHaveCount(0);
+        await page.waitForTimeout(TOOLBAR_NO_COPY_SETTLE_MS);
         await expect(page.locator("html")).toHaveAttribute("data-toolbar-copy-count", "0");
       }
       await expect(page.locator("[data-react-grab-context-menu]")).toHaveCount(0);

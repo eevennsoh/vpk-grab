@@ -102,17 +102,11 @@ export const SpecValueMenu: Component<SpecValueMenuProps> = (props) => {
     const unregisterDismiss = registerOverlayDismiss({
       isOpen: () => true,
       onDismiss: () => props.onClose(),
+      shouldIgnorePointerEvent: (event) =>
+        Boolean(menuRef && event.composedPath().includes(menuRef)),
     });
     onCleanup(unregisterDismiss);
     filterInputRef?.focus();
-    const handleOutsidePress = (event: PointerEvent) => {
-      if (menuRef && event.composedPath().includes(menuRef)) return;
-      props.onClose();
-    };
-    window.addEventListener("pointerdown", handleOutsidePress, { capture: true });
-    onCleanup(() =>
-      window.removeEventListener("pointerdown", handleOutsidePress, { capture: true }),
-    );
   });
 
   return (

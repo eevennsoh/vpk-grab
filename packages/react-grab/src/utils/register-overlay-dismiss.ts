@@ -3,13 +3,14 @@ import { ignoreRealInput, IS_DEMO } from "./runtime-mode.js";
 import { isEventFromOverlay } from "./is-event-from-overlay.js";
 import { isKeyboardEventTriggeredByInput } from "./is-keyboard-event-triggered-by-input.js";
 import { nativeCancelAnimationFrame, nativeRequestAnimationFrame } from "./native-raf.js";
-import { overlayDismiss } from "../core/overlay-dismiss.js";
+import { overlayDismiss } from "./overlay-dismiss.js";
 import { isKeyboardEventComposing } from "./is-keyboard-event-composing.js";
 
 interface RegisterOverlayDismissOptions {
   isOpen: () => boolean;
   onDismiss: (source: OverlayDismissSource) => void;
   shouldIgnoreKeyboardEvent?: (event: KeyboardEvent) => boolean;
+  shouldIgnorePointerEvent?: (event: MouseEvent | TouchEvent) => boolean;
   shouldIgnoreInputEvents?: boolean;
 }
 
@@ -30,7 +31,6 @@ export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): 
     }
     return false;
   };
-  const handleKeyDown = ignoreRealInput(dismissOnEscape);
   const unregisterDismiss = overlayDismiss.register({
     isOpen: options.isOpen,
     onEscape: dismissOnEscape,
@@ -38,7 +38,12 @@ export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): 
 
   const handleClickOutside = ignoreRealInput((event: MouseEvent | TouchEvent) => {
     if (!options.isOpen()) return;
-    if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
+    if (
+      options.shouldIgnorePointerEvent
+        ? options.shouldIgnorePointerEvent(event)
+        : isEventFromOverlay(event, "data-react-grab-ignore-events")
+    )
+      return;
     options.onDismiss("pointer");
   });
 
@@ -53,12 +58,9 @@ export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): 
     });
   });
 
-  window.addEventListener("keydown", handleKeyDown, { capture: true });
-
   return () => {
     unregisterDismiss();
     nativeCancelAnimationFrame(frameId);
-    window.removeEventListener("keydown", handleKeyDown, { capture: true });
     window.removeEventListener("mousedown", handleClickOutside, {
       capture: true,
     });

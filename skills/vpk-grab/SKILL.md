@@ -106,14 +106,19 @@ example, in `<head>` before the app's own scripts, on development pages only.
   image. Its Dismiss close button or Esc dismisses the pill while leaving
   Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
   menu takes Esc first; otherwise text in Optional context is cleared before
-  another Esc dismisses the pill. With Grab off, Esc dismisses the pill without
-  consuming the page's Escape or moving focus, so page dialogs still close.
+  another Esc dismisses the pill. With Grab off and Optional context focused,
+  Esc clears text first, then dismisses the empty pill and returns focus to the
+  page; neither press reaches the page. Elsewhere with Grab off, Esc dismisses
+  the pill without consuming the page's Escape or moving focus.
   Enter copies the hovered or keyboard-selected elements first, then focuses
   Optional context, including while the hold shortcut's modifiers are down.
-  Releasing the shortcut switches Grab off but keeps that field focused: type
-  and submit context without reactivating Grab. Explicitly switching Grab off
-  releases focus. With an empty field and the pointer over the page, arrow keys
-  navigate and Enter copies a different selection; page inputs keep their own
+  Releasing the shortcut switches Grab off but preserves the field's focus only
+  if it still has focus: type and submit context without reactivating Grab.
+  Submitting with Grab off returns focus to the page. Explicitly switching Grab
+  off releases focus. With an empty field, arrow keys navigate while Grab is on.
+  Enter copies a different keyboard or frozen multi-selection even with the
+  pointer over the toolbar; a hovered-element copy requires the pointer not to
+  be over an interactive overlay. Page inputs keep their own
   arrow keys and Enter. Use
   ⌘O / Ctrl+O or the hover label’s component name to open the source.
   Right-click keeps the browser’s menu.
