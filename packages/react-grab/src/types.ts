@@ -731,6 +731,7 @@ export interface AnnotationText extends Position {
 export interface InspectSettings {
   isSpecsEnabled: boolean;
   isRedlinesEnabled: boolean;
+  isAutoScreenshotEnabled: boolean;
   annotationColor: string;
 }
 
@@ -858,6 +859,7 @@ export type SpecsPanelCorner = "top-right" | "top-left" | "bottom-right" | "bott
 export interface InspectRendererState {
   isSpecsEnabled: Accessor<boolean>;
   isRedlinesEnabled: Accessor<boolean>;
+  isAutoScreenshotEnabled: Accessor<boolean>;
   annotationTool: Accessor<AnnotationTool>;
   element: Accessor<Element | null>;
   measureTarget: Accessor<Element | null>;
@@ -886,6 +888,7 @@ export interface InspectRendererState {
   onConfigureStyleChanges: (element: Element) => void;
   onToggleSpecs: () => void;
   onToggleRedlines: () => void;
+  onToggleAutoScreenshot: () => void;
   onSelectAnnotationTool: (tool: AnnotationTool) => void;
   onSelectAnnotationColor: (color: string) => void;
   onClearAnnotations: () => void;

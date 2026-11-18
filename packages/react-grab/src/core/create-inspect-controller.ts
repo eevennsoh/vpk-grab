@@ -122,6 +122,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const initialSettings = loadInspectSettings();
   const [isSpecsEnabled, setIsSpecsEnabled] = createSignal(initialSettings.isSpecsEnabled);
   const [isRedlinesEnabled, setIsRedlinesEnabled] = createSignal(initialSettings.isRedlinesEnabled);
+  const [isAutoScreenshotEnabled, setIsAutoScreenshotEnabled] = createSignal(
+    initialSettings.isAutoScreenshotEnabled,
+  );
   const [annotationColor, setAnnotationColor] = createSignal(initialSettings.annotationColor);
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
   const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
@@ -204,6 +207,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     saveInspectSettings({
       isSpecsEnabled: isSpecsEnabled(),
       isRedlinesEnabled: isRedlinesEnabled(),
+      isAutoScreenshotEnabled: isAutoScreenshotEnabled(),
       annotationColor: annotationColor(),
     });
 
@@ -281,6 +285,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const toggleRedlines = () => {
     if (isRedlinesEnabled()) stopMeasuring();
     setIsRedlinesEnabled((isEnabled) => !isEnabled);
+    persistSettings();
+  };
+
+  const toggleAutoScreenshot = () => {
+    setIsAutoScreenshotEnabled((isEnabled) => !isEnabled);
     persistSettings();
   };
 
@@ -674,6 +683,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   return {
     isSpecsEnabled,
     isRedlinesEnabled,
+    isAutoScreenshotEnabled,
     annotationTool,
     strokes,
     texts,
@@ -706,6 +716,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     trackMeasureTarget,
     toggleSpecs,
     toggleRedlines,
+    toggleAutoScreenshot,
     selectTool,
     clearAnnotations,
     removeSelectedAnnotations,

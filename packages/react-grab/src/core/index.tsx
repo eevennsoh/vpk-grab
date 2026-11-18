@@ -81,6 +81,8 @@ import {
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
+  AUTO_SCREENSHOT_TOOL_KEY,
+  PROMPT_COPIED_STATUS_TEXT,
   TOOL_CYCLE_TAP_MAX_MS,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
@@ -997,6 +999,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           labelInstanceIds,
           Boolean(shouldDeactivateOnFailure),
         );
+        if (didSucceed) startAutomaticScreenshot(labelInstanceIds);
       }
 
       if (current().state !== "copying") return true;
@@ -1052,7 +1055,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
       labelController.cancelScreenshotCapture(instanceId);
-      labelController.startPromptCopy(instanceId, "Copied with prompt");
+      labelController.startPromptCopy(instanceId, PROMPT_COPIED_STATUS_TEXT);
       runLabeledCopy({
         primaryElement: promptTarget.primaryElement,
         targetElements: promptTarget.elements,
@@ -3227,7 +3230,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         // Bare keys pick the toolbar's tools up and put them down, as in a
         // design tool, so a frozen hover state never needs a trip to the
         // toolbar. V only means something once there is a drawing to move,
-        // and Specs and Spacing only while Grab, which they serve, is in hand.
+        // and Specs, Spacing and Screenshot only while Grab, which they serve,
+        // is in hand.
         const isBareKeyPress =
           !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
         if (canHandleEditShortcut && isBareKeyPress) {
@@ -3249,6 +3253,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               case SPACING_TOOL_KEY:
                 if (isAnnotating()) return false;
                 inspect.toggleRedlines();
+                return true;
+              case AUTO_SCREENSHOT_TOOL_KEY:
+                if (isAnnotating()) return false;
+                inspect.toggleAutoScreenshot();
                 return true;
               case MOVE_TOOL_KEY:
                 if (!inspect.hasAnnotations()) return false;
@@ -4112,6 +4120,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const inspectRendererState: InspectRendererState = {
       isSpecsEnabled: inspect.isSpecsEnabled,
       isRedlinesEnabled: inspect.isRedlinesEnabled,
+      isAutoScreenshotEnabled: inspect.isAutoScreenshotEnabled,
       annotationTool: inspect.annotationTool,
       element: inspectElement,
       measureTarget: inspect.measureTargetElement,
@@ -4149,6 +4158,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onConfigureStyleChanges: (element) => configureStyleChanges(element),
       onToggleSpecs: inspect.toggleSpecs,
       onToggleRedlines: inspect.toggleRedlines,
+      onToggleAutoScreenshot: inspect.toggleAutoScreenshot,
       onSelectAnnotationTool: handleSelectAnnotationTool,
       onSelectAnnotationColor: inspect.selectAnnotationColor,
       // With annotations selected the button removes just those.
@@ -4620,17 +4630,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
     };
 
-    // Called from the camera button's click: the clipboard write has to be
-    // issued in this call stack, before the image has rendered. A newer Grab
-    // clipboard write or the pill's removal cancels the capture, and the
-    // pending image then rejects so this write cannot overwrite the newer one.
-    const handleCopyScreenshotInstance = (instanceId: string) => {
+    // The camera's click issues the clipboard write in its own call stack,
+    // before the image has rendered; the automatic capture issues it as soon
+    // as the copy lands, moments after the gesture that made the copy, and a
+    // browser that refuses that later write gets "Couldn't copy image" while
+    // the text copy stays. A newer Grab clipboard write or the pill's removal
+    // cancels the capture, and the pending image then rejects so this write
+    // cannot overwrite the newer one.
+    const copyLabelScreenshot = (instanceId: string) => {
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
       );
       if (!instance || instance.status !== "copied" || instance.isCapturingScreenshot) return;
       const copiedContent = instance.copiedContent;
       if (copiedContent === undefined) return;
+      const isAutoScreenshotEnabled = inspect.isAutoScreenshotEnabled();
+      const keptStatusText =
+        isAutoScreenshotEnabled && instance.statusText === PROMPT_COPIED_STATUS_TEXT
+          ? instance.statusText
+          : undefined;
 
       labelController.cancelScreenshotCaptures();
       const captureSignal = labelController.startScreenshotCapture(instanceId);
@@ -4659,13 +4677,29 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             labelController.failScreenshotCapture(instanceId, "Couldn't copy image");
             return;
           }
+          const imageStatusText =
+            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image";
           labelController.setImage(
             instanceId,
-            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image",
+            keptStatusText ?? imageStatusText,
             blobOutcome.value,
+            isAutoScreenshotEnabled,
           );
         },
       );
+    };
+
+    // One copy, one image: of several pills, the one offering the prompt
+    // takes the screenshot its camera would.
+    const startAutomaticScreenshot = (labelInstanceIds: string[]) => {
+      if (!inspect.isAutoScreenshotEnabled() || !areLabelInstancesShown()) return;
+      const copiedInstances = store.labelInstances.filter(
+        (labelInstance) =>
+          labelInstanceIds.includes(labelInstance.id) && labelInstance.status === "copied",
+      );
+      const captureInstance =
+        copiedInstances.find((labelInstance) => labelInstance.promptTarget) ?? copiedInstances[0];
+      if (captureInstance) copyLabelScreenshot(captureInstance.id);
     };
 
     createEffect(() => {
@@ -4720,7 +4754,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
-                onCopyScreenshotInstance={handleCopyScreenshotInstance}
+                onCopyScreenshotInstance={copyLabelScreenshot}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
                   !store.isTouchMode &&

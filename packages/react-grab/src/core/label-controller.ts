@@ -79,7 +79,12 @@ interface LabelController {
   markRetrying: (instanceId: string) => void;
   startPromptCopy: (instanceId: string, copiedStatusText: string) => void;
   setCopiedContent: (instanceId: string, copiedContent: string) => void;
-  setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
+  setImage: (
+    instanceId: string,
+    statusText: string,
+    imageBlob: Blob,
+    shouldKeepPrompt?: boolean,
+  ) => void;
   startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
   cancelScreenshotCapture: (instanceId: string) => void;
@@ -273,7 +278,12 @@ export const createLabelController = (
     store.patchLabelInstance(instanceId, { copiedContent });
   };
 
-  const setImage = (instanceId: string, statusText: string, imageBlob: Blob) => {
+  const setImage = (
+    instanceId: string,
+    statusText: string,
+    imageBlob: Blob,
+    shouldKeepPrompt = false,
+  ) => {
     const instance = findInstance(instanceId);
     if (!instance) return;
     screenshotCaptureControllers.delete(instanceId);
@@ -283,7 +293,7 @@ export const createLabelController = (
       thumbnailUrl: URL.createObjectURL(imageBlob),
       isCapturingScreenshot: undefined,
       screenshotErrorMessage: undefined,
-      promptTarget: undefined,
+      promptTarget: shouldKeepPrompt ? instance.promptTarget : undefined,
     });
   };
 

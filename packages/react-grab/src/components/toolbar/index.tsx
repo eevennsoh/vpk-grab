@@ -21,6 +21,8 @@ import { IconRectangle } from "../icons/icon-rectangle.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
 import { IconText } from "../icons/icon-text.jsx";
+import { MaterialIcon } from "../icons/material-icon.jsx";
+import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { ToolbarActionButton } from "./toolbar-action-button.jsx";
 import {
   TOOLBAR_SNAP_MARGIN_PX,
@@ -37,6 +39,7 @@ import {
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
   MOVE_TOOL_KEY,
+  AUTO_SCREENSHOT_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
 } from "../../constants.js";
@@ -76,12 +79,14 @@ interface ToolbarProps {
   onToggleToolbarMenu?: () => void;
   isSpecsEnabled?: boolean;
   isRedlinesEnabled?: boolean;
+  isAutoScreenshotEnabled?: boolean;
   annotationTool?: AnnotationTool;
   annotationColor?: string;
   hasAnnotations?: boolean;
   hasSelectedAnnotation?: boolean;
   onToggleSpecs?: () => void;
   onToggleRedlines?: () => void;
+  onToggleAutoScreenshot?: () => void;
   onSelectAnnotationTool?: (tool: AnnotationTool) => void;
   onSelectAnnotationColor?: (color: string) => void;
   onClearAnnotations?: () => void;
@@ -91,6 +96,7 @@ interface ToolbarProps {
 
 const SPECS_ACTION_ID = "inspect-specs";
 const REDLINES_ACTION_ID = "inspect-redlines";
+const AUTO_SCREENSHOT_ACTION_ID = "auto-screenshot";
 const PEN_ACTION_ID = "annotate-pen";
 const RECTANGLE_ACTION_ID = "annotate-rectangle";
 const TEXT_ACTION_ID = "annotate-text";
@@ -175,8 +181,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const isActionHovered = (actionId: string) =>
     hoveredActionId() === actionId && !isCollapsed() && !drag.isDragging() && !drag.isSnapping();
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
-  // Specs and Spacing describe what Grab hovers, so they join the toolbar
-  // only while Grab is the tool in hand.
+  // Specs, Spacing and Screenshot serve what Grab hovers and copies, so they
+  // join the toolbar only while Grab is the tool in hand.
   const isGrabToolOn = () => isCurrentActionActive() && isGrabTool();
   const getSelectionToolTooltipShortcut = (tool: SelectionTool) =>
     getSelectionToolShortcut(
@@ -360,6 +366,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const handleToggle = drag.createDragAwareHandler(() => props.onToggle?.());
   const handleToggleSpecs = drag.createDragAwareHandler(() => props.onToggleSpecs?.());
   const handleToggleRedlines = drag.createDragAwareHandler(() => props.onToggleRedlines?.());
+  const handleToggleAutoScreenshot = drag.createDragAwareHandler(() =>
+    props.onToggleAutoScreenshot?.(),
+  );
   const handleSelectPen = drag.createDragAwareHandler(() => props.onSelectAnnotationTool?.("pen"));
   const handleSelectRectangle = drag.createDragAwareHandler(() =>
     props.onSelectAnnotationTool?.("rectangle"),
@@ -1042,6 +1051,28 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 tooltipPosition={tooltipPosition()}
                 tooltip="Spacing"
                 tooltipShortcut={SPACING_TOOL_KEY}
+              />
+              <ToolbarActionButton
+                actionId={AUTO_SCREENSHOT_ACTION_ID}
+                keepsPageFocus
+                label="Copy a screenshot with every grab"
+                isActive={Boolean(props.isAutoScreenshotEnabled)}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleToggleAutoScreenshot}
+                {...createFreezeHandlers(() => AUTO_SCREENSHOT_ACTION_ID)}
+                icon={
+                  <MaterialIcon
+                    paths={PHOTO_CAMERA_ICON_PATHS}
+                    size={14}
+                    isFilled={Boolean(props.isAutoScreenshotEnabled)}
+                    class={actionIconClass(Boolean(props.isAutoScreenshotEnabled))}
+                  />
+                }
+                tooltipVisible={isActionHovered(AUTO_SCREENSHOT_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Screenshot"
+                tooltipShortcut={AUTO_SCREENSHOT_TOOL_KEY}
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup

@@ -121,6 +121,12 @@ example, in `<head>` before the app's own scripts, on development pages only.
   with the design token under each value that came from one.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
+- **Screenshot** (toolbar toggle, key 4 with Grab in hand, off by default and
+  remembered): every grab copies its references at once, then the pill's camera
+  runs by itself so the clipboard ends with the references and a PNG. A copy
+  with several pills takes one image, on the pill with Optional context, and
+  Optional context stays after the image; a prompt is copied with a fresh
+  image. Over plain HTTP each grab downloads its image instead.
 - **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
   property off and on, pick another token or keyword, or type a value.
 - **Changes** (toolbar, once something is edited): every style change on the

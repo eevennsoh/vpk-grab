@@ -4,9 +4,9 @@ import { getClipboardHtml } from "./get-clipboard-html.js";
 import { getScreenshotFileName } from "./get-screenshot-file-name.js";
 import { IS_DEMO } from "./runtime-mode.js";
 
-// Must be called synchronously from the user's gesture: the clipboard write
-// is issued at once with the still-pending blob, so the gesture is not lost
-// while the image renders. Insecure origins (no async clipboard) get a
+// Must be called synchronously from the user's gesture, or as soon as the
+// copy that gesture made lands: the clipboard write is issued at once with the
+// still-pending blob, so the gesture is not lost while the image renders. Insecure origins (no async clipboard) get a
 // download instead, and the clipboard is left alone.
 export const deliverPngBlob = async (
   blobPromise: Promise<Blob>,

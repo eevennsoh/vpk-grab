@@ -12,7 +12,7 @@ import {
   RECTANGLE_SCROLL_PAGE_HEIGHT_PX,
   RECTANGLE_EDGE_HIT_OFFSET_PX,
 } from "./constants.js";
-import { CROP_7_5_ICON_PATHS } from "../src/material-icon-paths.js";
+import { CROP_7_5_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../src/material-icon-paths.js";
 
 const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
 const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
@@ -792,6 +792,116 @@ test.describe("Number keys pick up the toolbar's tools", () => {
   });
 });
 
+test.describe("The screenshot toggle", () => {
+  const readIconPath = (page: Page) =>
+    toolbarAction(page, "auto-screenshot").locator("svg path").getAttribute("d");
+
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+  });
+
+  test("sits after Spacing in Grab's group and shows only with Grab in hand", async ({ page }) => {
+    const inspectTools = page.locator(INSPECT_TOOLS_SELECTOR);
+    const actionIds = await inspectTools
+      .locator("[data-react-grab-toolbar-action]")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("data-react-grab-toolbar-action")),
+      );
+    expect(actionIds).toEqual(["inspect-specs", "inspect-redlines", "auto-screenshot"]);
+    await expect(toolbarAction(page, "auto-screenshot")).toHaveAttribute(
+      "aria-label",
+      "Copy a screenshot with every grab",
+    );
+    await expect(inspectTools).toHaveAttribute("data-revealed", "");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await expect(inspectTools).not.toHaveAttribute("data-revealed");
+    await toolbarAction(page, "copy").click();
+    await expect(inspectTools).toHaveAttribute("data-revealed", "");
+  });
+
+  test("a click and 4 switch it, with the outline camera off and the filled one on", async ({
+    page,
+  }) => {
+    const toggle = toolbarAction(page, "auto-screenshot");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(await readIconPath(page)).toBe(PHOTO_CAMERA_ICON_PATHS.outline);
+
+    await page.keyboard.press("4");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(await readIconPath(page)).toBe(PHOTO_CAMERA_ICON_PATHS.filled);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(await readIconPath(page)).toBe(PHOTO_CAMERA_ICON_PATHS.outline);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.keyboard.press("4");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("its tooltip shows Screenshot and 4", async ({ page }) => {
+    await toolbarAction(page, "auto-screenshot").hover();
+    const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Screenshot" });
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "4",
+    );
+  });
+
+  test("3 leaves it alone with Grab in hand, and with Pen in hand 4 does nothing", async ({
+    page,
+  }) => {
+    const toggle = toolbarAction(page, "auto-screenshot");
+    await page.keyboard.press("3");
+    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "annotate-pen").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.keyboard.press("4");
+    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("3");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "copy").click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("starts off and is remembered after a reload", async ({ reactGrab, page }) => {
+    const toggle = toolbarAction(page, "auto-screenshot");
+    await page.keyboard.press("4");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (storageKey) => JSON.parse(localStorage.getItem(storageKey) ?? "{}"),
+          INSPECT_SETTINGS_STORAGE_KEY,
+        ),
+      )
+      .toMatchObject({ isAutoScreenshotEnabled: true });
+
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await reactGrab.activate();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
 test.describe("Grab", () => {
   test("the toolbar names Grab and shows its activation shortcut", async ({ reactGrab, page }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
@@ -1116,36 +1226,25 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("Grab handles 3 like 4 and numbers typed into a note stay text", async ({ page }) => {
+  test("Grab leaves 3 to the page and numbers typed into a note stay text", async ({ page }) => {
     await page.evaluate(() => {
       document.addEventListener("keydown", (event) => {
-        if (event.key !== "3" && event.key !== "4") return;
+        if (event.key !== "3") return;
         document.body.setAttribute("data-page-key", event.key);
-        document.body.setAttribute(
-          `data-page-key-${event.key}-default-prevented`,
-          String(event.defaultPrevented),
-        );
       });
     });
-    for (const key of ["4", "3"]) {
-      await page.keyboard.press(key);
-      await expect(page.locator("body")).toHaveAttribute("data-page-key", key);
-      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
-      await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
-      await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute(
+    await page.keyboard.press("3");
+    await expect(page.locator("body")).toHaveAttribute("data-page-key", "3");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    for (const actionId of ["inspect-specs", "inspect-redlines", "auto-screenshot"]) {
+      await expect(toolbarAction(page, actionId)).toHaveAttribute("aria-pressed", "false");
+    }
+    for (const tool of ["pen", "rectangle", "text"]) {
+      await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute(
         "aria-pressed",
         "false",
       );
-      for (const tool of ["pen", "rectangle", "text"]) {
-        await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute(
-          "aria-pressed",
-          "false",
-        );
-      }
     }
-    expect(await page.locator("body").getAttribute("data-page-key-3-default-prevented")).toBe(
-      await page.locator("body").getAttribute("data-page-key-4-default-prevented"),
-    );
     await toolbarAction(page, "annotate-text").click();
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
     const input = page.locator("[data-react-grab-annotation-input]");

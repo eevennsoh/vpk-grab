@@ -25,6 +25,7 @@ test.describe("Toolbar Action Buttons", () => {
         "annotate-text",
         "inspect-specs",
         "inspect-redlines",
+        "auto-screenshot",
         "annotation-color-red",
         "annotation-color-orange",
         "annotation-color-yellow",

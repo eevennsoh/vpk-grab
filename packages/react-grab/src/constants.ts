@@ -508,6 +508,7 @@ export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefi
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
+export const AUTO_SCREENSHOT_TOOL_KEY = "4";
 export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 // A press of the platform modifier on its own counts as a cycle only if let go
 // this soon: held any longer it is the start of a chord (Cmd+C, Cmd+Z) that
@@ -553,6 +554,7 @@ export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
 export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
 export const SCREENSHOT_SELECTION_PADDING_PX = 8;
+export const PROMPT_COPIED_STATUS_TEXT = "Copied with prompt";
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
 export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
