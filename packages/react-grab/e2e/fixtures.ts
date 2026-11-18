@@ -28,13 +28,6 @@ interface PendingClipboardCopy {
   writes: Promise<Record<string, string> | null>;
 }
 
-interface ContextMenuInfo {
-  isVisible: boolean;
-  tagBadgeText: string | null;
-  menuItems: string[];
-  position: { x: number; y: number } | null;
-}
-
 interface SelectionLabelInfo {
   isVisible: boolean;
   tagName: string | null;
@@ -123,17 +116,11 @@ export interface ReactGrabPageObject {
   hoverUntilTargetSelected: (selector: string) => Promise<void>;
   hoverUntilSelected: (selector: string) => Promise<void>;
   clickElement: (selector: string) => Promise<void>;
-  rightClickElement: (selector: string) => Promise<void>;
-  rightClickAtPosition: (x: number, y: number) => Promise<void>;
   dragSelect: (startSelector: string, endSelector: string) => Promise<void>;
   getClipboardContent: () => Promise<string>;
   captureNextClipboardWrites: () => Promise<() => Promise<Record<string, string>>>;
   waitForSelectionBox: (timeout?: number) => Promise<void>;
   waitForSelectionSource: () => Promise<void>;
-  isContextMenuVisible: () => Promise<boolean>;
-  getContextMenuInfo: () => Promise<ContextMenuInfo>;
-  isContextMenuItemEnabled: (label: string) => Promise<boolean>;
-  clickContextMenuItem: (label: string) => Promise<void>;
   isSelectionBoxVisible: () => Promise<boolean>;
   pressEscape: () => Promise<void>;
   pressArrowDown: () => Promise<void>;
@@ -531,141 +518,6 @@ const createReactGrabPageObject = (
     await page.keyboard.up(activationModifierKey);
   };
 
-  const waitForContextMenu = async (visible: boolean) => {
-    await page.waitForFunction(
-      ({ attrName, expectedVisible }) => {
-        const host = document.querySelector(`[${attrName}]`);
-        const shadowRoot = host?.shadowRoot;
-        if (!shadowRoot) return !expectedVisible;
-        const root = shadowRoot.querySelector(`[${attrName}]`);
-        if (!root) return !expectedVisible;
-        const menuItem = root.querySelector(
-          "[data-react-grab-context-menu] [data-react-grab-menu-item]",
-        );
-        return expectedVisible ? menuItem !== null : menuItem === null;
-      },
-      { attrName: ATTRIBUTE_NAME, expectedVisible: visible },
-      { timeout: UI_STATE_TIMEOUT_MS },
-    );
-  };
-
-  const rightClickElement = async (selector: string) => {
-    const wasActive = await isOverlayVisible();
-    const element = page.locator(selector).first();
-    const position = await getTextInteractionPosition(element);
-    await element.click({ button: "right", force: true, position });
-    if (wasActive) {
-      await waitForContextMenu(true);
-    }
-  };
-
-  const rightClickAtPosition = async (x: number, y: number) => {
-    const wasActive = await isOverlayVisible();
-    await page.mouse.click(x, y, { button: "right" });
-    if (wasActive) {
-      await waitForContextMenu(true);
-    }
-  };
-
-  const isContextMenuVisible = async () => {
-    return page.evaluate((attrName) => {
-      const host = document.querySelector(`[${attrName}]`);
-      const shadowRoot = host?.shadowRoot;
-      if (!shadowRoot) return false;
-      const root = shadowRoot.querySelector(`[${attrName}]`);
-      if (!root) return false;
-      const menuItem = root.querySelector(
-        "[data-react-grab-context-menu] [data-react-grab-menu-item]",
-      );
-      return menuItem !== null;
-    }, ATTRIBUTE_NAME);
-  };
-
-  const clickContextMenuItem = async (label: string) => {
-    await page.evaluate(
-      ({ attrName, itemLabel }) => {
-        const host = document.querySelector(`[${attrName}]`);
-        const shadowRoot = host?.shadowRoot;
-        if (!shadowRoot) throw new Error("No shadow root found");
-        const root = shadowRoot.querySelector(`[${attrName}]`);
-        if (!root) throw new Error("No inner root found");
-        const button = root.querySelector<HTMLButtonElement>(
-          `[data-react-grab-context-menu] [data-react-grab-menu-item="${itemLabel.toLowerCase()}"]`,
-        );
-        if (!button) throw new Error(`Context menu item "${itemLabel}" not found`);
-        button.click();
-      },
-      { attrName: ATTRIBUTE_NAME, itemLabel: label },
-    );
-    await waitForContextMenu(false);
-  };
-
-  const getContextMenuInfo = async (): Promise<ContextMenuInfo> => {
-    return page.evaluate((attrName) => {
-      const host = document.querySelector(`[${attrName}]`);
-      const shadowRoot = host?.shadowRoot;
-      if (!shadowRoot)
-        return {
-          isVisible: false,
-          tagBadgeText: null,
-          menuItems: [],
-          position: null,
-        };
-
-      const root = shadowRoot.querySelector(`[${attrName}]`);
-      if (!root)
-        return {
-          isVisible: false,
-          tagBadgeText: null,
-          menuItems: [],
-          position: null,
-        };
-
-      const contextMenu = root.querySelector<HTMLElement>("[data-react-grab-context-menu]");
-      if (!contextMenu)
-        return {
-          isVisible: false,
-          tagBadgeText: null,
-          menuItems: [],
-          position: null,
-        };
-
-      const menuItemButtons = Array.from(
-        contextMenu.querySelectorAll<HTMLButtonElement>("[data-react-grab-menu-item]"),
-      );
-      const menuItems = menuItemButtons.map((btn) => {
-        const item = btn.dataset.reactGrabMenuItem ?? "";
-        return item.charAt(0).toUpperCase() + item.slice(1);
-      });
-
-      const tagBadgeElement = contextMenu.querySelector("span");
-      const tagBadgeText = tagBadgeElement?.textContent?.trim() ?? null;
-
-      const style = contextMenu.style;
-      const position =
-        style.left && style.top ? { x: parseFloat(style.left), y: parseFloat(style.top) } : null;
-
-      return { isVisible: true, tagBadgeText, menuItems, position };
-    }, ATTRIBUTE_NAME);
-  };
-
-  const isContextMenuItemEnabled = async (label: string): Promise<boolean> => {
-    return page.evaluate(
-      ({ attrName, itemLabel }) => {
-        const host = document.querySelector(`[${attrName}]`);
-        const shadowRoot = host?.shadowRoot;
-        if (!shadowRoot) return false;
-        const root = shadowRoot.querySelector(`[${attrName}]`);
-        if (!root) return false;
-        const button = root.querySelector<HTMLButtonElement>(
-          `[data-react-grab-context-menu] [data-react-grab-menu-item="${itemLabel.toLowerCase()}"]`,
-        );
-        return button ? !button.disabled : false;
-      },
-      { attrName: ATTRIBUTE_NAME, itemLabel: label },
-    );
-  };
-
   const isSelectionBoxVisible = async (): Promise<boolean> => {
     return page.evaluate(() => {
       const api = (
@@ -707,8 +559,9 @@ const createReactGrabPageObject = (
   const enterPromptMode = async (selector: string) => {
     await activate();
     await hoverUntilSelected(selector);
-    await rightClickElement(selector);
-    await clickContextMenuItem("Comment");
+    await page.evaluate(() => window.__REACT_GRAB__?.comment());
+    await page.mouse.down();
+    await page.mouse.up();
     await waitForPromptMode(true);
     const promptInput = page.locator("textarea[data-react-grab-input]");
     await promptInput.waitFor({ state: "visible", timeout: UI_STATE_TIMEOUT_MS });
@@ -1817,17 +1670,11 @@ const createReactGrabPageObject = (
     hoverUntilTargetSelected,
     hoverUntilSelected,
     clickElement,
-    rightClickElement,
-    rightClickAtPosition,
     dragSelect,
     getClipboardContent,
     captureNextClipboardWrites,
     waitForSelectionBox,
     waitForSelectionSource,
-    isContextMenuVisible,
-    getContextMenuInfo,
-    isContextMenuItemEnabled,
-    clickContextMenuItem,
     isSelectionBoxVisible,
     pressEscape,
     pressArrowDown,

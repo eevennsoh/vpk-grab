@@ -35,7 +35,7 @@ test.describe("Toolbar Menu", () => {
         .evaluateAll((elements) =>
           elements.map((element) => element.getAttribute("data-react-grab-menu-item")),
         );
-      expect(actionIds).toEqual(["copy", "comment"]);
+      expect(actionIds).toEqual(["copy", "comment", "open"]);
     });
 
     test("clicking a menu item should close the menu", async ({ reactGrab }) => {
@@ -148,9 +148,9 @@ test.describe("Toolbar Menu", () => {
         reactGrab.page.locator('[data-react-grab-toolbar-action="custom-action"]'),
       ).toBeVisible();
       await reactGrab.clickToolbarAction("custom-action");
-      await reactGrab.hoverUntilSelected("li:first-child");
-      await reactGrab.clickElement("li:first-child");
-      await expect.poll(() => reactGrab.isContextMenuVisible(), { timeout: 2000 }).toBe(true);
+      await reactGrab.hoverUntilSelected("li:first-child span");
+      await reactGrab.clickElement("li:first-child span");
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
       await expect
         .poll(() =>
           reactGrab.page.evaluate(() => window.__REACT_GRAB__?.getToolbarState()?.defaultAction),
@@ -173,21 +173,6 @@ test.describe("Toolbar Menu", () => {
       await expect(
         reactGrab.page.locator('[data-react-grab-toolbar-action="custom-action"]'),
       ).toHaveAttribute("aria-label", "Custom element");
-    });
-  });
-
-  test.describe("Interaction with Other Dropdowns", () => {
-    test("opening context menu should dismiss toolbar menu", async ({ reactGrab }) => {
-      await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 2000 }).toBe(true);
-
-      await reactGrab.rightClickToolbarToggle();
-      await expect.poll(() => reactGrab.isToolbarMenuVisible(), { timeout: 2000 }).toBe(true);
-
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li:first-child");
-      await reactGrab.rightClickElement("li:first-child");
-
-      await expect.poll(() => reactGrab.isToolbarMenuVisible(), { timeout: 2000 }).toBe(false);
     });
   });
 });

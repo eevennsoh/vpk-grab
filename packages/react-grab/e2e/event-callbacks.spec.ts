@@ -331,17 +331,20 @@ test.describe("Event Callbacks", () => {
   });
 
   test.describe("Context Menu Callback", () => {
-    test("onContextMenu should fire on right-click", async ({ reactGrab }) => {
+    test("onContextMenu stays inert on right-click", async ({ reactGrab }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");
       await reactGrab.clearCallbackHistory();
 
-      await reactGrab.rightClickElement("li:first-child");
+      await reactGrab.page
+        .locator("li:first-child")
+        .first()
+        .click({ button: "right", force: true });
 
       const history = await reactGrab.getCallbackHistory();
       const contextMenuCalls = history.filter((c) => c.name === "onContextMenu");
 
-      expect(contextMenuCalls.length).toBe(1);
+      expect(contextMenuCalls.length).toBe(0);
     });
   });
 

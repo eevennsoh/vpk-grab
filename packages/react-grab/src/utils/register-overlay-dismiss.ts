@@ -9,7 +9,6 @@ interface RegisterOverlayDismissOptions {
   onDismiss: (source: OverlayDismissSource) => void;
   shouldIgnoreKeyboardEvent?: (event: KeyboardEvent) => boolean;
   shouldIgnoreInputEvents?: boolean;
-  shouldIgnoreRightClick?: boolean;
 }
 
 export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): (() => void) => {
@@ -30,7 +29,6 @@ export const registerOverlayDismiss = (options: RegisterOverlayDismissOptions): 
   const handleClickOutside = ignoreRealInput((event: MouseEvent | TouchEvent) => {
     if (!options.isOpen()) return;
     if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
-    if (options.shouldIgnoreRightClick && event instanceof MouseEvent && event.button === 2) return;
     options.onDismiss("pointer");
   });
 

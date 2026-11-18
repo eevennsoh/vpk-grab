@@ -256,7 +256,10 @@ test.describe("Edge Cases", () => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("[data-testid='dynamic-element-3']");
 
-      await reactGrab.rightClickElement("[data-testid='dynamic-element-3']");
+      await reactGrab.page
+        .locator("[data-testid='dynamic-element-3']")
+        .first()
+        .click({ button: "right", force: true });
 
       await reactGrab.removeElement("[data-testid='dynamic-element-3']");
       await reactGrab.page.waitForTimeout(100);
@@ -340,7 +343,10 @@ test.describe("Edge Cases", () => {
       await reactGrab.pressArrowDown();
       await reactGrab.page.waitForTimeout(100);
 
-      await reactGrab.rightClickElement("li:nth-child(2)");
+      await reactGrab.page
+        .locator("li:nth-child(2)")
+        .first()
+        .click({ button: "right", force: true });
       await reactGrab.page.waitForTimeout(100);
 
       const state = await reactGrab.getState();

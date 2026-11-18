@@ -19,7 +19,6 @@ const baseProps: SelectionLabelProps = {
   onConfirmDismiss: noop,
   onAcknowledgeError: noop,
   onRetry: noop,
-  onShowContextMenu: noop,
   onHoverChange: noop,
 };
 

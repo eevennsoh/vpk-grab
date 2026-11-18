@@ -146,42 +146,6 @@ test.describe("Activation Edge Cases", () => {
     });
   });
 
-  test.describe("Context menu key", () => {
-    test("should open the context menu with Shift+F10 on the hovered element", async ({
-      reactGrab,
-    }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-
-      await reactGrab.pressKeyCombo(["Shift"], "F10");
-
-      await expect.poll(() => reactGrab.isContextMenuVisible(), { timeout: 3_000 }).toBe(true);
-    });
-
-    test("should open the context menu with the ContextMenu key", async ({ reactGrab }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-
-      await reactGrab.pressKey("ContextMenu");
-
-      await expect.poll(() => reactGrab.isContextMenuVisible(), { timeout: 3_000 }).toBe(true);
-    });
-
-    test("should ignore Shift+F10 while the context menu is already open", async ({
-      reactGrab,
-    }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-      await reactGrab.pressKeyCombo(["Shift"], "F10");
-      await expect.poll(() => reactGrab.isContextMenuVisible(), { timeout: 3_000 }).toBe(true);
-
-      await reactGrab.pressKeyCombo(["Shift"], "F10");
-      await reactGrab.page.waitForTimeout(200);
-
-      expect(await reactGrab.isContextMenuVisible()).toBe(true);
-    });
-  });
-
   test.describe("Space drag repositioning", () => {
     test("should reposition the drag rectangle while Space is held", async ({ reactGrab }) => {
       await reactGrab.activate();

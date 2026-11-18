@@ -100,6 +100,11 @@ example, in `<head>` before the app's own scripts, on development pages only.
 ## What the user can do with it
 
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
+- The **Copied** pill’s **Optional context** field adds a follow-up: type, then
+  press Enter to copy the same elements with that context. Its camera adds an
+  image. Use bare Enter or the toolbar’s Comment action for prompt mode, and
+  ⌘O / Ctrl+O or the hover label’s component name to open the source.
+  Right-click keeps the browser’s menu.
 - **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,
   with the design token under each value that came from one.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and

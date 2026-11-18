@@ -81,13 +81,13 @@ test.describe("Toolbar Selection Hover", () => {
   });
 
   test.describe("Frozen Mode", () => {
-    test("should keep selection box visible when hovering toolbar after right-click freeze", async ({
+    test("should keep selection box visible when hovering toolbar after prompt freeze", async ({
       reactGrab,
     }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li");
 
-      await reactGrab.rightClickElement("li");
+      await reactGrab.pressEnter();
 
       await expect.poll(() => reactGrab.isSelectionBoxVisible(), { timeout: 2000 }).toBe(true);
 
@@ -96,15 +96,13 @@ test.describe("Toolbar Selection Hover", () => {
       await expect.poll(() => reactGrab.isSelectionBoxVisible(), { timeout: 2000 }).toBe(true);
     });
 
-    test("should keep selection box visible after context menu dismiss and toolbar hover", async ({
+    test("should keep selection box visible after prompt selection and toolbar hover", async ({
       reactGrab,
     }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li");
 
-      await reactGrab.rightClickElement("li");
-
-      await expect.poll(() => reactGrab.isContextMenuVisible(), { timeout: 2000 }).toBe(true);
+      await reactGrab.pressEnter();
 
       await expect.poll(() => reactGrab.isSelectionBoxVisible(), { timeout: 2000 }).toBe(true);
 
@@ -119,7 +117,7 @@ test.describe("Toolbar Selection Hover", () => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li");
 
-      await reactGrab.rightClickElement("li");
+      await reactGrab.pressEnter();
 
       for (let hoverIndex = 0; hoverIndex < 3; hoverIndex++) {
         await hoverToolbar(reactGrab.page);

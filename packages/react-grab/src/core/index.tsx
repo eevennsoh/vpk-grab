@@ -6,7 +6,6 @@ import {
   createSignal,
   onCleanup,
   createEffect,
-  createResource,
   on,
   mapArray,
   untrack,
@@ -171,7 +170,6 @@ import { isEnterCode } from "../utils/is-enter-code.js";
 import { isMac } from "../utils/is-mac.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
-import { isPositionInsideBounds } from "../utils/is-position-inside-bounds.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
 import { getAllStyleOverrides } from "../utils/style-override-store.js";
@@ -192,6 +190,7 @@ import { getNearestEdge } from "../utils/get-nearest-edge.js";
 import { findShortcutAction } from "../utils/action-shortcuts.js";
 import { createKeyboardSelectionController } from "./keyboard-selection.js";
 import { executeContextMenuAction } from "../utils/execute-context-menu-action.js";
+import { executeActionOrCopy } from "../utils/execute-action-or-copy.js";
 import { notifyToolbarStateChangeSubscribers } from "../utils/notify-toolbar-state-change-subscribers.js";
 import { forwardSameOriginFrameEvents } from "../utils/forward-same-origin-frame-events.js";
 import { isHtmlElement } from "../utils/is-html-element.js";
@@ -231,9 +230,6 @@ interface BuildActionContextOptions {
   componentName: string | undefined;
   position: Position;
   performWithFeedbackOptions?: PerformWithFeedbackOptions;
-  shouldDeferHideContextMenu: boolean;
-  onBeforePrompt?: () => void;
-  customEnterPromptMode?: () => void;
 }
 
 interface LabeledCopyOptions {
@@ -456,10 +452,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       null,
     );
 
-    const isModalPopoverOpen = createMemo(() => store.contextMenuPosition !== null);
-    const isAnyPopoverOpen = createMemo(
-      () => isModalPopoverOpen() || toolbarMenuPosition() !== null,
-    );
+    const isAnyPopoverOpen = () => toolbarMenuPosition() !== null;
     let toolbarElement: HTMLDivElement | undefined;
     let stopToolbarMenuTracking: (() => void) | null = null;
 
@@ -470,7 +463,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !isEnabled() ||
       isPromptMode() ||
       isSelectionInteractionLocked() ||
-      isModalPopoverOpen() ||
       keyboardSelection.isPendingDismiss() ||
       inspect.pinnedSpecsElement() !== null ||
       inspect.measureAnchorElement() !== null;
@@ -680,8 +672,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
     let selectionSourceRequestVersion = 0;
     let componentNameDebounceTimerId: number | null = null;
-    let pendingDefaultActionId: string | null = null;
-    const [isPendingContextMenuSelect, setIsPendingContextMenuSelect] = createSignal(false);
     // Holding Shift in Grab turns a drag into a screenshot of the dragged
     // area, unless Shift is already building a multi-selection or a pending
     // comment needs an element. A pending toolbar action stays pending: the
@@ -697,6 +687,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
     const [pendingToolbarActionId, setPendingToolbarActionId] = createSignal<string | null>(null);
+    const isPendingToolbarSelection = () => pendingToolbarActionId() !== null;
     const [debouncedElementForComponentName, setDebouncedElementForComponentName] =
       createSignal<Element | null>(null);
     const [resolvedComponentName, setResolvedComponentName] = createComponentNameForElement(
@@ -704,7 +695,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
     const toolbarActiveActionId = createMemo(() => {
       if (isCommentMode()) return COMMENT_ACTION_ID;
-      if (isPendingContextMenuSelect()) return pendingToolbarActionId();
+      if (isPendingToolbarSelection()) return pendingToolbarActionId();
       if (isActivated()) return DEFAULT_ACTION_ID;
       return null;
     });
@@ -1206,7 +1197,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // via createElementBounds() here instead forces a full-document style/layout
       // recalc — ~85ms on large apps — because the freeze stylesheet has dirtied
       // style since the box was last measured. Falls back to a fresh measure when
-      // copying an element that isn't the current selection (e.g. context menu).
+      // copying an element that isn't the current selection (e.g. a plugin action).
       const reusableSelectionBounds =
         !isMultiSelect && element === selectionElement() ? selectionBounds() : undefined;
       const labelBounds =
@@ -1443,7 +1434,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const pendingShiftSelectionElement = createMemo((): Element | null => {
       if (!isShiftMultiSelecting()) return null;
-      if (store.pendingCommentMode || isPendingContextMenuSelect()) return null;
+      if (store.pendingCommentMode || isPendingToolbarSelection()) return null;
 
       const element = store.detectedElement;
       if (!isElementConnected(element)) return null;
@@ -1916,9 +1907,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       stopShiftMultiSelecting();
       clearKeyboardNavigation();
       keyboardSelection.clear();
-      setIsPendingContextMenuSelect(false);
       setPendingToolbarActionId(null);
-      pendingDefaultActionId = null;
       inspect.selectTool("grab");
       didAnnotationToolActivate = false;
       if (wasDragging) {
@@ -2008,16 +1997,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const clearPendingToolbarSelection = () => {
-      pendingDefaultActionId = null;
-      setIsPendingContextMenuSelect(false);
       actions.setPendingCommentMode(false);
       setPendingToolbarActionId(null);
     };
 
     const setPendingToolbarSelection = (actionId: string) => {
-      pendingDefaultActionId = actionId;
       setPendingToolbarActionId(actionId);
-      setIsPendingContextMenuSelect(true);
     };
 
     const runActionForCurrentSelection = (actionId: string): boolean => {
@@ -2028,21 +2013,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const action = pluginRegistry.store.actions.find(
         (registeredAction) => registeredAction.id === actionId,
       );
-      if (!action) {
-        actions.clearInputText();
-        actions.exitPromptMode();
-        clearPendingToolbarSelection();
-        openContextMenu(element, position);
-        return true;
-      }
-
       actions.clearInputText();
       actions.exitPromptMode();
       clearPendingToolbarSelection();
       const context = buildImmediateActionContext(element, position);
-      if (!executeContextMenuAction(action, context)) {
-        openContextMenu(element, position);
-      }
+      executeActionOrCopy(action, context);
       return true;
     };
 
@@ -2114,7 +2089,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
       if (isPromptMode()) handleInputCancel();
-      dismissAllPopups();
+      dismissToolbarMenu();
       inspect.selectTool(tool);
       if (!isActivated()) {
         didAnnotationToolActivate = true;
@@ -2136,31 +2111,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       actions.enterPromptMode({ x: positionX, y: positionY }, element);
     };
 
-    const openContextMenu = (element: Element, position: Position) => {
-      stopShiftMultiSelecting();
-      dismissAllPopups();
-      actions.showContextMenu(position, element);
-      clearKeyboardNavigation();
-      pluginRegistry.hooks.onContextMenu(element, position);
-    };
-
     const runPendingDefaultAction = (element: Element, position: Position) => {
-      const actionId = pendingDefaultActionId;
-      if (!actionId) return;
-
+      const actionId = pendingToolbarActionId();
       const action = pluginRegistry.store.actions.find(
         (registeredAction) => registeredAction.id === actionId,
       );
-      if (!action) {
-        clearPendingToolbarSelection();
-        openContextMenu(element, position);
-        return;
-      }
-
+      if (!action) clearPendingToolbarSelection();
       const context = buildImmediateActionContext(element, position);
-      if (!executeContextMenuAction(action, context)) {
-        openContextMenu(element, position);
-      }
+      executeActionOrCopy(action, context);
     };
 
     const handleComment = () => {
@@ -2184,7 +2142,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isShiftMultiSelecting() &&
         !isDragging() &&
         !store.pendingCommentMode &&
-        !isPendingContextMenuSelect();
+        !isPendingToolbarSelection();
 
       if (isElementDetectionBlocked() || (isFrozenPhase() && !shouldTrackPendingShiftSelection)) {
         return;
@@ -2376,7 +2334,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (selectedElements.length === 0) return;
 
       const isShiftAccumulating =
-        isShiftHeld && !store.pendingCommentMode && !isPendingContextMenuSelect();
+        isShiftHeld && !store.pendingCommentMode && !isPendingToolbarSelection();
 
       // In the shift-accumulating branch we must freeze on the COMBINED set
       // (prior accumulated + newly dragged), because freezeAllAnimations
@@ -2417,13 +2375,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
 
-      if (isPendingContextMenuSelect()) {
-        if (pendingDefaultActionId) {
-          runPendingDefaultAction(firstElement, center);
-        } else {
-          setIsPendingContextMenuSelect(false);
-          openContextMenu(firstElement, center);
-        }
+      if (isPendingToolbarSelection()) {
+        runPendingDefaultAction(firstElement, center);
         return;
       }
 
@@ -2521,16 +2474,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       runScreenshotCopy();
     };
 
-    const getFrozenElementAtPosition = (position: Position): Element | null => {
-      for (const element of store.frozenElements) {
-        if (!isElementConnected(element)) continue;
-        if (isPositionInsideBounds(position, createElementBounds(element))) {
-          return element;
-        }
-      }
-      return null;
-    };
-
     const handleSingleClick = (
       clientX: number,
       clientY: number,
@@ -2559,7 +2502,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // with the eventual commitShiftMultiSelection on Shift release. So
       // we always return when Shift is held: toggle when an element is
       // under the pointer, no-op when it isn't.
-      if (isShiftHeld && !store.pendingCommentMode && !isPendingContextMenuSelect()) {
+      if (isShiftHeld && !store.pendingCommentMode && !isPendingToolbarSelection()) {
         const elementAtPointer = liveElementAtPointer();
         if (elementAtPointer !== null) {
           toggleShiftMultiSelection(elementAtPointer, { x: clientX, y: clientY });
@@ -2599,7 +2542,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
 
-      if (isPendingContextMenuSelect()) {
+      if (isPendingToolbarSelection()) {
         const { wasIntercepted } = pluginRegistry.hooks.onElementSelect(selectedElement);
         if (wasIntercepted) {
           clearPendingToolbarSelection();
@@ -2612,12 +2555,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         const position = { x: positionX, y: positionY };
         actions.setPointer(position);
         actions.freeze();
-        if (pendingDefaultActionId) {
-          runPendingDefaultAction(selectedElement, position);
-        } else {
-          setIsPendingContextMenuSelect(false);
-          openContextMenu(selectedElement, position);
-        }
+        runPendingDefaultAction(selectedElement, position);
         return;
       }
 
@@ -2667,10 +2605,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // Only a Shift+click that toggles the multi-selection differs from a
       // marquee; with a toolbar action pending both pick an element for it.
       const isUndersizedScreenshot =
-        canReleaseAsScreenshot &&
-        isShiftHeld &&
-        !isScreenshotSized &&
-        !isPendingContextMenuSelect();
+        canReleaseAsScreenshot && isShiftHeld && !isScreenshotSized && !isPendingToolbarSelection();
       const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
@@ -2858,10 +2793,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const center = getBoundsCenter(createElementBounds(element));
       actions.setPointer(center);
-
-      if (store.contextMenuPosition !== null) {
-        actions.showContextMenu(center, element);
-      }
     };
 
     const showKeyboardSelectionDismissPrompt = () => {
@@ -2984,7 +2915,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         tagName: getTagName(element) || undefined,
         componentName: resolvedComponentName(),
         position,
-        shouldDeferHideContextMenu: false,
         performWithFeedbackOptions: {
           fallbackBounds: elementBounds,
           fallbackSelectionBounds: [elementBounds],
@@ -3030,38 +2960,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       event.preventDefault();
       event.stopPropagation();
       openSelectionFile();
-      return true;
-    };
-
-    const tryHandleContextMenuKey = (event: KeyboardEvent): boolean => {
-      if (!isActivated()) return false;
-      if (isCopying()) return false;
-      if (store.contextMenuPosition !== null) return false;
-      const isShiftF10 = event.key === "F10" && event.shiftKey;
-      const isContextMenuKey = event.key === "ContextMenu";
-      if (!isShiftF10 && !isContextMenuKey) return false;
-
-      const existingFrozenElements = store.frozenElements;
-      const hasMultiFrozenSelection = existingFrozenElements.length > 1;
-      const element =
-        (hasMultiFrozenSelection ? existingFrozenElements[0] : null) ||
-        store.frozenElement ||
-        targetElement();
-      if (!element) return false;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      const center = getBoundsCenter(createElementBounds(element));
-      if (hasMultiFrozenSelection) {
-        freezeAllAnimations(existingFrozenElements);
-      } else {
-        freezeAllAnimations([element]);
-        actions.setFrozenElement(element);
-      }
-      actions.setPointer(center);
-      actions.freeze();
-      openContextMenu(element, center);
       return true;
     };
 
@@ -3368,7 +3266,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         if (tryHandleNavigationKey(event)) return;
         if (tryHandleOpenFileShortcut(event)) return;
-        if (tryHandleContextMenuKey(event)) return;
         if (tryHandleBareKeyShortcut(event)) return;
         // Demo mode never activates from the global hotkey.
         if (!didWindowJustRegainFocus && !IS_DEMO) {
@@ -3462,21 +3359,18 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         const isDragGestureInProgress = isDragging();
 
         if (isActivated()) {
-          const hasModalPopover = isModalPopoverOpen();
           if (isReleasingModifier) {
             if (
               store.wasActivatedByToggle &&
               pluginRegistry.store.options.activationMode !== "hold"
             )
               return;
-            if (hasModalPopover) return;
             deactivateRenderer();
           } else if (isHoldMode && isReleasingActivationKey) {
             if (keydownSpamTimerId !== null) {
               window.clearTimeout(keydownSpamTimerId);
               keydownSpamTimerId = null;
             }
-            if (hasModalPopover) return;
             if (isDragGestureInProgress) return;
             deactivateRenderer();
           } else if (
@@ -3601,7 +3495,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
         if (!isDragging() && isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
-        if (isModalPopoverOpen()) return;
 
         // A pinned panel is the only thing taking presses: one that misses it
         // must not start a drag or a Shift multi-select under the pin. While
@@ -3696,7 +3589,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
-        if (isModalPopoverOpen()) return;
         // A press that went through a Shift-held specs pin and never moved
         // far enough to drop it is a Shift+click under the pin, which the
         // pin swallows.
@@ -3726,47 +3618,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           if (!isFromOverlay) event.preventDefault();
           return;
         }
-        const position = { x: event.clientX, y: event.clientY };
-        const overlayFrozenElement =
-          isFromOverlay && store.frozenElements.length > 1
-            ? getFrozenElementAtPosition(position)
-            : null;
-        // A right-click is an explicit pick. When it lands on a grab overlay
-        // (hierarchy menu, or the keyboard-selection discard prompt that sits on
-        // the cursor) mid navigation, fall through to resolve the page element
-        // beneath instead of bailing. Keyboard-selection state is only cleared
-        // later by openContextMenu, once a real target is confirmed, so nothing
-        // is torn down when no element resolves.
-        const hadPendingDismiss = keyboardSelection.isPendingDismiss();
-        const isBareOverlayRightClick =
-          isFromOverlay && !overlayFrozenElement && !hadPendingDismiss && !hasHierarchySource();
-        if (isBareOverlayRightClick) return;
-
-        if (isModalPopoverOpen()) {
-          event.preventDefault();
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const element = overlayFrozenElement ?? getElementAtPosition(event.clientX, event.clientY);
-        if (!element) return;
-
-        const existingFrozenElements = store.frozenElements;
-        const isClickedElementAlreadyFrozen =
-          existingFrozenElements.length > 1 && existingFrozenElements.includes(element);
-
-        if (isClickedElementAlreadyFrozen) {
-          freezeAllAnimations(existingFrozenElements);
-        } else {
-          freezeAllAnimations([element]);
-          actions.setFrozenElement(element);
-        }
-
-        actions.setPointer(position);
-        actions.freeze();
-        openContextMenu(element, position);
       }),
       { capture: true },
     );
@@ -3785,7 +3636,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "click",
       ignoreRealInput((event: MouseEvent) => {
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
-        if (isModalPopoverOpen()) return;
 
         if (isRendererActive() || didJustDrag()) {
           event.preventDefault();
@@ -3872,7 +3722,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       redetectElementUnderPointer();
       setScrollVersion((version) => version + 1);
       actions.incrementViewportVersion();
-      actions.updateContextMenuPosition();
     };
 
     // A trackpad gesture emits scroll events far faster than the display
@@ -3882,7 +3731,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // burst into a single update.
     const scheduleViewportChange = () => {
       // Cache invalidation stays synchronous: it is a handful of map clears, and
-      // deferring it would let a pointer or context-menu hit test in the same
+      // deferring it would let a pointer hit test in the same
       // frame resolve geometry from before the scroll.
       invalidateInteractionCaches();
       if (scrollChangeFrameId !== null) return;
@@ -4240,7 +4089,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const selectionLabelVisible = createMemo(() => {
       if (!isThemeEnabled()) return false;
-      if (isModalPopoverOpen()) return false;
       if (!isElementLabelThemeEnabled()) return false;
       if (isSelectionSuppressed()) return false;
 
@@ -4419,40 +4267,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       return rendererActive && !dragging && hasElement;
     });
 
-    const contextMenuBounds = createMemo((): OverlayBounds | null => {
-      void viewportVersion();
-      const element = store.contextMenuElement;
-      if (!element) return null;
-      return createElementBounds(element);
-    });
-
-    const contextMenuPosition = createMemo(() => {
-      void viewportVersion();
-      return store.contextMenuPosition;
-    });
-
-    const contextMenuTagName = createMemo(() => {
-      const element = store.contextMenuElement;
-      if (!element) return undefined;
-      const frozenCount = store.frozenElements.length;
-      if (frozenCount > 1) {
-        return `${frozenCount} elements`;
-      }
-      return getTagName(element) || undefined;
-    });
-
-    const [contextMenuComponentName] = createComponentNameForElement(() =>
-      store.frozenElements.length > 1 ? null : store.contextMenuElement,
-    );
-
-    const [contextMenuFilePath] = createResource(
-      () => store.contextMenuElement,
-      async (element) => {
-        if (!element) return null;
-        return resolveSource(element);
-      },
-    );
-
     const withSelectionInteractionLock = async <T,>(operation: () => Promise<T>): Promise<T> => {
       actions.incrementSelectionInteractionLockDepth();
       try {
@@ -4471,11 +4285,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     ) => {
       return async (action: () => Promise<boolean>): Promise<void> => {
         await withSelectionInteractionLock(async () => {
-          const fallbackBounds = options?.fallbackBounds ?? null;
+          const singleElementBounds = options?.fallbackBounds ?? null;
           const fallbackSelectionBounds = options?.fallbackSelectionBounds ?? [];
-          const position = options?.position ?? store.contextMenuPosition ?? pointer();
+          const position = options?.position ?? pointer();
           const frozenBounds = frozenElementsBounds();
-          const singleElementBounds = contextMenuBounds() ?? fallbackBounds;
           const hasMultipleElements = elements.length > 1;
 
           const labelBounds = hasMultipleElements
@@ -4493,8 +4306,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           } else {
             selectionBoundsForLabel = fallbackSelectionBounds;
           }
-
-          actions.hideContextMenu();
 
           if (labelBounds) {
             const labelCursorX = hasMultipleElements
@@ -4548,14 +4359,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       };
     };
 
-    // Hiding the context menu synchronously during a click would cause the
-    // click to fall through to whatever element was behind it.
-    const deferHideContextMenu = () => {
-      setTimeout(() => {
-        actions.hideContextMenu();
-      }, 0);
-    };
-
     const buildActionContext = (options: BuildActionContextOptions): ContextMenuActionContext => {
       const {
         element,
@@ -4565,16 +4368,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         componentName,
         position,
         performWithFeedbackOptions,
-        shouldDeferHideContextMenu,
-        onBeforePrompt,
-        customEnterPromptMode,
       } = options;
 
       const elements = store.frozenElements.length > 0 ? store.frozenElements : [element];
-
-      const hideContextMenuAction = shouldDeferHideContextMenu
-        ? deferHideContextMenu
-        : actions.hideContextMenu;
 
       const copyAction = () => {
         keyboardSelection.clear();
@@ -4584,13 +4380,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           selectedElements: elements.length > 1 ? elements : undefined,
           shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
-        hideContextMenuAction();
       };
 
       const defaultEnterPromptMode = () => {
         labelController.clearAll();
         clearPendingToolbarSelection();
-        onBeforePrompt?.();
         preparePromptMode(element, position.x, position.y);
         actions.setPointer({ x: position.x, y: position.y });
         actions.setFrozenElement(element);
@@ -4598,7 +4392,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (!isActivated()) {
           activateRenderer();
         }
-        hideContextMenuAction();
       };
 
       const context: ContextMenuActionContext = {
@@ -4608,7 +4401,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         lineNumber,
         componentName,
         tagName,
-        enterPromptMode: customEnterPromptMode ?? defaultEnterPromptMode,
+        enterPromptMode: defaultEnterPromptMode,
         copy: copyAction,
         hooks: {
           transformHtmlContent: pluginRegistry.hooks.transformHtmlContent,
@@ -4622,7 +4415,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           componentName,
           performWithFeedbackOptions,
         ),
-        hideContextMenu: hideContextMenuAction,
+        hideContextMenu: () => {},
         cleanup: () => {
           if (store.wasActivatedByToggle) {
             deactivateRenderer();
@@ -4634,37 +4427,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const transformedContext = pluginRegistry.hooks.transformActionContext(context);
       return { ...context, ...transformedContext };
-    };
-
-    const contextMenuActionContext = createMemo((): ContextMenuActionContext | undefined => {
-      const element = store.contextMenuElement;
-      if (!element) return undefined;
-      const fileInfo = contextMenuFilePath();
-      const position = store.contextMenuPosition ?? pointer();
-
-      return buildActionContext({
-        element,
-        filePath: fileInfo?.filePath,
-        lineNumber: fileInfo?.lineNumber ?? undefined,
-        tagName: contextMenuTagName(),
-        componentName: contextMenuComponentName(),
-        position,
-        shouldDeferHideContextMenu: true,
-        customEnterPromptMode: () => {
-          labelController.clearAll();
-          clearPendingToolbarSelection();
-          actions.clearInputText();
-          actions.enterPromptMode(position, element);
-          deferHideContextMenu();
-        },
-      });
-    });
-
-    const handleContextMenuDismiss = () => {
-      setTimeout(() => {
-        actions.hideContextMenu();
-        deactivateRenderer();
-      }, 0);
     };
 
     const computeDropdownAnchor = (): DropdownAnchor | null => {
@@ -4725,16 +4487,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       setToolbarMenuPosition(null);
     };
 
-    const dismissAllPopups = () => {
-      actions.hideContextMenu();
-      dismissToolbarMenu();
-    };
-
     const handleToggleToolbarMenu = () => {
       if (toolbarMenuPosition() !== null) {
         dismissToolbarMenu();
       } else {
-        actions.hideContextMenu();
         stopToolbarMenuTracking?.();
         stopToolbarMenuTracking = trackDropdownPosition(
           computeDropdownAnchor,
@@ -4745,44 +4501,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const handleSetDefaultAction = (actionId: string) => {
       updateToolbarState({ defaultAction: actionId });
-      if (isPendingContextMenuSelect()) setPendingToolbarSelection(actionId);
-    };
-
-    const handleShowContextMenuInstance = (instanceId: string) => {
-      const instance = store.labelInstances.find(
-        (labelInstance) => labelInstance.id === instanceId,
-      );
-      if (!instance?.element) return;
-      if (!isElementConnected(instance.element)) return;
-
-      labelController.dismissCompleted();
-      const contextMenuElement = instance.element;
-      const center = getBoundsCenter(createElementBounds(contextMenuElement));
-      const position = {
-        x: instance.mouseX ?? center.x,
-        y: center.y,
-      };
-
-      const elementsToFreeze =
-        instance.elements && instance.elements.length > 0
-          ? instance.elements.filter((element) => isElementConnected(element))
-          : [contextMenuElement];
-
-      setTimeout(() => {
-        dismissToolbarMenu();
-        if (!isActivated()) {
-          actions.setWasActivatedByToggle(true);
-          activateRenderer();
-        }
-        actions.setPointer(position);
-        actions.setFrozenElements(elementsToFreeze);
-        const hasMultipleElements = elementsToFreeze.length > 1;
-        if (hasMultipleElements && instance.bounds) {
-          actions.setFrozenDragRect(createPageRectFromBounds(instance.bounds));
-        }
-        actions.freeze();
-        actions.showContextMenu(position, contextMenuElement);
-      }, 0);
+      if (isPendingToolbarSelection()) setPendingToolbarSelection(actionId);
     };
 
     const getLabelCaptureRect = (instance: SelectionLabelInstance) => {
@@ -4904,7 +4623,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
-                onShowContextMenuInstance={handleShowContextMenuInstance}
                 onCopyScreenshotInstance={handleCopyScreenshotInstance}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
@@ -4946,7 +4664,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     setIsEnabled(state.enabled);
                     if (!state.enabled) {
                       forceDeactivateAll();
-                      dismissAllPopups();
+                      dismissToolbarMenu();
                     }
                   }
                   notifyToolbarStateChangeSubscribers(toolbarStateChangeCallbacks, state);
@@ -4961,15 +4679,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onToolbarRef={(element) => {
                   toolbarElement = element;
                 }}
-                contextMenuPosition={contextMenuPosition()}
-                contextMenuBounds={contextMenuBounds()}
-                contextMenuTagName={contextMenuTagName()}
-                contextMenuComponentName={contextMenuComponentName()}
-                contextMenuHasFilePath={Boolean(contextMenuFilePath()?.filePath)}
-                actions={pluginRegistry.store.actions}
-                actionContext={contextMenuActionContext()}
-                onContextMenuDismiss={handleContextMenuDismiss}
-                onContextMenuHide={deferHideContextMenu}
                 toolbarMenuPosition={toolbarMenuPosition()}
                 toolbarMenuActions={pluginRegistry.store.actions.filter(
                   (action) => action.showInToolbarMenu === true,
@@ -5027,7 +4736,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         updateToolbarState({ enabled, collapsed: !enabled });
         if (!enabled) {
           forceDeactivateAll();
-          dismissAllPopups();
+          dismissToolbarMenu();
         }
       },
       getToolbarState: () => currentToolbarState() ?? loadToolbarState(),
@@ -5051,7 +4760,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           setIsEnabled(newState.enabled);
           if (!newState.enabled) {
             forceDeactivateAll();
-            dismissAllPopups();
+            dismissToolbarMenu();
           }
         }
         notifyToolbarStateChangeSubscribers(toolbarStateChangeCallbacks, newState);
@@ -5066,7 +4775,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // boxes. For the demo between showcase loops.
       reset: () => {
         forceDeactivateAll();
-        dismissAllPopups();
+        dismissToolbarMenu();
         actions.clearGrabbedBoxes();
         labelController.clearAll();
         actions.setSelectionSource(null, null);

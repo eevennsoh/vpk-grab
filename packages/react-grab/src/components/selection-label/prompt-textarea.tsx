@@ -42,7 +42,7 @@ export const PromptTextarea: Component<PromptTextareaProps> = (props) => {
       value={props.value}
       onInput={handleInput}
       onKeyDown={(event) => props.onKeyDown(event)}
-      placeholder="Add context"
+      placeholder={props.placeholder ?? "Add context"}
       rows={1}
       readOnly={props.readOnly}
       onFocus={() => props.onFocus?.()}

@@ -464,3 +464,19 @@ describe("createPluginRegistry", () => {
     expect(selfReplacingHook).toHaveBeenCalledOnce();
   });
 });
+
+describe("Legacy menu hook compatibility", () => {
+  it("keeps plugin actions registered alongside an unused menu hook", () => {
+    const registry = createPluginRegistry();
+    const onContextMenu = vi.fn();
+    const action = { id: "custom", label: "Custom", shortcut: "K", onAction: vi.fn() };
+    registry.register(
+      { name: "custom", hooks: { onContextMenu }, actions: [action] },
+      createNoopApi(),
+    );
+    expect(registry.store.actions).toEqual([action]);
+    expect(onContextMenu).not.toHaveBeenCalled();
+    registry.unregister("custom");
+    expect(registry.store.actions).toEqual([]);
+  });
+});

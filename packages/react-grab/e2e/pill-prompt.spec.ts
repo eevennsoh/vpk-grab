@@ -169,6 +169,9 @@ test.describe("Copied pill prompt", () => {
     await reactGrab.submitInput();
     const promptModeWrites = await waitForClipboardWrites();
     await expect(getCompletion(reactGrab)).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     expect(promptModeWrites["text/plain"]).toContain(PROMPT_TEXT);
 
     const clickWrites = await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
@@ -186,7 +189,7 @@ test.describe("Copied pill prompt", () => {
     await expect(completion).toHaveCount(1);
     await expect(getPillPrompt(reactGrab)).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
-    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(0);
     expect(await isReactGrabActive(page)).toBe(true);
     expect(await isFocusInOverlay(page)).toBe(false);
   });
@@ -353,6 +356,9 @@ test.describe("Copied pill prompt", () => {
       await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
       await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+      await expect(
+        reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+      ).toHaveCount(0);
       await expect(getPillPrompt(reactGrab)).toHaveCount(0);
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       const [imageWrite] = await getImageWrites(page);
@@ -405,6 +411,9 @@ test.describe("Copied pill prompt", () => {
     await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
     await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     const [imageWrite] = await getImageWrites(page);
     expect(imageWrite.plainText).toBe(pillPromptWrites["text/plain"]);
@@ -431,6 +440,9 @@ test.describe("Copied pill prompt", () => {
 
     expect(clipboardWrites["text/plain"]?.startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
     await expect(getCompletion(reactGrab)).toContainText("Copied with prompt");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("a hold session shows the prompt without taking focus", async ({ reactGrab, page }) => {
@@ -731,7 +743,11 @@ test.describe("Copied pill prompt", () => {
   }) => {
     await reactGrab.activate();
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await expect(getPillPrompt(reactGrab)).toHaveAttribute("placeholder", "Optional context");
     const emptyPrompt = await measurePillPrompt(reactGrab);
+    expect(Math.abs(emptyPrompt.promptWidth - emptyPrompt.placeholderWidth)).toBeLessThanOrEqual(
+      PLACEHOLDER_SLACK_PX,
+    );
     const pillWidthOutsidePrompt = emptyPrompt.pillWidth - emptyPrompt.promptWidth;
     expect(emptyPrompt.pillWidth).toBeLessThanOrEqual(
       pillWidthOutsidePrompt + emptyPrompt.placeholderWidth + PLACEHOLDER_SLACK_PX,

@@ -211,15 +211,16 @@ test.describe("Focus Trap Resistance", () => {
     });
   });
 
-  test.describe("Context Menu", () => {
-    test("should open context menu while focus trap is active", async ({ reactGrab }) => {
+  test.describe("Comment API", () => {
+    test("api.comment opens prompt mode on the trapped button", async ({ reactGrab }) => {
       await injectFocusTrap(reactGrab.page);
       await reactGrab.activate();
 
       await reactGrab.hoverUntilSelected("#trap-button");
-      await reactGrab.rightClickElement("#trap-button");
+      await reactGrab.page.evaluate(() => window.__REACT_GRAB__?.comment());
+      await reactGrab.clickElement("#trap-button");
 
-      const isVisible = await reactGrab.isContextMenuVisible();
+      const isVisible = await reactGrab.isPromptModeActive();
       expect(isVisible).toBe(true);
     });
   });

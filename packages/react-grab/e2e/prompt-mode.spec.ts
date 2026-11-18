@@ -2,15 +2,14 @@ import { test, expect } from "./fixtures.js";
 
 test.describe("Prompt Mode", () => {
   test.describe("Entering Prompt Mode", () => {
-    test("context menu Comment should enter prompt mode when the action is registered", async ({
+    test("bare Enter should enter prompt mode when the action is registered", async ({
       reactGrab,
     }) => {
       await reactGrab.registerCommentAction();
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");
 
-      await reactGrab.rightClickElement("li:first-child");
-      await reactGrab.clickContextMenuItem("Comment");
+      await reactGrab.pressEnter();
 
       await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
     });
@@ -265,8 +264,7 @@ test.describe("Prompt Mode", () => {
 
       await reactGrab.hoverUntilSelected("li:first-child");
 
-      await reactGrab.rightClickElement("li:first-child");
-      await reactGrab.clickContextMenuItem("Comment");
+      await reactGrab.pressEnter();
 
       await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
     });

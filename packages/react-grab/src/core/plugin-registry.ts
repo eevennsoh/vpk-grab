@@ -1,7 +1,6 @@
 import { getOwner, onCleanup } from "solid-js";
 import { createStore } from "solid-js/store";
 import type {
-  Position,
   Plugin,
   PluginConfig,
   PluginHooks,
@@ -75,7 +74,7 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
   ): PluginStoreState => {
     let mergedTheme: Required<Theme> = DEFAULT_THEME;
     let mergedOptions: OptionsState = { ...DEFAULT_OPTIONS, ...initialOptions };
-    const allContextMenuActions: ContextMenuAction[] = [];
+    const allActions: ContextMenuAction[] = [];
 
     for (const { config } of registeredPlugins) {
       if (config.theme) {
@@ -88,7 +87,7 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
 
       if (config.actions) {
         for (const action of config.actions) {
-          allContextMenuActions.push(action);
+          allActions.push(action);
         }
       }
     }
@@ -96,7 +95,7 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
     return {
       theme: mergedTheme,
       options: mergedOptions,
-      actions: allContextMenuActions,
+      actions: allActions,
     };
   };
 
@@ -392,8 +391,6 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
       variant: ElementLabelVariant,
       context: ElementLabelContext,
     ) => callHook("onElementLabel", visible, variant, context),
-    onContextMenu: (element: Element, position: Position) =>
-      callHook("onContextMenu", element, position),
     onOpenFile: (filePath: string, lineNumber?: number) =>
       callHookWithHandled("onOpenFile", filePath, lineNumber),
     transformHtmlContent: async (html: string, elements: Element[]) =>

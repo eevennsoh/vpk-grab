@@ -630,6 +630,7 @@ export interface CompletionViewProps {
 }
 
 export interface PromptTextareaProps {
+  placeholder?: string;
   ref?: (element: HTMLTextAreaElement) => void;
   class?: string;
   value: string;

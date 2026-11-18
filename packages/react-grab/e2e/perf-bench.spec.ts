@@ -293,46 +293,6 @@ test.describe("@perf benchmarks", () => {
     await reactGrab.deactivate();
   });
 
-  test("context-menu-open-close-cycle @perf", async ({ reactGrab, page }, testInfo) => {
-    // Right-click → context menu opens → escape closes. Each cycle
-    // re-mounts the menu DOM, runs its dropdown-anchored positioning,
-    // and re-runs deactivate cleanup on dismiss.
-    const targetSelectors = [
-      "[data-testid='todo-list'] li:nth-child(2)",
-      "[data-testid='nested-card']",
-      "[data-testid='span-element']",
-      "[data-testid='td-1-2']",
-    ];
-
-    await recordScenario(
-      page,
-      testInfo,
-      "context-menu-open-close-cycle",
-      async () => {
-        for (let cycleIndex = 0; cycleIndex < 30; cycleIndex++) {
-          const elementLocator = page
-            .locator(targetSelectors[cycleIndex % targetSelectors.length])
-            .first();
-          if ((await elementLocator.count()) === 0) continue;
-          await elementLocator.click({ button: "right", force: true });
-          await page.waitForTimeout(40);
-          await page.keyboard.press("Escape");
-          await page.waitForTimeout(40);
-        }
-        await idleFrame(page, 4);
-      },
-      {
-        // Escape after each cycle dismisses the menu AND deactivates;
-        // re-activate per sample so cycles 2..N still exercise the menu.
-        beforeEachSample: async () => {
-          await reactGrab.activate();
-          await idleFrame(page, 2);
-        },
-      },
-    );
-    await reactGrab.deactivate();
-  });
-
   test("prompt-mode-typing @perf", async ({ reactGrab, page }, testInfo) => {
     // Enters prompt mode and types a paragraph. Exercises the textarea
     // auto-resize, reactive input signal, and per-keystroke memo
@@ -745,43 +705,6 @@ test.describe("@perf benchmarks", () => {
   });
 
   // ─── Keyboard / menu paths ─────────────────────────────────────────
-
-  test("context-menu-arrow-navigation @perf", async ({ reactGrab, page }, testInfo) => {
-    // Open the context menu and walk its items via arrow keys. Each
-    // press re-positions the menu-highlight and may scroll the menu.
-    const target = page.locator("[data-testid='nested-card']").first();
-    if ((await target.count()) === 0) {
-      test.skip(true, "no nested-card target");
-      return;
-    }
-
-    await recordScenario(
-      page,
-      testInfo,
-      "context-menu-arrow-navigation",
-      async () => {
-        for (let cycleIndex = 0; cycleIndex < 10; cycleIndex++) {
-          await target.click({ button: "right", force: true });
-          await page.waitForTimeout(60);
-          for (let pressIndex = 0; pressIndex < 6; pressIndex++) {
-            await page.keyboard.press(pressIndex % 2 === 0 ? "ArrowDown" : "ArrowUp");
-            await page.waitForTimeout(16);
-          }
-          await page.keyboard.press("Escape");
-          await page.waitForTimeout(40);
-        }
-        await idleFrame(page, 4);
-      },
-      {
-        // Escape after each cycle dismisses the menu AND deactivates.
-        beforeEachSample: async () => {
-          await reactGrab.activate();
-          await idleFrame(page, 2);
-        },
-      },
-    );
-    await reactGrab.deactivate();
-  });
 
   test("keyboard-rapid-arrows @perf", async ({ reactGrab, page }, testInfo) => {
     // Selection active, hammer arrow keys without entering arrow-nav

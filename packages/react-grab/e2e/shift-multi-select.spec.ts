@@ -594,7 +594,7 @@ test.describe("Shift Multi-Select", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
   });
 
-  test("should not commit accumulated selection when shift releases over an open context menu", async ({
+  test("should not commit accumulated selection on right-click during shift selection", async ({
     reactGrab,
   }) => {
     await reactGrab.page.evaluate(() => navigator.clipboard.writeText("baseline"));
@@ -625,13 +625,15 @@ test.describe("Shift Multi-Select", () => {
       { button: "right" },
     );
     await reactGrab.page.waitForTimeout(150);
-    expect(await reactGrab.isContextMenuVisible()).toBe(true);
+    await expect(reactGrab.page.locator("[data-react-grab-context-menu]")).toHaveCount(0);
 
+    expect(await reactGrab.getClipboardContent()).toBe("baseline");
+    await reactGrab.pressEscape();
     await reactGrab.page.keyboard.up("Shift");
     await reactGrab.page.waitForTimeout(400);
 
     expect(await reactGrab.getClipboardContent()).toBe("baseline");
-    expect(await reactGrab.isContextMenuVisible()).toBe(true);
+    await expect(reactGrab.page.locator("[data-react-grab-context-menu]")).toHaveCount(0);
   });
 
   test("should render a tag label under each accumulated element", async ({ reactGrab }) => {

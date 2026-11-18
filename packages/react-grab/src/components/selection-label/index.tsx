@@ -84,7 +84,10 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
   const shouldEnablePointerEvents = (): boolean => {
     if (props.isPromptMode) return true;
     if (props.discardPrompt) return true;
-    if (isCompletedStatus() && (props.onDismiss || props.onShowContextMenu)) {
+    if (
+      isCompletedStatus() &&
+      (props.onDismiss || props.onCopyScreenshot || props.onSubmitPrompt || props.thumbnailUrl)
+    ) {
       return true;
     }
     if (props.status === "error" && (props.onAcknowledgeError || props.onRetry)) {
@@ -380,7 +383,6 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             screenshotError={props.screenshotError}
             onDismiss={props.onDismiss}
             onFadingChange={setIsInternalFading}
-            onShowContextMenu={props.onShowContextMenu}
             onCopyScreenshot={props.onCopyScreenshot}
             onSubmitPrompt={props.onSubmitPrompt}
             shouldFocusPrompt={props.shouldFocusPrompt}

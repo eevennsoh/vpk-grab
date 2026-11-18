@@ -8,7 +8,6 @@ import { noop } from "./noop.js";
 interface ToolbarSceneProps {
   isActive: boolean;
   enabled: boolean;
-  isContextMenuOpen: boolean;
   collapsed: boolean;
 }
 
@@ -35,7 +34,6 @@ const meta: Meta<ToolbarSceneProps> = {
       <Toolbar
         isActive={args.isActive}
         enabled={args.enabled}
-        isContextMenuOpen={args.isContextMenuOpen}
         onToggle={noop}
         onStateChange={noop}
         onSelectHoverChange={noop}
@@ -64,13 +62,11 @@ const meta: Meta<ToolbarSceneProps> = {
   args: {
     isActive: false,
     enabled: true,
-    isContextMenuOpen: false,
     collapsed: false,
   },
   argTypes: {
     isActive: { control: "boolean" },
     enabled: { control: "boolean" },
-    isContextMenuOpen: { control: "boolean" },
     collapsed: { control: "boolean" },
   },
 };
@@ -89,8 +85,4 @@ export const Active: Story = {
 
 export const Collapsed: Story = {
   args: { isActive: false, enabled: false, collapsed: true },
-};
-
-export const ContextMenuOpen: Story = {
-  args: { isActive: true, enabled: true, isContextMenuOpen: true },
 };

@@ -12,7 +12,6 @@ import { isEnterCode } from "../../utils/is-enter-code.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
 import { isKeyboardEventComposing } from "../../utils/is-keyboard-event-composing.js";
 import { IconReturn } from "../icons/icon-return.jsx";
-import { IconEllipsis } from "../icons/icon-ellipsis.jsx";
 import { cn } from "../../utils/cn.js";
 import { Button, buttonVariants } from "../ui/button.js";
 import { Surface } from "../ui/surface.js";
@@ -59,16 +58,6 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
 
 const ACTION_ICON_CLASS = "opacity-50 group-hover:opacity-100 transition-opacity";
 
-interface MoreOptionsButtonProps {
-  onClick: () => void;
-}
-
-const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => (
-  <CompletionActionButton data-react-grab-more-options label="More options" onClick={props.onClick}>
-    <IconEllipsis size={14} aria-hidden="true" class={ACTION_ICON_CLASS} />
-  </CompletionActionButton>
-);
-
 // An empty prompt leaves every key but text to the page (the overlay's keydown
 // handler sees to that), so Escape only has work here once there is text.
 const PillPrompt: Component<PillPromptProps> = (props) => {
@@ -106,6 +95,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
     <div data-react-grab-pill-prompt class="flex items-center min-w-0 ml-1.5">
       <PromptTextarea
         ref={(element) => (textareaRef = element)}
+        placeholder="Optional context"
         class="min-w-0"
         value={promptText()}
         shouldFocusOnMount={props.shouldFocus}
@@ -124,14 +114,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
   const [didCopy, setDidCopy] = createSignal(false);
   const [isFading, setIsFading] = createSignal(false);
   const displayStatusText = () => (didCopy() ? "Copied" : props.statusText);
-
-  const handleShowContextMenu = () => {
-    if (fadeTimeoutId !== undefined) window.clearTimeout(fadeTimeoutId);
-    if (dismissTimeoutId !== undefined) window.clearTimeout(dismissTimeoutId);
-    setIsFading(true);
-    props.onFadingChange?.(true);
-    props.onShowContextMenu?.();
-  };
 
   const handleAccept = () => {
     if (didCopy()) return;
@@ -153,7 +135,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
     onEnter: (event) => {
       if (isEventFromOverlay(event, "data-react-grab-completion-action")) return;
       if (!props.onDismiss) return;
-      if (isEventFromOverlay(event, "data-react-grab-context-menu")) return;
       event.preventDefault();
       event.stopPropagation();
       handleAccept();
@@ -190,9 +171,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             textContent={displayStatusText()}
           />
           <div class="contain-layout shrink-0 flex items-center gap-2 h-fit">
-            <Show when={props.onShowContextMenu}>
-              <MoreOptionsButton onClick={handleShowContextMenu} />
-            </Show>
             <Show when={props.onDismiss}>
               <Button
                 data-react-grab-dismiss
@@ -286,9 +264,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                 </Show>
               </>
             )}
-          </Show>
-          <Show when={props.onShowContextMenu}>
-            <MoreOptionsButton onClick={handleShowContextMenu} />
           </Show>
         </div>
         <Show when={props.screenshotError}>

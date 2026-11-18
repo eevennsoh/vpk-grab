@@ -62,7 +62,6 @@ import { accumulateRotationDeg } from "../../utils/accumulate-rotation.js";
 
 interface ToolbarProps {
   isActive?: boolean;
-  isContextMenuOpen?: boolean;
   onToggle?: () => void;
   activeActionId?: string | null;
   defaultActionId?: string;
@@ -174,11 +173,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     Boolean(props.isActive) && (props.activeActionId ?? DEFAULT_ACTION_ID) === currentActionId();
 
   const isActionHovered = (actionId: string) =>
-    hoveredActionId() === actionId &&
-    !isCollapsed() &&
-    !drag.isDragging() &&
-    !drag.isSnapping() &&
-    !props.isContextMenuOpen;
+    hoveredActionId() === actionId && !isCollapsed() && !drag.isDragging() && !drag.isSnapping();
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
   // Specs and Spacing describe what Grab hovers, so they join the toolbar
   // only while Grab is the tool in hand.
@@ -221,7 +216,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     onMouseLeave: () => {
       const actionId = getActionId();
       setHoveredActionId((current) => (current === actionId ? null : current));
-      if (!props.isActive && !props.isContextMenuOpen) {
+      if (!props.isActive) {
         releaseInteractionFreeze();
       }
     },
@@ -240,9 +235,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   createEffect(
     on(
-      () => [props.isActive, props.isContextMenuOpen] as const,
-      ([isActive, isContextMenuOpen]) => {
-        if (!isActive && !isContextMenuOpen && unfreezeUpdatesCallback) {
+      () => props.isActive,
+      (isActive) => {
+        if (!isActive && unfreezeUpdatesCallback) {
           releaseInteractionFreeze();
         }
       },
@@ -809,7 +804,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   const isInteracting = (): boolean =>
     isToolbarHovered() ||
-    Boolean(props.isContextMenuOpen) ||
     drag.isDragging() ||
     drag.isSnapping() ||
     isCollapseAnimating() ||
