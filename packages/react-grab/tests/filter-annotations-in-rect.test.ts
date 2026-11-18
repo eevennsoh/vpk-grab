@@ -9,6 +9,7 @@ const createStroke = (id: string, points: Array<[number, number]>): AnnotationSt
   id,
   points: points.map(([x, y]) => ({ x, y, weight: 0.5 })),
   isStraight: false,
+  isRectangle: false,
   color: "#ff0000",
 });
 

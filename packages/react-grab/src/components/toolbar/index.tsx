@@ -1078,10 +1078,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                             )}
                             style={{
                               "background-color": colorOption.value,
-                              "--rg-swatch-border":
-                                colorOption.label === "Black"
-                                  ? "var(--rg-border-button)"
-                                  : "var(--rg-swatch-color-border)",
+                              "--rg-swatch-border": colorOption.usesThemeBorder
+                                ? "var(--rg-border-button)"
+                                : "var(--rg-swatch-color-border)",
                             }}
                           />
                         </span>

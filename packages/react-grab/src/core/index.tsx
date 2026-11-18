@@ -77,9 +77,7 @@ import {
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
-  PEN_TOOL_KEY,
-  RECTANGLE_TOOL_KEY,
-  RECTANGLE_TOOL_CURSOR,
+  DRAWING_TOOL_BY_KEY,
   TEXT_TOOL_KEY,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
@@ -442,7 +440,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         case "pen":
           return PEN_TOOL_CURSOR;
         case "rectangle":
-          return RECTANGLE_TOOL_CURSOR;
+          return "crosshair";
         case "text":
           return TEXT_TOOL_CURSOR;
         case "edit":
@@ -3245,16 +3243,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
         if (canHandleEditShortcut && isBareKeyPress) {
           const pressedKey = event.key.toLowerCase();
-          const runToolShortcut = (): boolean => {
+          const runToolShortcut = (): boolean | null => {
             if (isAnnotating()) {
-              const drawingTool =
-                pressedKey === PEN_TOOL_KEY
-                  ? "pen"
-                  : pressedKey === RECTANGLE_TOOL_KEY
-                    ? "rectangle"
-                    : pressedKey === TEXT_TOOL_KEY
-                      ? "text"
-                      : null;
+              const drawingTool = DRAWING_TOOL_BY_KEY[pressedKey];
               if (drawingTool) {
                 if (inspect.annotationTool() !== drawingTool)
                   handleSelectAnnotationTool(drawingTool);
@@ -3270,6 +3261,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 if (isAnnotating()) return false;
                 inspect.toggleRedlines();
                 return true;
+              case TEXT_TOOL_KEY:
+                return null;
               case MOVE_TOOL_KEY:
                 if (!inspect.hasAnnotations()) return false;
                 handleSelectAnnotationTool("edit");
@@ -3278,7 +3271,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 return false;
             }
           };
-          if (runToolShortcut()) {
+          const didHandleToolShortcut = runToolShortcut();
+          if (didHandleToolShortcut === null) return;
+          if (didHandleToolShortcut) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;

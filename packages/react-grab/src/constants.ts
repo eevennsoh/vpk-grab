@@ -1,7 +1,6 @@
 import type { AnnotationColorOption, SelectionTool, SpecBoxSide } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
-  CROP_7_5_ICON_PATHS,
   NAVIGATION_ICON_PATHS,
   PAN_TOOL_ALT_ICON_PATHS,
   PAN_TOOL_ICON_PATHS,
@@ -444,7 +443,7 @@ export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Orange", value: "#fb923c" },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
-  { label: "Black", value: "#111827" },
+  { label: "Black", value: "#111827", usesThemeBorder: true },
 ];
 
 export const ANNOTATION_RECTANGLE_POINT_COUNT = 4;
@@ -499,6 +498,11 @@ export const EDIT_HISTORY_MAX_ENTRIES = 100;
 export const PEN_TOOL_KEY = "1";
 export const RECTANGLE_TOOL_KEY = "2";
 export const TEXT_TOOL_KEY = "3";
+export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefined>> = {
+  [PEN_TOOL_KEY]: "pen",
+  [RECTANGLE_TOOL_KEY]: "rectangle",
+  [TEXT_TOOL_KEY]: "text",
+};
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
@@ -522,11 +526,6 @@ export const GRAB_TOOL_CURSOR = createSvgCursor(
 export const PEN_TOOL_CURSOR = createSvgCursor(
   STYLUS_ICON_PATHS.filled,
   { x: 4, y: 20 },
-  "crosshair",
-);
-export const RECTANGLE_TOOL_CURSOR = createSvgCursor(
-  CROP_7_5_ICON_PATHS.filled,
-  { x: 12, y: 12 },
   "crosshair",
 );
 export const TEXT_TOOL_CURSOR = createSvgCursor(TITLE_ICON_PATHS.filled, { x: 12, y: 12 }, "text");

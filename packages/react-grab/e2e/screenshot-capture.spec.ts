@@ -3,6 +3,8 @@
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject, type ReactGrabState } from "./fixtures.js";
 import {
+  SCREENSHOT_RECTANGLE_HEIGHT_PX,
+  SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
   MARQUEE_SCREENSHOT_MOVE_PX,
   MARQUEE_OUTSET_SIDE_COUNT,
@@ -508,7 +510,7 @@ test.describe("Screenshot capture", () => {
     await rectangleButton.click();
     await page.mouse.move(LINE_START.x, LINE_START.y);
     await page.mouse.down();
-    await page.mouse.move(LINE_END.x, LINE_END.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX, {
+    await page.mouse.move(LINE_END.x, LINE_END.y + SCREENSHOT_RECTANGLE_HEIGHT_PX, {
       steps: DRAG_STEPS,
     });
     await page.mouse.up();
@@ -529,6 +531,18 @@ test.describe("Screenshot capture", () => {
     expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
     expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
     expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+    const interiorPixel = await sampleLastImagePixel(
+      page,
+      strokeMidpointX - CAPTURE_START.x,
+      LINE_START.y - CAPTURE_START.y + SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
+      CAPTURE_END.x - CAPTURE_START.x,
+    );
+    expect(interiorPixel).not.toBeNull();
+    expect(
+      interiorPixel!.red > STROKE_RED_MIN &&
+        interiorPixel!.green < STROKE_GREEN_MAX &&
+        interiorPixel!.blue < STROKE_BLUE_MAX,
+    ).toBe(false);
   });
 
   test("the camera cursor shows while Shift is held in Grab, not in Pen", async ({ page }) => {
@@ -1697,7 +1711,7 @@ test.describe("Copied pill", () => {
     await rectangleButton.click();
     await page.mouse.move(rectangleStart.x, rectangleStart.y);
     await page.mouse.down();
-    await page.mouse.move(rectangleEnd.x, rectangleEnd.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX, {
+    await page.mouse.move(rectangleEnd.x, rectangleEnd.y + SCREENSHOT_RECTANGLE_HEIGHT_PX, {
       steps: DRAG_STEPS,
     });
     await page.mouse.up();
@@ -1721,6 +1735,18 @@ test.describe("Copied pill", () => {
     expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
     expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
     expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+    const interiorPixel = await sampleLastImagePixel(
+      page,
+      (rectangleStart.x + rectangleEnd.x) / 2 - captureRect.x,
+      rectangleTopPx - captureRect.y + SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
+      captureRect.width,
+    );
+    expect(interiorPixel).not.toBeNull();
+    expect(
+      interiorPixel!.red > STROKE_RED_MIN &&
+        interiorPixel!.green < STROKE_GREEN_MAX &&
+        interiorPixel!.blue < STROKE_BLUE_MAX,
+    ).toBe(false);
   });
 
   test("a rejected camera write keeps the copy and offers the camera again", async ({

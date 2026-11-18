@@ -719,13 +719,14 @@ export interface AnnotationStroke {
   id: string;
   points: AnnotationPoint[];
   isStraight: boolean;
-  isRectangle?: boolean;
+  isRectangle: boolean;
   color: string;
 }
 
 export interface AnnotationColorOption {
   label: string;
   value: string;
+  usesThemeBorder?: boolean;
 }
 
 export interface AnnotationText extends Position {

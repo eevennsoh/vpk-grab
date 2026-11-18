@@ -36,13 +36,17 @@ interface InspectControllerOptions {
   getAnnotationElements: () => Iterable<Element>;
 }
 
+interface RectangleDraft {
+  rectangleStroke: AnnotationStroke;
+  squareStroke: AnnotationStroke;
+}
+
 interface ActiveDrawing {
   pointerId: number;
   points: AnnotationPoint[];
   lastSampleTimestamp: number;
   lengthPx: number;
-  rectangleStroke: AnnotationStroke | null;
-  squareStroke: AnnotationStroke | null;
+  rectangleDraft: RectangleDraft | null;
 }
 
 interface ActiveMove {
@@ -146,19 +150,26 @@ export const createInspectController = (options: InspectControllerOptions) => {
     (): AnnotationStroke | null => {
       const points = drawingPoints();
       if (points.length === 0) return null;
-      if (activeDrawing?.rectangleStroke) {
+      if (activeDrawing?.rectangleDraft) {
         return options.isShiftKeyHeld()
-          ? activeDrawing.squareStroke
-          : activeDrawing.rectangleStroke;
+          ? activeDrawing.rectangleDraft.squareStroke
+          : activeDrawing.rectangleDraft.rectangleStroke;
       }
       return options.isShiftKeyHeld()
         ? {
             id: DRAFT_STROKE_ID,
             points: createStraightPoints(points),
             isStraight: true,
+            isRectangle: false,
             color: annotationColor(),
           }
-        : { id: DRAFT_STROKE_ID, points, isStraight: false, color: annotationColor() };
+        : {
+            id: DRAFT_STROKE_ID,
+            points,
+            isStraight: false,
+            isRectangle: false,
+            color: annotationColor(),
+          };
     },
     undefined,
     { equals: false },
@@ -533,24 +544,26 @@ export const createInspectController = (options: InspectControllerOptions) => {
           points,
           lastSampleTimestamp: event.timeStamp,
           lengthPx: 0,
-          rectangleStroke:
+          rectangleDraft:
             tool === "rectangle"
               ? {
-                  id: DRAFT_STROKE_ID,
-                  points,
-                  isStraight: false,
-                  isRectangle: true,
-                  color: annotationColor(),
+                  rectangleStroke: {
+                    id: DRAFT_STROKE_ID,
+                    points,
+                    isStraight: false,
+                    isRectangle: true,
+                    color: annotationColor(),
+                  },
+                  squareStroke: {
+                    id: DRAFT_STROKE_ID,
+                    points: points.map((point) => ({ ...point })),
+                    isStraight: false,
+                    isRectangle: true,
+                    color: annotationColor(),
+                  },
                 }
               : null,
-          squareStroke: null,
         };
-        if (activeDrawing.rectangleStroke) {
-          activeDrawing.squareStroke = {
-            ...activeDrawing.rectangleStroke,
-            points: points.map((point) => ({ ...point })),
-          };
-        }
         setDrawingPoints(activeDrawing.points);
         return;
       }
@@ -588,11 +601,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
-    if (activeDrawing.rectangleStroke && activeDrawing.squareStroke) {
+    if (activeDrawing.rectangleDraft) {
       const pageX = event.clientX + window.scrollX;
       const pageY = event.clientY + window.scrollY;
       updateRectanglePoints(activeDrawing.points, pageX, pageY, false);
-      updateRectanglePoints(activeDrawing.squareStroke.points, pageX, pageY, true);
+      updateRectanglePoints(activeDrawing.rectangleDraft.squareStroke.points, pageX, pageY, true);
       setDrawingPoints(activeDrawing.points);
       return;
     }
@@ -622,7 +635,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
       return;
     }
     if (!activeDrawing || activeDrawing.pointerId !== event.pointerId) return;
-    const isRectangle = Boolean(activeDrawing.rectangleStroke);
+    const isRectangle = Boolean(activeDrawing.rectangleDraft);
     if (isRectangle) {
       updateRectanglePoints(
         activeDrawing.points,
@@ -637,7 +650,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     const points = isStraight ? createStraightPoints(activeDrawing.points) : activeDrawing.points;
     // Measured along the stroke, not end to end: a loop ends where it began.
     const lengthPx = isRectangle
-      ? Math.max(Math.abs(points[2].x - points[0].x), Math.abs(points[2].y - points[0].y))
+      ? Math.min(Math.abs(points[2].x - points[0].x), Math.abs(points[2].y - points[0].y))
       : isStraight
         ? Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)
         : activeDrawing.lengthPx;
