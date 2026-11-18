@@ -42,11 +42,13 @@ const FEATURES: Feature[] = [
     ),
   },
   {
-    name: "Pen & Text",
+    name: "Pen, Rectangle & Text",
     description: (
       <>
-        Draw or drop notes on the page. <Kbd>⌘</Kbd> cycles the tools, <Kbd>Shift</Kbd> draws
-        straight.
+        Draw, outline rectangles or drop notes in Red, Orange, Yellow, Green or Black. <Kbd>⌘</Kbd>{" "}
+        cycles the tools; <Kbd>Shift</Kbd> makes lines straight and rectangles square. With a
+        drawing tool or Move in hand, <Kbd>1</Kbd>, <Kbd>2</Kbd> and <Kbd>3</Kbd> pick Pen,
+        Rectangle and Text.
       </>
     ),
   },

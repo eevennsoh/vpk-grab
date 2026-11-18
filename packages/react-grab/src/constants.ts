@@ -1,4 +1,4 @@
-import type { AnnotationColorOption, SelectionTool } from "./types.js";
+import type { AnnotationColorOption, SelectionTool, SpecBoxSide } from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
   NAVIGATION_ICON_PATHS,
@@ -230,6 +230,7 @@ export const OPAQUE_TEXT_MIN_ALPHA = 0.5;
 
 // Marks the overlay's comment input; queried by the demo driver and prompt-mode checks in core.
 export const REACT_GRAB_INPUT_ATTRIBUTE = "data-react-grab-input";
+export const PILL_PROMPT_ATTRIBUTE = "data-react-grab-pill-prompt";
 
 export const USER_IGNORE_ATTRIBUTE = "data-react-grab-ignore";
 
@@ -439,12 +440,13 @@ export const ANNOTATION_RED_COLOR = "#f24822";
 
 export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Red", value: ANNOTATION_RED_COLOR },
+  { label: "Orange", value: "#fb923c" },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
-  { label: "Blue", value: "#0d99ff" },
-  { label: "Black", value: "#111827", hasInnerBorder: true },
+  { label: "Black", value: "#111827", usesThemeBorder: true },
 ];
 
+export const ANNOTATION_RECTANGLE_POINT_COUNT = 4;
 export const ANNOTATION_STROKE_WIDTH_PX = 3;
 export const ANNOTATION_MIN_STROKE_LENGTH_PX = 4;
 export const ANNOTATION_MIN_SAMPLE_DISTANCE_PX = 1;
@@ -471,6 +473,14 @@ export const REDLINE_COMPACT_ELEMENT_MAX_PX = 48;
 export const REDLINE_SIBLING_SEARCH_RADIUS = 60;
 
 export const SPECS_PANEL_WIDTH_PX = 272;
+export const SPECS_RATIO_CHANGE_THRESHOLD_PX = 0.5;
+export const SPECS_CONTROL_ICON_SIZE_PX = 12;
+export const SPECS_HEADER_HEIGHT_PX = 44;
+export const SPECS_SECTION_TITLE_HEIGHT_PX = 24;
+export const SPECS_SEPARATOR_HEIGHT_PX = 9;
+export const SPECS_ROW_HEIGHT_PX = 20;
+export const SPECS_TOKEN_HEIGHT_PX = 14;
+export const SPECS_FOOTER_HEIGHT_PX = 27;
 export const SPECS_PANEL_MARGIN_PX = 12;
 export const SPECS_PANEL_FALLBACK_HEIGHT_PX = 420;
 export const SPECS_VALUE_MAX_LENGTH = 44;
@@ -485,10 +495,18 @@ export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
+export const PEN_TOOL_KEY = "1";
+export const RECTANGLE_TOOL_KEY = "2";
+export const TEXT_TOOL_KEY = "3";
+export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefined>> = {
+  [PEN_TOOL_KEY]: "pen",
+  [RECTANGLE_TOOL_KEY]: "rectangle",
+  [TEXT_TOOL_KEY]: "text",
+};
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
-export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "text"];
+export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 // A press of the platform modifier on its own counts as a cycle only if let go
 // this soon: held any longer it is the start of a chord (Cmd+C, Cmd+Z) that
 // never got its key.
@@ -539,3 +557,39 @@ export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
 export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;
+
+export const SPECS_BOX_COMPONENT_INDEXES_BY_COUNT: Record<number, number[]> = {
+  1: [0, 0, 0, 0],
+  2: [0, 1, 0, 1],
+  3: [0, 1, 2, 1],
+  4: [0, 1, 2, 3],
+};
+export const SPECS_RADIUS_MAX_AXES = 2;
+export const SPECS_LOGICAL_SIDE_SUFFIXES = ["start", "end"];
+
+export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
+  padding: [
+    { property: "padding-top", label: "Top" },
+    { property: "padding-right", label: "Right" },
+    { property: "padding-bottom", label: "Bottom" },
+    { property: "padding-left", label: "Left" },
+  ],
+  margin: [
+    { property: "margin-top", label: "Top" },
+    { property: "margin-right", label: "Right" },
+    { property: "margin-bottom", label: "Bottom" },
+    { property: "margin-left", label: "Left" },
+  ],
+  "border-width": [
+    { property: "border-top-width", label: "Top" },
+    { property: "border-right-width", label: "Right" },
+    { property: "border-bottom-width", label: "Bottom" },
+    { property: "border-left-width", label: "Left" },
+  ],
+  "border-radius": [
+    { property: "border-top-left-radius", label: "Top left" },
+    { property: "border-top-right-radius", label: "Top right" },
+    { property: "border-bottom-right-radius", label: "Bottom right" },
+    { property: "border-bottom-left-radius", label: "Bottom left" },
+  ],
+};

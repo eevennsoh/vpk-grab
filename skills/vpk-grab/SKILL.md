@@ -18,7 +18,7 @@ vpk-grab is React Grab plus a design inspector. In the browser the user hovers
 an element and holds ⌘C (Ctrl+C on Windows and Linux): the page freezes, the
 element is selected, and clicking it copies the element with its component and
 source location. The fork adds a specs panel, spacing measurements, measuring
-between two elements, and pen and text annotations.
+between two elements, and pen, rectangle and text annotations.
 
 It is a drop-in fork. The package is named `react-grab` and the global is
 `window.__REACT_GRAB__`, exactly as upstream.
@@ -100,9 +100,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
 ## What the user can do with it
 
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
-- **Specs** (toolbar toggle, key 1): a panel of the hovered element's applied styles,
+- **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,
   with the design token under each value that came from one.
-- **Spacing** (toolbar toggle, key 2): the element's distance to neighbours and
+- **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
 - **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
   property off and on, pick another token or keyword, or type a value.
@@ -110,8 +110,11 @@ example, in `<head>` before the app's own scripts, on development pages only.
   page, by element, with remove, reopen and reset all.
 - **Hold Alt** with Spacing on: anchors on the hovered element; moving to
   another element shows the distances between the two.
-- **Pen**, **Text**: draw and write on the page in one of five colors; a tap of
-  Cmd (Ctrl off the Mac) steps Grab, Pen, Text and Shift+Cmd steps back. **Move** and **Clear** appear
+- **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
+  in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
+  square. A tap of Cmd (Ctrl off the Mac) steps Grab, Pen, Rectangle, Text and
+  Shift+Cmd steps back. With a drawing tool or Move in hand, 1 picks Pen, 2 picks
+  Rectangle and 3 picks Text. **Move** and **Clear** appear
   once something is drawn; Move box-selects and drags annotations together,
   and v picks it up or puts it down.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo

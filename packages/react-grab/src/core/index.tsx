@@ -77,6 +77,7 @@ import {
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
+  DRAWING_TOOL_BY_KEY,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
@@ -198,6 +199,12 @@ import { isDocumentAncestorOfElement } from "../utils/is-document-ancestor-of-el
 import { clearGlobalApi } from "../global-api.js";
 import { collectCleanupError } from "../utils/collect-cleanup-error.js";
 import { throwCollectedErrors } from "../utils/throw-collected-errors.js";
+import { doesLabelInstanceCoverElement } from "../utils/does-label-instance-cover-element.js";
+import { isKeyOwnedByPillPrompt } from "../utils/is-key-owned-by-pill-prompt.js";
+import { blurFocusedPillPrompt } from "../utils/blur-focused-pill-prompt.js";
+import { getConnectedPromptTarget } from "../utils/get-connected-prompt-target.js";
+import { isPillPromptEvent } from "../utils/is-pill-prompt-event.js";
+import { isTextFieldKeyEvent } from "../utils/is-text-field-key-event.js";
 
 const builtInPlugins = [copyPlugin, commentPlugin, openPlugin];
 
@@ -396,11 +403,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       initialToolbarState,
     );
     const [isToolbarSelectHovered, setIsToolbarSelectHovered] = createSignal(false);
-    // Shift and Alt typed into a specs field are text, not a pin or a measure.
+    // Shift and Alt typed into a specs field are text, not a pin or a measure,
+    // and so is one pressed while the pill's prompt holds text. A keyup from
+    // the prompt may only clear a modifier: whichever key is let go, a release
+    // cannot leave one stuck, and a letter let go while Shift is still down
+    // cannot adopt the Shift its keydown was not allowed to set.
     const isSpecsFieldEvent = (event: KeyboardEvent) =>
       isEventFromOverlay(event, SPECS_INPUT_ATTRIBUTE);
-    const isShiftKeyHeld = createModifierTracker((event) => event.shiftKey, isSpecsFieldEvent);
-    const isAltKeyHeld = createModifierTracker((event) => event.altKey, isSpecsFieldEvent);
+    const createTypedModifierFilter =
+      (readModifier: (event: KeyboardEvent) => boolean) => (event: KeyboardEvent) =>
+        isSpecsFieldEvent(event) ||
+        (isPillPromptEvent(event) &&
+          (event.type === "keyup" ? readModifier(event) : isKeyOwnedByPillPrompt(event)));
+    const readShiftKey = (event: KeyboardEvent) => event.shiftKey;
+    const readAltKey = (event: KeyboardEvent) => event.altKey;
+    const isShiftKeyHeld = createModifierTracker(
+      readShiftKey,
+      createTypedModifierFilter(readShiftKey),
+    );
+    const isAltKeyHeld = createModifierTracker(readAltKey, createTypedModifierFilter(readAltKey));
     const inspect = createInspectController({
       isShiftKeyHeld,
       getElementAtPosition,
@@ -417,6 +438,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return GRAB_TOOL_CURSOR;
         case "pen":
           return PEN_TOOL_CURSOR;
+        case "rectangle":
+          return "crosshair";
         case "text":
           return TEXT_TOOL_CURSOR;
         case "edit":
@@ -977,6 +1000,27 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
     };
 
+    const handleSubmitPromptInstance = (instanceId: string, prompt: string) => {
+      actions.relinkLiveElements();
+      const instance = store.labelInstances.find(
+        (labelInstance) => labelInstance.id === instanceId,
+      );
+      if (instance?.status !== "copied" || !instance.promptTarget) return;
+      const promptTarget = getConnectedPromptTarget(instance.promptTarget);
+      if (!promptTarget) {
+        actions.patchLabelInstance(instanceId, { promptTarget: undefined });
+        return;
+      }
+      labelController.cancelScreenshotCapture(instanceId);
+      labelController.startPromptCopy(instanceId, "Copied with prompt");
+      runLabeledCopy({
+        primaryElement: promptTarget.primaryElement,
+        targetElements: promptTarget.elements,
+        labelInstanceIds: [instanceId],
+        extraPrompt: prompt,
+      });
+    };
+
     const handleAcknowledgeErrorInstance = (instanceId: string) => {
       retryCopyByInstanceId.get(instanceId)?.siblingIds.delete(instanceId);
       retryCopyByInstanceId.delete(instanceId);
@@ -1182,6 +1226,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             mouseX: labelCursorX,
             elements: selectedElements,
             selectionPageRect: dragRect && isMultiSelect ? { ...dragRect } : undefined,
+            promptTarget:
+              extraPrompt === undefined
+                ? { primaryElement: element, elements: allTargetElements }
+                : undefined,
           })
         : null;
 
@@ -1212,7 +1260,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       clearCopyFeedbackCooldown();
       actions.startCopy();
 
-      const labelInstanceIds = labelController.createPerElementInstances(labelEntries, "copying");
+      const labelInstanceIds = labelController.createPerElementInstances(labelEntries, "copying", {
+        target: { primaryElement, elements },
+        pointer: pointer(),
+      });
 
       runLabeledCopy({
         primaryElement,
@@ -1835,6 +1886,24 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
+    const returnFocusToPage = (previousFocused = store.previouslyFocusedElement) => {
+      // Calling .focus() forces a synchronous focus event dispatch and a style
+      // recalc. Skip it when the target is <body> or already the active
+      // element — both cases produce no observable focus change but were
+      // previously paying the recalc cost on every deactivate.
+      if (
+        isHtmlElement(previousFocused) &&
+        previousFocused !== document.body &&
+        previousFocused !== document.activeElement &&
+        isElementConnected(previousFocused)
+      ) {
+        // preventScroll: restoring focus must not scroll the previously-focused
+        // element into view — that jumps the page when the user grabbed
+        // something after scrolling away from it.
+        previousFocused.focus({ preventScroll: true });
+      }
+    };
+
     const deactivateRenderer = () => {
       clearCopyFeedbackCooldown();
       cancelPendingCopies();
@@ -1858,21 +1927,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
       if (keydownSpamTimerId) window.clearTimeout(keydownSpamTimerId);
       autoScroller.stop();
-      // Calling .focus() forces a synchronous focus event dispatch and a style
-      // recalc. Skip it when the target is <body> or already the active
-      // element — both cases produce no observable focus change but were
-      // previously paying the recalc cost on every deactivate.
-      if (
-        isHtmlElement(previousFocused) &&
-        previousFocused !== document.body &&
-        previousFocused !== document.activeElement &&
-        isElementConnected(previousFocused)
-      ) {
-        // preventScroll: restoring focus must not scroll the previously-focused
-        // element into view — that jumps the page when the user grabbed
-        // something after scrolling away from it.
-        previousFocused.focus({ preventScroll: true });
-      }
+      blurFocusedPillPrompt();
+      returnFocusToPage(previousFocused);
       pluginRegistry.hooks.onDeactivate();
     };
 
@@ -2678,7 +2734,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           const isTypingIntoField =
             isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) ||
             isSpecsFieldEvent(event) ||
-            isKeyboardEventTriggeredByInput(event);
+            isTextFieldKeyEvent(event);
           toolCycleTap =
             canCycleTools() && !isTypingIntoField
               ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
@@ -3024,10 +3080,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     }));
 
     const handleActivationKeys = (event: KeyboardEvent): void => {
-      if (
-        !pluginRegistry.store.options.allowActivationInsideInput &&
-        isKeyboardEventTriggeredByInput(event)
-      ) {
+      if (!pluginRegistry.store.options.allowActivationInsideInput && isTextFieldKeyEvent(event)) {
         return;
       }
 
@@ -3156,6 +3209,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (isKeyOwnedByPillPrompt(event)) return;
         dismissCompletedLabelsOnEscape(event);
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
@@ -3169,10 +3223,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
         const canHandleEditShortcut =
-          isActivated() &&
-          !isPromptMode() &&
-          !isCopying() &&
-          !isKeyboardEventTriggeredByInput(event);
+          isActivated() && !isPromptMode() && !isCopying() && !isTextFieldKeyEvent(event);
         const editHistoryDirection = canHandleEditShortcut ? getEditHistoryDirection(event) : null;
         if (editHistoryDirection) {
           const entry = editHistoryDirection === "undo" ? inspect.undo() : inspect.redo();
@@ -3192,6 +3243,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (canHandleEditShortcut && isBareKeyPress) {
           const pressedKey = event.key.toLowerCase();
           const runToolShortcut = (): boolean => {
+            if (isAnnotating()) {
+              const drawingTool = DRAWING_TOOL_BY_KEY[pressedKey];
+              if (drawingTool) {
+                if (inspect.annotationTool() !== drawingTool)
+                  handleSelectAnnotationTool(drawingTool);
+                return true;
+              }
+            }
             switch (pressedKey) {
               case SPECS_TOOL_KEY:
                 if (isAnnotating()) return false;
@@ -3229,7 +3288,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         // focus traversal). This one guard covers every navigation path in this
         // handler — the discard-prompt pass-through, the overlay branch, and the
         // main path — and precedes the active-mode preventDefault below.
-        if (resolveNavigationKey(event) && isKeyboardEventTriggeredByInput(event)) return;
+        if (resolveNavigationKey(event) && isTextFieldKeyEvent(event)) return;
         if (tryHandleKeyboardSelectionPromptPassThrough(event)) return;
 
         blockEnterIfNeeded(event);
@@ -3267,8 +3326,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
+        const isFromPillPrompt = isPillPromptEvent(event);
         const isFromOverlay =
-          isEventFromOverlay(event, "data-react-grab-ignore-events") && !isEnterToActivateInput;
+          isEventFromOverlay(event, "data-react-grab-ignore-events") &&
+          !isEnterToActivateInput &&
+          !isFromPillPrompt;
 
         if (isPromptMode() || isFromOverlay) {
           if (isPromptMode() && !isFromReactGrabInput && tryHandleBareKeyShortcut(event)) return;
@@ -3295,7 +3357,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           }
         }
 
-        if (isActivated() && !MODIFIER_KEYS.includes(event.key)) {
+        if (isActivated() && !MODIFIER_KEYS.includes(event.key) && !isFromPillPrompt) {
           event.preventDefault();
         }
 
@@ -3321,7 +3383,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: KeyboardEvent) => {
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
-        if (blockEnterIfNeeded(event)) return;
+        // A key the pill's prompt owns is still a release: it may end a hold
+        // session or a Shift multi-selection, which only a keyup can do.
+        const isOwnedByPillPrompt = isKeyOwnedByPillPrompt(event);
+        if (!isOwnedByPillPrompt && blockEnterIfNeeded(event)) return;
 
         if (event.key === "Shift" && isShiftMultiSelecting()) {
           // If shift is released mid-drag, abort the in-progress drag
@@ -3337,7 +3402,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
+        if (
+          isEventFromOverlay(event, "data-react-grab-ignore-events") &&
+          !isPillPromptEvent(event)
+        ) {
+          return;
+        }
 
         const requiredModifiers = getModifiersFromActivationKey(
           pluginRegistry.store.options.activationKey,
@@ -3353,6 +3423,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         const isReleasingActivationKey = pluginRegistry.store.options.activationKey
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
+        if (isOwnedByPillPrompt && !isReleasingActivationKey && !isReleasingModifier) return;
 
         if (
           toggleShortcutPressTimestampMs !== null &&
@@ -4221,6 +4292,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           ));
       if (
         previousInstance &&
+        previousInstance.element === instance.element &&
         previousInstance.status === instance.status &&
         previousInstance.errorMessage === instance.errorMessage &&
         previousInstance.statusText === instance.statusText &&
@@ -4266,6 +4338,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
       }
       return store.labelInstances.map(recomputeLabelInstance);
+    });
+
+    const isSelectionLabelCoveredByCopiedLabel = createMemo(() => {
+      const element = selectionElement();
+      if (!element) return false;
+      return computedLabelInstances().some(
+        (instance) =>
+          instance.status === "copied" && doesLabelInstanceCoverElement(instance, element),
+      );
     });
 
     const computedLabelInstanceById = createMemo(
@@ -4803,6 +4884,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 selectionTagName={selectionTagName()}
                 selectionComponentName={resolvedComponentName()}
                 selectionLabelVisible={selectionLabelVisible()}
+                isSelectionLabelCovered={isSelectionLabelCoveredByCopiedLabel()}
                 selectionLabelStatus="idle"
                 hierarchyState={hierarchyState()}
                 hierarchyMenuPosition={hierarchyMenuPosition()}
@@ -4824,6 +4906,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 isPromptMode={isPromptMode()}
                 onShowContextMenuInstance={handleShowContextMenuInstance}
                 onCopyScreenshotInstance={handleCopyScreenshotInstance}
+                onSubmitPromptInstance={handleSubmitPromptInstance}
+                shouldFocusInstancePrompt={
+                  store.wasActivatedByToggle &&
+                  pluginRegistry.store.options.activationMode !== "hold" &&
+                  !store.isTouchMode
+                }
+                onInstancePromptFocusRelease={() => returnFocusToPage()}
                 onRetryInstance={handleRetryInstance}
                 onAcknowledgeErrorInstance={handleAcknowledgeErrorInstance}
                 onInputChange={actions.setInputText}

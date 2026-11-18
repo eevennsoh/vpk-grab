@@ -1,7 +1,7 @@
 import { SELECTION_TOOL_CYCLE } from "../constants.js";
 import type { AnnotationTool, SelectionTool, ToolCycleDirection } from "../types.js";
 
-// The tool one step away in the Grab, Pen, Text ring. Move is not in the ring
+// The tool one step away in the Grab, Pen, Rectangle, Text ring. Move is not in the ring
 // but sits just after Text, so stepping on starts it again at Grab and stepping
 // back lands on Text.
 export const getCycledSelectionTool = (

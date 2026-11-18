@@ -5,7 +5,8 @@ const isSameStyleOverride = (first: StyleOverride, second: StyleOverride): boole
   first.property === second.property &&
   first.isOff === second.isOff &&
   first.value === second.value &&
-  first.token === second.token;
+  first.token === second.token &&
+  JSON.stringify(first.longhands) === JSON.stringify(second.longhands);
 
 export const areStyleOverrideSnapshotsEqual = (
   first: readonly StyleOverride[],

@@ -75,6 +75,18 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
     });
   });
 
+  const draftStrokePath = createMemo(() => {
+    const stroke = props.draftStroke;
+    return stroke
+      ? createInkPath(
+          stroke.points,
+          ANNOTATION_STROKE_WIDTH_PX,
+          stroke.isStraight,
+          stroke.isRectangle,
+        )
+      : "";
+  });
+
   const selectedIds = createMemo(() => new Set(props.selectedAnnotationIds));
   const isSelected = (annotationId: string) => selectedIds().has(annotationId);
 
@@ -92,7 +104,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
   // rest of the time the page underneath has to stay reachable through them.
   // They sit in the shadow root, out of reach of the page's cursor override,
   // so they carry the Move tool's hand themselves.
-  const editingStyle = (hitArea: "all" | "auto"): JSX.CSSProperties =>
+  const editingStyle = (hitArea: "all" | "auto" | "stroke"): JSX.CSSProperties =>
     props.isEditing
       ? {
           "pointer-events": hitArea,
@@ -115,20 +127,44 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
       >
         <g style={{ transform: pageTransform() }}>
           <For each={props.strokes}>
-            {(stroke) => (
-              <path
-                data-react-grab-annotation-stroke={stroke.isStraight ? "straight" : "freehand"}
-                data-react-grab-annotation-id={stroke.id}
-                data-react-grab-annotation-selected={isSelected(stroke.id) ? "" : undefined}
-                d={createInkPath(stroke.points, ANNOTATION_STROKE_WIDTH_PX, stroke.isStraight)}
-                fill={stroke.color}
-                // Invisible, so it only widens what counts as a press on a thin line.
-                stroke="transparent"
-                stroke-width={ANNOTATION_HIT_WIDTH_PX}
-                stroke-linejoin="round"
-                style={editingStyle("all")}
-              />
-            )}
+            {(stroke) => {
+              const strokePath = createInkPath(
+                stroke.points,
+                ANNOTATION_STROKE_WIDTH_PX,
+                stroke.isStraight,
+                stroke.isRectangle,
+              );
+              return (
+                <>
+                  <path
+                    data-react-grab-annotation-stroke={
+                      stroke.isRectangle ? "rectangle" : stroke.isStraight ? "straight" : "freehand"
+                    }
+                    data-react-grab-annotation-id={stroke.id}
+                    data-react-grab-annotation-selected={isSelected(stroke.id) ? "" : undefined}
+                    d={strokePath}
+                    fill={stroke.isRectangle ? "none" : stroke.color}
+                    stroke={stroke.isRectangle ? stroke.color : "transparent"}
+                    stroke-width={
+                      stroke.isRectangle ? ANNOTATION_STROKE_WIDTH_PX : ANNOTATION_HIT_WIDTH_PX
+                    }
+                    stroke-linejoin="round"
+                    style={editingStyle(stroke.isRectangle ? "stroke" : "all")}
+                  />
+                  <Show when={stroke.isRectangle}>
+                    <path
+                      data-react-grab-annotation-id={stroke.id}
+                      d={strokePath}
+                      fill="none"
+                      stroke="transparent"
+                      stroke-width={ANNOTATION_HIT_WIDTH_PX}
+                      stroke-linejoin="round"
+                      style={editingStyle("stroke")}
+                    />
+                  </Show>
+                </>
+              );
+            }}
           </For>
           <For each={selectedStrokeBounds()}>
             {(bounds) => (
@@ -150,12 +186,11 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             {(draftStroke) => (
               <path
                 data-react-grab-annotation-draft
-                fill={draftStroke().color}
-                d={createInkPath(
-                  draftStroke().points,
-                  ANNOTATION_STROKE_WIDTH_PX,
-                  draftStroke().isStraight,
-                )}
+                fill={draftStroke().isRectangle ? "none" : draftStroke().color}
+                stroke={draftStroke().isRectangle ? draftStroke().color : undefined}
+                stroke-width={ANNOTATION_STROKE_WIDTH_PX}
+                stroke-linejoin="round"
+                d={draftStrokePath()}
               />
             )}
           </Show>

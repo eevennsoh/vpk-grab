@@ -37,6 +37,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
     Boolean(
       props.selectionLabelVisible &&
       props.selectionBounds &&
+      !props.isSelectionLabelCovered &&
       (props.frozenLabelEntryAccessors?.length ?? 0) === 0,
     );
   const selectionSizeText = () => {
@@ -84,6 +85,66 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           <RedlinesOverlay redlines={currentRedlines()} showsSizeLabel={!selectionSizeText()} />
         )}
       </Show>
+      {/* Before the live labels, which share its z-index: a label for whatever
+          is under the pointer must stay readable over a pill it overlaps. */}
+      <For each={props.labelInstanceAccessors ?? []}>
+        {(instanceAccessor) => (
+          <Show when={instanceAccessor.read()}>
+            {(instance) => (
+              <SelectionLabel
+                tagName={instance().tagName}
+                componentName={instance().componentName}
+                elementsCount={instance().elementsCount}
+                selectionBounds={instance().bounds}
+                mouseX={instance().mouseX}
+                visible={true}
+                isLabelInstance
+                status={instance().status}
+                statusText={instance().statusText}
+                isPromptMode={instance().isPromptMode}
+                inputValue={instance().inputValue}
+                error={instance().errorMessage}
+                hideArrow={instance().hideArrow}
+                thumbnailUrl={instance().thumbnailUrl}
+                isCapturingScreenshot={instance().isCapturingScreenshot}
+                screenshotError={instance().screenshotErrorMessage}
+                onShowContextMenu={(() => {
+                  const currentInstance = instance();
+                  if (!hasLabelCompletionActions(currentInstance)) return undefined;
+                  return () => props.onShowContextMenuInstance?.(currentInstance.id);
+                })()}
+                onCopyScreenshot={(() => {
+                  const currentInstance = instance();
+                  if (
+                    !hasLabelCompletionActions(currentInstance) ||
+                    currentInstance.copiedContent === undefined ||
+                    currentInstance.thumbnailUrl
+                  ) {
+                    return undefined;
+                  }
+                  return () => props.onCopyScreenshotInstance?.(currentInstance.id);
+                })()}
+                onSubmitPrompt={(() => {
+                  const currentInstance = instance();
+                  if (
+                    currentInstance.status !== "copied" ||
+                    !currentInstance.promptTarget ||
+                    !hasLabelCompletionActions(currentInstance)
+                  ) {
+                    return undefined;
+                  }
+                  return (prompt: string) =>
+                    props.onSubmitPromptInstance?.(currentInstance.id, prompt);
+                })()}
+                shouldFocusPrompt={props.shouldFocusInstancePrompt}
+                onPromptFocusRelease={props.onInstancePromptFocusRelease}
+                onRetry={() => props.onRetryInstance?.(instance().id)}
+                onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
+              />
+            )}
+          </Show>
+        )}
+      </For>
       <Show
         when={props.selectionLabelVisible && (props.frozenLabelEntryAccessors?.length ?? 0) > 0}
       >
@@ -136,49 +197,6 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           onOpen={props.onOpenSelectionFile}
         />
       </Show>
-      <For each={props.labelInstanceAccessors ?? []}>
-        {(instanceAccessor) => (
-          <Show when={instanceAccessor.read()}>
-            {(instance) => (
-              <SelectionLabel
-                tagName={instance().tagName}
-                componentName={instance().componentName}
-                elementsCount={instance().elementsCount}
-                selectionBounds={instance().bounds}
-                mouseX={instance().mouseX}
-                visible={true}
-                status={instance().status}
-                statusText={instance().statusText}
-                isPromptMode={instance().isPromptMode}
-                inputValue={instance().inputValue}
-                error={instance().errorMessage}
-                hideArrow={instance().hideArrow}
-                thumbnailUrl={instance().thumbnailUrl}
-                isCapturingScreenshot={instance().isCapturingScreenshot}
-                screenshotError={instance().screenshotErrorMessage}
-                onShowContextMenu={(() => {
-                  const currentInstance = instance();
-                  if (!hasLabelCompletionActions(currentInstance)) return undefined;
-                  return () => props.onShowContextMenuInstance?.(currentInstance.id);
-                })()}
-                onCopyScreenshot={(() => {
-                  const currentInstance = instance();
-                  if (
-                    !hasLabelCompletionActions(currentInstance) ||
-                    currentInstance.copiedContent === undefined ||
-                    currentInstance.thumbnailUrl
-                  ) {
-                    return undefined;
-                  }
-                  return () => props.onCopyScreenshotInstance?.(currentInstance.id);
-                })()}
-                onRetry={() => props.onRetryInstance?.(instance().id)}
-                onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
-              />
-            )}
-          </Show>
-        )}
-      </For>
       {/* After the selection labels, which share its z-index: a label that
           reaches the panel's corner must not cover the values being read. */}
       <Show when={props.inspect?.isSpecsEnabled() ? props.inspect : undefined}>

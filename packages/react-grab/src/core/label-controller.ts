@@ -1,10 +1,13 @@
 import { FADE_COMPLETE_BUFFER_MS, FEEDBACK_DURATION_MS } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
+import { findNearestBoundsIndex } from "../utils/find-nearest-bounds-index.js";
 import { generateId } from "../utils/generate-id.js";
 import { isElementConnected } from "../utils/is-element-connected.js";
 import type {
   OverlayBounds,
   PageRect,
+  Position,
+  PromptCopyTarget,
   SelectionLabelInstance,
   SelectionLabelInstancePatch,
 } from "../types.js";
@@ -29,6 +32,7 @@ interface CreateLabelInstanceOptions {
   hideArrow?: boolean;
   statusText?: string;
   selectionPageRect?: PageRect;
+  promptTarget?: PromptCopyTarget;
 }
 
 interface PerElementLabelEntry {
@@ -36,6 +40,11 @@ interface PerElementLabelEntry {
   tagName: string;
   componentName?: string;
   mouseX?: number;
+}
+
+interface PerElementPromptOptions {
+  target: PromptCopyTarget;
+  pointer: Position;
 }
 
 interface BuildLabelInstanceOptions {
@@ -50,6 +59,7 @@ interface BuildLabelInstanceOptions {
   hideArrow?: boolean;
   statusText?: string;
   selectionPageRect?: PageRect;
+  promptTarget?: PromptCopyTarget;
 }
 
 interface LabelController {
@@ -63,13 +73,16 @@ interface LabelController {
   createPerElementInstances: (
     entries: PerElementLabelEntry[],
     status: SelectionLabelInstance["status"],
+    prompt?: PerElementPromptOptions,
   ) => string[];
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
+  startPromptCopy: (instanceId: string, copiedStatusText: string) => void;
   setCopiedContent: (instanceId: string, copiedContent: string) => void;
   setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
   startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
+  cancelScreenshotCapture: (instanceId: string) => void;
   cancelScreenshotCaptures: () => void;
   dismissInstance: (instanceId: string) => void;
   dismissCompleted: () => void;
@@ -101,6 +114,7 @@ const buildLabelInstance = (options: BuildLabelInstanceOptions): SelectionLabelI
     hideArrow: options.hideArrow,
     statusText: options.statusText,
     selectionPageRect: options.selectionPageRect,
+    promptTarget: options.promptTarget,
   };
 };
 
@@ -112,6 +126,7 @@ export const createLabelController = (
 ): LabelController => {
   const fadeTimeouts = new Map<string, number>();
   const screenshotCaptureControllers = new Map<string, AbortController>();
+  const copiedStatusTextById = new Map<string, string>();
 
   const abortScreenshotCapture = (instanceId: string) => {
     screenshotCaptureControllers.get(instanceId)?.abort();
@@ -142,6 +157,7 @@ export const createLabelController = (
 
   const removeInstance = (instanceId: string) => {
     abortScreenshotCapture(instanceId);
+    copiedStatusTextById.delete(instanceId);
     revokeThumbnail(findInstance(instanceId));
     store.removeLabelInstance(instanceId);
   };
@@ -152,6 +168,7 @@ export const createLabelController = (
       abortScreenshotCapture(instance.id);
       revokeThumbnail(instance);
     }
+    copiedStatusTextById.clear();
     store.clearLabelInstances();
     onClearAll?.();
   };
@@ -195,6 +212,7 @@ export const createLabelController = (
       hideArrow: options?.hideArrow,
       statusText: options?.statusText,
       selectionPageRect: options?.selectionPageRect,
+      promptTarget: options?.promptTarget,
     });
     store.addLabelInstance(instance);
     return instance.id;
@@ -203,27 +221,34 @@ export const createLabelController = (
   const createPerElementInstances = (
     entries: PerElementLabelEntry[],
     status: SelectionLabelInstance["status"],
+    prompt?: PerElementPromptOptions,
   ): string[] => {
     clearAll();
-    const instanceIds: string[] = [];
-    for (const entry of entries) {
+    const boundsList = entries.map((entry) => createElementBounds(entry.element));
+    const promptEntryIndex = prompt ? findNearestBoundsIndex(boundsList, prompt.pointer) : -1;
+    return entries.map((entry, entryIndex) => {
       const instance = buildLabelInstance({
-        bounds: createElementBounds(entry.element),
+        bounds: boundsList[entryIndex],
         tagName: entry.tagName,
         componentName: entry.componentName,
         status,
         element: entry.element,
         mouseX: entry.mouseX,
+        promptTarget: entryIndex === promptEntryIndex ? prompt?.target : undefined,
       });
       store.addLabelInstance(instance);
-      instanceIds.push(instance.id);
-    }
-    return instanceIds;
+      return instance.id;
+    });
   };
 
   const updateAfterCopy = (instanceId: string, didSucceed: boolean, errorMessage?: string) => {
     cancelFade(instanceId);
     if (didSucceed) {
+      const copiedStatusText = copiedStatusTextById.get(instanceId);
+      if (copiedStatusText !== undefined) {
+        copiedStatusTextById.delete(instanceId);
+        store.patchLabelInstance(instanceId, { statusText: copiedStatusText });
+      }
       store.updateLabelInstance(instanceId, "copied");
       if (!areLabelsShown()) scheduleFadeOut(instanceId);
     } else {
@@ -234,6 +259,14 @@ export const createLabelController = (
   const markRetrying = (instanceId: string) => {
     cancelFade(instanceId);
     store.updateLabelInstance(instanceId, "copying");
+  };
+
+  // The status text waits for the copy to land: until then the pill shows the
+  // in-progress view, which would read that text in place of its own.
+  const startPromptCopy = (instanceId: string, copiedStatusText: string) => {
+    copiedStatusTextById.set(instanceId, copiedStatusText);
+    store.patchLabelInstance(instanceId, { promptTarget: undefined });
+    markRetrying(instanceId);
   };
 
   const setCopiedContent = (instanceId: string, copiedContent: string) => {
@@ -250,6 +283,7 @@ export const createLabelController = (
       thumbnailUrl: URL.createObjectURL(imageBlob),
       isCapturingScreenshot: undefined,
       screenshotErrorMessage: undefined,
+      promptTarget: undefined,
     });
   };
 
@@ -272,10 +306,15 @@ export const createLabelController = (
     });
   };
 
+  const cancelScreenshotCapture = (instanceId: string) => {
+    if (!screenshotCaptureControllers.has(instanceId)) return;
+    abortScreenshotCapture(instanceId);
+    store.patchLabelInstance(instanceId, { isCapturingScreenshot: undefined });
+  };
+
   const cancelScreenshotCaptures = () => {
     for (const instanceId of [...screenshotCaptureControllers.keys()]) {
-      abortScreenshotCapture(instanceId);
-      store.patchLabelInstance(instanceId, { isCapturingScreenshot: undefined });
+      cancelScreenshotCapture(instanceId);
     }
   };
 
@@ -306,10 +345,12 @@ export const createLabelController = (
     createPerElementInstances,
     updateAfterCopy,
     markRetrying,
+    startPromptCopy,
     setCopiedContent,
     setImage,
     startScreenshotCapture,
     failScreenshotCapture,
+    cancelScreenshotCapture,
     cancelScreenshotCaptures,
     dismissInstance,
     dismissCompleted,

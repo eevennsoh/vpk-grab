@@ -1,7 +1,18 @@
-// Drawings and notes placed with the toolbar's Pen and Text tools, and the
+// Drawings and notes placed with the toolbar's Pen, Rectangle and Text tools, and the
 // Move tool that selects, drags and deletes them.
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
+import {
+  RECTANGLE_START_PX,
+  RECTANGLE_END_PX,
+  RECTANGLE_INTERIOR_PX,
+  RECTANGLE_TINY_DELTA_PX,
+  RECTANGLE_DRAG_STEPS,
+  RECTANGLE_SCROLL_PX,
+  RECTANGLE_SCROLL_PAGE_HEIGHT_PX,
+  RECTANGLE_EDGE_HIT_OFFSET_PX,
+} from "./constants.js";
+import { CROP_7_5_ICON_PATHS } from "../src/material-icon-paths.js";
 
 const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
 const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
@@ -14,9 +25,9 @@ const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions
 const ANNOTATION_COLORS_SELECTOR = "[data-react-grab-toolbar-annotation-colors]";
 const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
 const DEFAULT_ANNOTATION_COLOR = "#f24822";
-const BLUE_ANNOTATION_COLOR = "#0d99ff";
+const ORANGE_ANNOTATION_COLOR = "#fb923c";
 const DEFAULT_ANNOTATION_COLOR_RGB = "rgb(242, 72, 34)";
-const BLUE_ANNOTATION_COLOR_RGB = "rgb(13, 153, 255)";
+const ORANGE_ANNOTATION_COLOR_RGB = "rgb(251, 146, 60)";
 // The separator and the two buttons, less whatever a transition still holds.
 const ANNOTATION_ACTIONS_MIN_WIDTH_PX = 30;
 const LINE_START = { x: 300, y: 320 };
@@ -78,6 +89,10 @@ test.describe("Annotations", () => {
     await toolbarAction(page, "annotate-pen").click();
     await expect.poll(readPageCursor).toContain("data:image/svg+xml");
     expect(await readPageCursor()).toContain("4 20, crosshair");
+
+    await toolbarAction(page, "annotate-rectangle").click();
+    await expect.poll(readPageCursor).toMatch(/cursor: crosshair !important/);
+    expect(await readPageCursor()).not.toContain("data:image/svg+xml");
 
     await toolbarAction(page, "annotate-text").click();
     await expect.poll(readPageCursor).toContain("12 12, text");
@@ -320,12 +335,14 @@ test.describe("Annotations", () => {
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
   });
 
-  test("switching between pen and text leaves the toolbar where it is", async ({ page }) => {
+  test("switching between drawing tools leaves the toolbar where it is", async ({ page }) => {
     await toolbarAction(page, "annotate-pen").click();
     await expect(page.locator(ANNOTATION_COLORS_SELECTOR)).toHaveAttribute("data-revealed", "");
     await page.waitForTimeout(TOOLBAR_SETTLE_MS);
     const settledBox = await getBox(page, TOOLBAR_SELECTOR);
 
+    await toolbarAction(page, "annotate-rectangle").click();
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
     await toolbarAction(page, "annotate-text").click();
     await page.waitForTimeout(TOOLBAR_SETTLE_MS);
     await toolbarAction(page, "annotate-pen").click();
@@ -336,15 +353,17 @@ test.describe("Annotations", () => {
     expect(Math.abs(finalBox.width - settledBox.width)).toBeLessThan(1);
   });
 
-  test("the toolbar stays at full strength while the pen or text tool is in hand", async ({
-    page,
-  }) => {
+  test("the toolbar stays at full strength while a drawing tool is in hand", async ({ page }) => {
     const readToolbarOpacity = () =>
       page
         .locator(TOOLBAR_SELECTOR)
         .evaluate((element) => Number(getComputedStyle(element).opacity));
 
     await toolbarAction(page, "annotate-pen").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect.poll(readToolbarOpacity).toBe(1);
+
+    await toolbarAction(page, "annotate-rectangle").click();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await expect.poll(readToolbarOpacity).toBe(1);
 
@@ -357,7 +376,7 @@ test.describe("Annotations", () => {
     await expect.poll(readToolbarOpacity).toBeLessThan(1);
   });
 
-  test("colors join the toolbar only while the pen or text tool is in hand", async ({ page }) => {
+  test("colors join the toolbar only while a drawing tool is in hand", async ({ page }) => {
     const colors = page.locator(ANNOTATION_COLORS_SELECTOR);
     await expect(colors).toHaveAttribute("data-revealed", "");
 
@@ -365,6 +384,8 @@ test.describe("Annotations", () => {
     await expect(colors).not.toHaveAttribute("data-revealed");
     await expect(colors).toHaveAttribute("inert");
 
+    await toolbarAction(page, "annotate-rectangle").click();
+    await expect(colors).toHaveAttribute("data-revealed", "");
     await toolbarAction(page, "annotate-pen").click();
     await expect(colors).toHaveAttribute("data-revealed", "");
     await expect(toolbarAction(page, "annotation-color-red")).toHaveAttribute(
@@ -374,8 +395,8 @@ test.describe("Annotations", () => {
   });
 
   test("a new note takes the picked color and earlier notes keep theirs", async ({ page }) => {
-    await toolbarAction(page, "annotation-color-blue").click();
-    await expect(toolbarAction(page, "annotation-color-blue")).toHaveAttribute(
+    await toolbarAction(page, "annotation-color-orange").click();
+    await expect(toolbarAction(page, "annotation-color-orange")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -383,20 +404,20 @@ test.describe("Annotations", () => {
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y + SECOND_LINE_OFFSET_Y);
     const input = page.locator("[data-react-grab-annotation-input]");
     await expect(input).toBeFocused();
-    await expect(input).toHaveCSS("color", BLUE_ANNOTATION_COLOR_RGB);
-    await page.keyboard.type("Blue note");
+    await expect(input).toHaveCSS("color", ORANGE_ANNOTATION_COLOR_RGB);
+    await page.keyboard.type("Orange note");
     await page.keyboard.press("Enter");
 
     const notes = page.locator(TEXT_SELECTOR);
     await expect(notes).toHaveCount(2);
     await expect(notes.nth(0)).toHaveCSS("color", DEFAULT_ANNOTATION_COLOR_RGB);
-    await expect(notes.nth(1)).toHaveCSS("color", BLUE_ANNOTATION_COLOR_RGB);
+    await expect(notes.nth(1)).toHaveCSS("color", ORANGE_ANNOTATION_COLOR_RGB);
   });
 
   test("a new stroke takes the picked color and earlier strokes keep theirs", async ({ page }) => {
     await toolbarAction(page, "annotate-pen").click();
-    await toolbarAction(page, "annotation-color-blue").click();
-    await expect(toolbarAction(page, "annotation-color-blue")).toHaveAttribute(
+    await toolbarAction(page, "annotation-color-orange").click();
+    await expect(toolbarAction(page, "annotation-color-orange")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -416,7 +437,7 @@ test.describe("Annotations", () => {
     const strokes = page.locator(STROKE_SELECTOR);
     await expect(strokes).toHaveCount(2);
     await expect(strokes.nth(0)).toHaveAttribute("fill", DEFAULT_ANNOTATION_COLOR);
-    await expect(strokes.nth(1)).toHaveAttribute("fill", BLUE_ANNOTATION_COLOR);
+    await expect(strokes.nth(1)).toHaveAttribute("fill", ORANGE_ANNOTATION_COLOR);
     await expect
       .poll(() =>
         page.evaluate(
@@ -424,7 +445,7 @@ test.describe("Annotations", () => {
           INSPECT_SETTINGS_STORAGE_KEY,
         ),
       )
-      .toContain(BLUE_ANNOTATION_COLOR);
+      .toContain(ORANGE_ANNOTATION_COLOR);
   });
 
   test("undo takes back the note, then the line, and redo brings them back", async ({
@@ -486,7 +507,7 @@ test.describe("Annotations", () => {
   });
 });
 
-test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
+test.describe("Cmd cycles Grab, Pen, Rectangle and Text on a Mac", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
@@ -496,15 +517,22 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
     await reactGrab.activate();
   });
 
-  test("a bare Cmd tap steps Grab, Pen, Text and back to Grab", async ({ reactGrab, page }) => {
+  test("a bare Cmd tap steps Grab, Pen, Rectangle, Text and back to Grab", async ({
+    reactGrab,
+    page,
+  }) => {
     const grab = toolbarAction(page, "copy");
     const pen = toolbarAction(page, "annotate-pen");
+    const rectangle = toolbarAction(page, "annotate-rectangle");
     const text = toolbarAction(page, "annotate-text");
     await expect(grab).toHaveAttribute("aria-pressed", "true");
 
     await page.keyboard.press("Meta");
     await expect(pen).toHaveAttribute("aria-pressed", "true");
     await expect(grab).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("Meta");
+    await expect(rectangle).toHaveAttribute("aria-pressed", "true");
 
     await page.keyboard.press("Meta");
     await expect(text).toHaveAttribute("aria-pressed", "true");
@@ -518,6 +546,8 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
     await page.keyboard.down("Shift");
     await page.keyboard.press("Meta");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Meta");
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Meta");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.up("Shift");
@@ -571,12 +601,14 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
 
     expect(await readShortcut("annotate-pen", "Pen")).toBe("⌘");
     expect(await readShortcut("annotate-text", "Text")).toBe("⇧⌘");
+    expect(await readShortcut("annotate-rectangle", "Rectangle")).toBeNull();
     expect(await readShortcut("copy", "Grab")).toBeNull();
 
     await toolbarAction(page, "annotate-pen").click();
-    expect(await readShortcut("annotate-text", "Text")).toBe("⌘");
+    expect(await readShortcut("annotate-text", "Text")).toBe("3");
+    expect(await readShortcut("annotate-rectangle", "Rectangle")).toBe("2");
     expect(await readShortcut("copy", "Grab")).toBe("⇧⌘");
-    expect(await readShortcut("annotate-pen", "Pen")).toBeNull();
+    expect(await readShortcut("annotate-pen", "Pen")).toBe("1");
   });
 
   test("before activating, only Grab shows a key: the one that activates", async ({
@@ -600,7 +632,7 @@ test.describe("Cmd cycles Grab, Pen and Text on a Mac", () => {
   });
 });
 
-test.describe("Grab, Pen and Text are one choice", () => {
+test.describe("Grab, Pen, Rectangle and Text are one choice", () => {
   test.beforeEach(async ({ reactGrab }) => {
     await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
   });
@@ -618,6 +650,8 @@ test.describe("Grab, Pen and Text are one choice", () => {
 
     await toolbarAction(page, "annotate-pen").click();
     await expect(inspectTools).not.toHaveAttribute("data-revealed");
+    await toolbarAction(page, "annotate-rectangle").click();
+    await expect(inspectTools).not.toHaveAttribute("data-revealed");
     await toolbarAction(page, "annotate-text").click();
     await expect(inspectTools).not.toHaveAttribute("data-revealed");
 
@@ -625,7 +659,7 @@ test.describe("Grab, Pen and Text are one choice", () => {
     await expect(inspectTools).toHaveAttribute("data-revealed", "");
   });
 
-  test("1 and 2 leave Specs and Spacing alone while the pen is in hand", async ({
+  test("1 and 2 pick Pen and Rectangle while leaving Specs and Spacing off", async ({
     reactGrab,
     page,
   }) => {
@@ -633,13 +667,15 @@ test.describe("Grab, Pen and Text are one choice", () => {
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await toolbarAction(page, "annotate-pen").click();
     await page.keyboard.press("1");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("2");
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
     await toolbarAction(page, "copy").click();
     await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
     await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute("aria-pressed", "false");
   });
 
-  for (const toolActionId of ["annotate-pen", "annotate-text"]) {
+  for (const toolActionId of ["annotate-pen", "annotate-rectangle", "annotate-text"]) {
     test(`the activation shortcut takes ${toolActionId} back to Grab`, async ({
       reactGrab,
       page,
@@ -801,5 +837,395 @@ test.describe("Grab", () => {
     await toolbarAction(page, "annotate-pen").click();
     await grabButton.hover();
     await expect(tooltip).toBeVisible();
+  });
+});
+
+const RECTANGLE_SELECTOR = '[data-react-grab-annotation-stroke="rectangle"]';
+
+const getSvgBox = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((element) => {
+    if (!(element instanceof SVGGraphicsElement)) throw new Error("Expected an SVG shape");
+    const box = element.getBBox();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+
+const dragRectangle = async (page: Page, isReversed = false, isSquare = false, offsetY = 0) => {
+  const start = isReversed ? RECTANGLE_END_PX : RECTANGLE_START_PX;
+  const end = isReversed ? RECTANGLE_START_PX : RECTANGLE_END_PX;
+  if (isSquare) await page.keyboard.down("Shift");
+  await page.mouse.move(start.x, start.y + offsetY);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y + offsetY, { steps: RECTANGLE_DRAG_STEPS });
+  await expect(page.locator("[data-react-grab-annotation-draft]")).toBeVisible();
+  await page.mouse.up();
+  if (isSquare) await page.keyboard.up("Shift");
+};
+
+test.describe("Rectangle and drawing shortcuts", () => {
+  test.beforeEach(async ({ reactGrab }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await reactGrab.activate();
+  });
+
+  test("Rectangle sits between Pen and Text and switches its icon", async ({ page }) => {
+    const rectangle = toolbarAction(page, "annotate-rectangle");
+    await expect(rectangle).toHaveAttribute("aria-label", "Draw a rectangle on the page");
+    const penBox = await getBox(page, '[data-react-grab-toolbar-action="annotate-pen"]');
+    const rectangleBox = await getBox(
+      page,
+      '[data-react-grab-toolbar-action="annotate-rectangle"]',
+    );
+    const textBox = await getBox(page, '[data-react-grab-toolbar-action="annotate-text"]');
+    expect(rectangleBox.x).toBeGreaterThan(penBox.x);
+    expect(rectangleBox.x).toBeLessThan(textBox.x);
+    await expect(rectangle.locator("path")).toHaveAttribute("d", CROP_7_5_ICON_PATHS.outline);
+    await rectangle.click();
+    await expect(rectangle.locator("path")).toHaveAttribute("d", CROP_7_5_ICON_PATHS.filled);
+  });
+
+  for (const isReversed of [false, true]) {
+    test(`rectangle follows the drag and color, reversed=${isReversed}`, async ({ page }) => {
+      await toolbarAction(page, "annotate-rectangle").click();
+      await toolbarAction(page, "annotation-color-orange").click();
+      await dragRectangle(page, isReversed);
+      const rectangle = page.locator(RECTANGLE_SELECTOR);
+      await expect(rectangle).toHaveCount(1);
+      await expect(rectangle).toHaveAttribute("fill", "none");
+      await expect(rectangle).toHaveAttribute("stroke", ORANGE_ANNOTATION_COLOR);
+      await expect(rectangle).toHaveAttribute("stroke-linejoin", "round");
+      expect(await getSvgBox(page, RECTANGLE_SELECTOR)).toEqual({
+        x: RECTANGLE_START_PX.x,
+        y: RECTANGLE_START_PX.y,
+        width: RECTANGLE_END_PX.x - RECTANGLE_START_PX.x,
+        height: RECTANGLE_END_PX.y - RECTANGLE_START_PX.y,
+      });
+    });
+
+    test(`Shift constrains a rectangle to a square, reversed=${isReversed}`, async ({ page }) => {
+      await toolbarAction(page, "annotate-rectangle").click();
+      await dragRectangle(page, isReversed, true);
+      const box = await getSvgBox(page, RECTANGLE_SELECTOR);
+      expect(box.width).toBe(RECTANGLE_END_PX.x - RECTANGLE_START_PX.x);
+      expect(box.height).toBe(box.width);
+    });
+  }
+
+  test("Shift updates the square draft without another pointer movement", async ({ page }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, { steps: RECTANGLE_DRAG_STEPS });
+    const readDraftBox = () => getSvgBox(page, "[data-react-grab-annotation-draft]");
+    await expect
+      .poll(async () => (await readDraftBox()).height)
+      .toBe(RECTANGLE_END_PX.y - RECTANGLE_START_PX.y);
+    await page.keyboard.down("Shift");
+    await expect
+      .poll(async () => (await readDraftBox()).height)
+      .toBe(RECTANGLE_END_PX.x - RECTANGLE_START_PX.x);
+    await page.keyboard.up("Shift");
+    await expect
+      .poll(async () => (await readDraftBox()).height)
+      .toBe(RECTANGLE_END_PX.y - RECTANGLE_START_PX.y);
+    await page.mouse.up();
+    await expect(page.locator(RECTANGLE_SELECTOR)).toHaveCount(1);
+  });
+
+  test("a tiny drag draws nothing and Escape cancels the draft", async ({ reactGrab, page }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(
+      RECTANGLE_START_PX.x + RECTANGLE_TINY_DELTA_PX,
+      RECTANGLE_START_PX.y + RECTANGLE_TINY_DELTA_PX,
+    );
+    await page.mouse.up();
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y);
+    await expect(page.locator("[data-react-grab-annotation-draft]")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(page.locator("[data-react-grab-annotation-draft]")).toHaveCount(0);
+    await reactGrab.activate();
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+  });
+
+  for (const interruption of ["1", "platform modifier"]) {
+    test(`${interruption} cancels an active rectangle and the next Pen drag is freehand`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await toolbarAction(page, "annotate-rectangle").click();
+      await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+      await page.mouse.down();
+      await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, {
+        steps: RECTANGLE_DRAG_STEPS,
+      });
+      const draft = page.locator("[data-react-grab-annotation-draft]");
+      await expect(draft).toBeVisible();
+      await page.keyboard.press(interruption === "1" ? "1" : reactGrab.modifierKey);
+      await expect(
+        toolbarAction(page, interruption === "1" ? "annotate-pen" : "annotate-text"),
+      ).toHaveAttribute("aria-pressed", "true");
+      await expect(draft).toHaveCount(0);
+      await page.mouse.up();
+      await expect(draft).toHaveCount(0);
+      await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+      await page.keyboard.press("1");
+      await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+      await page.mouse.down();
+      await page.mouse.move(RECTANGLE_INTERIOR_PX.x, RECTANGLE_END_PX.y, {
+        steps: RECTANGLE_DRAG_STEPS,
+      });
+      await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_START_PX.y, {
+        steps: RECTANGLE_DRAG_STEPS,
+      });
+      await page.mouse.up();
+      await expect(draft).toHaveCount(0);
+      await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+      await expect(page.locator(STROKE_SELECTOR)).toHaveAttribute(
+        "data-react-grab-annotation-stroke",
+        "freehand",
+      );
+    });
+  }
+
+  for (const thinAxis of ["height", "width"]) {
+    for (const thinSizePx of [0, RECTANGLE_TINY_DELTA_PX]) {
+      test(`a rectangle drag with ${thinSizePx}px ${thinAxis} draws nothing`, async ({ page }) => {
+        await toolbarAction(page, "annotate-rectangle").click();
+        await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+        await page.mouse.down();
+        await page.mouse.move(
+          thinAxis === "width" ? RECTANGLE_START_PX.x + thinSizePx : RECTANGLE_END_PX.x,
+          thinAxis === "height" ? RECTANGLE_START_PX.y + thinSizePx : RECTANGLE_END_PX.y,
+          { steps: RECTANGLE_DRAG_STEPS },
+        );
+        await page.mouse.up();
+        await expect(page.locator("[data-react-grab-annotation-draft]")).toHaveCount(0);
+        await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+      });
+    }
+  }
+
+  test("the drag does not click or select the page and the rectangle scrolls with it", async ({
+    page,
+  }) => {
+    await page.evaluate((pageHeight) => {
+      document.body.style.minHeight = `${pageHeight}px`;
+      document.body.setAttribute("data-rectangle-page-clicks", "0");
+      document.addEventListener("click", () => {
+        document.body.setAttribute("data-rectangle-page-clicks", "1");
+      });
+    }, RECTANGLE_SCROLL_PAGE_HEIGHT_PX);
+    await toolbarAction(page, "annotate-rectangle").click();
+    await dragRectangle(page);
+    await expect(page.locator("body")).toHaveAttribute("data-rectangle-page-clicks", "0");
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+    const before = await getBox(page, RECTANGLE_SELECTOR);
+    await page.mouse.wheel(0, RECTANGLE_SCROLL_PX);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(RECTANGLE_SCROLL_PX);
+    await expect
+      .poll(async () => (await getBox(page, RECTANGLE_SELECTOR)).y)
+      .toBe(before.y - RECTANGLE_SCROLL_PX);
+  });
+
+  test("Move hits only the outline and moves, undoes, redoes and deletes one rectangle", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await dragRectangle(page);
+    await page.keyboard.press("v");
+    await page.mouse.click(
+      RECTANGLE_INTERIOR_PX.x,
+      RECTANGLE_START_PX.y + RECTANGLE_EDGE_HIT_OFFSET_PX,
+    );
+    await expect(page.locator(`${RECTANGLE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+    await page.mouse.click(RECTANGLE_INTERIOR_PX.x, RECTANGLE_INTERIOR_PX.y);
+    await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(0);
+    const before = await getBox(page, RECTANGLE_SELECTOR);
+    await page.mouse.move(RECTANGLE_INTERIOR_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(
+      RECTANGLE_INTERIOR_PX.x + DRAG_DELTA.x,
+      RECTANGLE_START_PX.y + DRAG_DELTA.y,
+      { steps: RECTANGLE_DRAG_STEPS },
+    );
+    await page.mouse.up();
+    const after = await getBox(page, RECTANGLE_SELECTOR);
+    expect(after.x - before.x).toBe(DRAG_DELTA.x);
+    expect(after.y - before.y).toBe(DRAG_DELTA.y);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    expect(await getBox(page, RECTANGLE_SELECTOR)).toEqual(before);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    expect(await getBox(page, RECTANGLE_SELECTOR)).toEqual(after);
+    await page.mouse.click(
+      RECTANGLE_INTERIOR_PX.x + DRAG_DELTA.x,
+      RECTANGLE_START_PX.y + DRAG_DELTA.y,
+    );
+    await page.keyboard.press("Delete");
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(RECTANGLE_SELECTOR)).toHaveCount(1);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    expect(await getBox(page, RECTANGLE_SELECTOR)).toEqual(before);
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await page.keyboard.press(`${reactGrab.modifierKey}+Shift+z`);
+    await expect(page.locator(RECTANGLE_SELECTOR)).toHaveCount(1);
+    await toolbarAction(page, "annotate-clear").click();
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+  });
+
+  test("a rectangle and stroke can be Shift-selected, marquee-selected and moved together", async ({
+    page,
+  }) => {
+    await drawStraightLine(page);
+    await toolbarAction(page, "annotate-rectangle").click();
+    await dragRectangle(page, false, false, SECOND_LINE_OFFSET_Y);
+    await page.keyboard.press("v");
+    await page.mouse.click(RECTANGLE_START_PX.x, RECTANGLE_INTERIOR_PX.y + SECOND_LINE_OFFSET_Y);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(RECTANGLE_INTERIOR_PX.x, LINE_START.y);
+    await page.keyboard.up("Shift");
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(2);
+    await page.mouse.click(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.mouse.move(MARQUEE_START.x, MARQUEE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END.x, MARQUEE_END.y, { steps: RECTANGLE_DRAG_STEPS });
+    await page.mouse.up();
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(2);
+    const before = await page
+      .locator(STROKE_SELECTOR)
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute("d")));
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_INTERIOR_PX.y + SECOND_LINE_OFFSET_Y);
+    await page.mouse.down();
+    await page.mouse.move(
+      RECTANGLE_START_PX.x + DRAG_DELTA.x,
+      RECTANGLE_INTERIOR_PX.y + SECOND_LINE_OFFSET_Y + DRAG_DELTA.y,
+      { steps: RECTANGLE_DRAG_STEPS },
+    );
+    await page.mouse.up();
+    const after = await page
+      .locator(STROKE_SELECTOR)
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute("d")));
+    for (const [index, path] of before.entries()) expect(after[index]).not.toBe(path);
+    await page.keyboard.press("2");
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("Grab handles 3 like 4 and numbers typed into a note stay text", async ({ page }) => {
+    await page.evaluate(() => {
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "3" && event.key !== "4") return;
+        document.body.setAttribute("data-page-key", event.key);
+        document.body.setAttribute(
+          `data-page-key-${event.key}-default-prevented`,
+          String(event.defaultPrevented),
+        );
+      });
+    });
+    for (const key of ["4", "3"]) {
+      await page.keyboard.press(key);
+      await expect(page.locator("body")).toHaveAttribute("data-page-key", key);
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+      await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
+      await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      for (const tool of ["pen", "rectangle", "text"]) {
+        await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      }
+    }
+    expect(await page.locator("body").getAttribute("data-page-key-3-default-prevented")).toBe(
+      await page.locator("body").getAttribute("data-page-key-4-default-prevented"),
+    );
+    await toolbarAction(page, "annotate-text").click();
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
+    const input = page.locator("[data-react-grab-annotation-input]");
+    await expect(input).toBeFocused();
+    await page.keyboard.type("123");
+    await expect(input).toHaveValue("123");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("stored Blue falls back to Red on reload", async ({ reactGrab, page }) => {
+    await page.evaluate(
+      (storageKey) =>
+        localStorage.setItem(storageKey, JSON.stringify({ annotationColor: "#0d99ff" })),
+      INSPECT_SETTINGS_STORAGE_KEY,
+    );
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await reactGrab.activate();
+    await toolbarAction(page, "annotate-rectangle").click();
+    await expect(toolbarAction(page, "annotation-color-red")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await dragRectangle(page);
+    await expect(page.locator(RECTANGLE_SELECTOR)).toHaveAttribute(
+      "stroke",
+      DEFAULT_ANNOTATION_COLOR,
+    );
+  });
+
+  test("drawing numbers pick Pen Rectangle and Text without toggling the current tool", async ({
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-pen").click();
+    for (const [key, tool] of [
+      ["2", "rectangle"],
+      ["3", "text"],
+      ["1", "pen"],
+      ["1", "pen"],
+    ]) {
+      await page.keyboard.press(key);
+      await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute("aria-pressed", "true");
+    }
+  });
+
+  test("rainbow swatches have an inner ring in both themes", async ({
+    reactGrab,
+    page,
+  }, testInfo) => {
+    await toolbarAction(page, "annotate-pen").click();
+    const swatches = page.locator(`${ANNOTATION_COLORS_SELECTOR} button`);
+    expect(
+      await swatches.evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("aria-label")),
+      ),
+    ).toEqual(
+      ["Red", "Orange", "Yellow", "Green", "Black"].map((color) => `${color} annotation color`),
+    );
+    for (const theme of ["light", "dark"]) {
+      await reactGrab
+        .getOverlayHost()
+        .evaluate((host, theme) => host.setAttribute("data-rg-theme", theme), theme);
+      for (const color of ["red", "orange", "yellow", "green", "black"]) {
+        const dot = toolbarAction(page, `annotation-color-${color}`).locator("span.rounded-full");
+        await expect(dot).toHaveCSS("box-shadow", /inset/);
+        const expectedBorder =
+          color === "black"
+            ? theme === "dark"
+              ? "rgba(255, 255, 255, 0.2)"
+              : "rgba(0, 0, 0, 0.15)"
+            : "rgba(0, 0, 0, 0.2)";
+        await expect(dot).toHaveCSS(
+          "box-shadow",
+          new RegExp(expectedBorder.replace(/[().]/g, "\\$&")),
+        );
+      }
+      await page
+        .locator(TOOLBAR_SELECTOR)
+        .screenshot({ path: testInfo.outputPath(`swatches-${theme}.png`), animations: "disabled" });
+    }
+    await expect(toolbarAction(page, "annotation-color-blue")).toHaveCount(0);
   });
 });

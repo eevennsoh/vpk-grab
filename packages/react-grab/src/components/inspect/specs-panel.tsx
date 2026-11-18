@@ -10,6 +10,13 @@ import {
 } from "solid-js";
 import {
   SPECS_PANEL_FALLBACK_HEIGHT_PX,
+  SPECS_CONTROL_ICON_SIZE_PX,
+  SPECS_HEADER_HEIGHT_PX,
+  SPECS_SECTION_TITLE_HEIGHT_PX,
+  SPECS_SEPARATOR_HEIGHT_PX,
+  SPECS_ROW_HEIGHT_PX,
+  SPECS_TOKEN_HEIGHT_PX,
+  SPECS_FOOTER_HEIGHT_PX,
   SPECS_PANEL_MARGIN_PX,
   SPECS_PANEL_WIDTH_PX,
   Z_INDEX_OVERLAY,
@@ -25,6 +32,10 @@ import type {
 } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { createElementBounds } from "../../utils/create-element-bounds.js";
+import { getElementComputedStyle } from "../../utils/get-element-computed-style.js";
+import { getRatioLockedDimension } from "../../utils/get-ratio-locked-dimension.js";
+import { isDefiniteSpecDimension } from "../../utils/is-definite-spec-dimension.js";
+import { getElementLayoutSize } from "../../utils/get-element-layout-size.js";
 import { getElementSpecs } from "../../utils/get-element-specs.js";
 import { getSpecsPanelCorner } from "../../utils/get-specs-panel-corner.js";
 import { getVisualViewport } from "../../utils/get-visual-viewport.js";
@@ -36,6 +47,7 @@ import {
   setStyleOverrideOff,
   setStyleOverrideValue,
 } from "../../utils/style-override-store.js";
+import { IconLink } from "../icons/icon-link.js";
 import { IconPin } from "../icons/icon-pin.js";
 import { Surface } from "../ui/surface.js";
 import { SpecRow } from "./spec-row.js";
@@ -61,32 +73,35 @@ interface OpenValueMenu {
   anchorRect: DOMRect;
 }
 
-const HEADER_HEIGHT_PX = 44;
-const SECTION_TITLE_HEIGHT_PX = 24;
-const SEPARATOR_HEIGHT_PX = 9;
-const ROW_HEIGHT_PX = 20;
-const TOKEN_HEIGHT_PX = 14;
-const FOOTER_HEIGHT_PX = 27;
-
-const estimateRowsHeight = (rows: ElementSpecRow[]): number =>
+const estimateRowsHeight = (rows: ElementSpecRow[], expanded: ReadonlySet<string>): number =>
   rows.reduce(
-    (totalHeight, row) => totalHeight + ROW_HEIGHT_PX + (row.tokens?.length ?? 0) * TOKEN_HEIGHT_PX,
+    (totalHeight, row) =>
+      totalHeight +
+      SPECS_ROW_HEIGHT_PX +
+      (row.tokens?.length ?? 0) * SPECS_TOKEN_HEIGHT_PX +
+      (row.property === "width" ? SPECS_ROW_HEIGHT_PX : 0) +
+      (expanded.has(row.property) ? estimateRowsHeight(row.children ?? [], expanded) : 0),
     0,
   );
 
-const estimateSingleColumnHeight = (specs: ElementSpecs): number =>
+const estimateSingleColumnHeight = (specs: ElementSpecs, expanded: ReadonlySet<string>): number =>
   specs.sections.reduce(
     (totalHeight, section) =>
-      totalHeight + SECTION_TITLE_HEIGHT_PX + estimateRowsHeight(section.rows),
-    HEADER_HEIGHT_PX +
-      FOOTER_HEIGHT_PX +
-      SECTION_TITLE_HEIGHT_PX +
-      SEPARATOR_HEIGHT_PX +
-      estimateRowsHeight(specs.appliedRows),
+      totalHeight + SPECS_SECTION_TITLE_HEIGHT_PX + estimateRowsHeight(section.rows, expanded),
+    SPECS_HEADER_HEIGHT_PX +
+      SPECS_FOOTER_HEIGHT_PX +
+      SPECS_SECTION_TITLE_HEIGHT_PX +
+      SPECS_SEPARATOR_HEIGHT_PX +
+      estimateRowsHeight(specs.appliedRows, expanded),
   );
 
 const sectionTitleClass =
   "m-0 pt-2 pb-0.5 text-[10px] leading-[14px] font-semibold uppercase tracking-[0.06em] text-[var(--rg-text-secondary)]";
+
+const panelControlClass =
+  "flex items-center justify-center size-5 m-0 p-0 border-0 rounded-[5px] cursor-pointer hover:bg-[var(--rg-surface-hover)]";
+
+const [expandedProperties, setExpandedProperties] = createSignal(new Set<string>());
 
 // Click-through while it follows the hover: the panel answers "what is applied
 // here" for whatever is under the pointer, including UI that only exists while
@@ -95,6 +110,13 @@ const sectionTitleClass =
 // become editable.
 export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
   let panelRef: HTMLDivElement | undefined;
+  const ratioLock = createMemo(
+    on(
+      () => props.element,
+      () => createSignal(false),
+    ),
+  );
+  const isRatioLocked = () => ratioLock()[0]();
   const [panelHeight, setPanelHeight] = createSignal(SPECS_PANEL_FALLBACK_HEIGHT_PX);
   const [requestedValueMenu, setOpenValueMenu] = createSignal<OpenValueMenu | null>(null);
   const openValueMenu = () => (isEditable() ? requestedValueMenu() : null);
@@ -116,7 +138,9 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
 
   const specs = createMemo(() => {
     void props.styleOverridesVersion;
-    return props.element ? getElementSpecs(props.element, frozenAppliedProperties()) : null;
+    return props.element
+      ? getElementSpecs(props.element, frozenAppliedProperties(), expandedProperties())
+      : null;
   });
 
   const isEditable = () =>
@@ -134,17 +158,65 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
     ),
   );
 
+  const allRows = () => {
+    const currentSpecs = specs();
+    return currentSpecs
+      ? [...currentSpecs.appliedRows, ...currentSpecs.sections.flatMap((section) => section.rows)]
+      : [];
+  };
+  const shorthandRow = (row: ElementSpecRow) =>
+    allRows().find((parent) => parent.children?.some((child) => child.property === row.property)) ??
+    row;
+
   const toggleRow = (row: ElementSpecRow) => {
     const element = props.element;
     if (!element) return;
     const isOff = row.override ? !row.override.isOff : true;
-    props.onStyleChange(() => setStyleOverrideOff(element, row, isOff));
+    props.onStyleChange(() => setStyleOverrideOff(element, row, isOff, shorthandRow(row)));
   };
 
   const commitRowValue = (row: ElementSpecRow, value: string, token: string | null): boolean => {
     const element = props.element;
     if (!element) return false;
-    return props.onStyleChange(() => setStyleOverrideValue(element, row, value, token));
+    return props.onStyleChange(() => {
+      if (!isRatioLocked() || (row.property !== "width" && row.property !== "height"))
+        return setStyleOverrideValue(element, row, value, token, shorthandRow(row));
+      const pairedProperty = row.property === "width" ? "height" : "width";
+      const pairedRow = allRows().find((candidate) => candidate.property === pairedProperty);
+      const previousSize = getElementLayoutSize(element);
+      if (!setStyleOverrideValue(element, row, value, token, shorthandRow(row))) return false;
+      if (!pairedRow) return true;
+      const style = getElementComputedStyle(element);
+      const specifiedValue = element.computedStyleMap?.().get(row.property)?.toString() ?? value;
+      if (
+        !isDefiniteSpecDimension(specifiedValue) ||
+        Number.parseFloat(style.getPropertyValue(row.property)) <= 0
+      )
+        return true;
+      const nextSize = getElementLayoutSize(element);
+      const pairedCssSizePx = Number.parseFloat(style.getPropertyValue(pairedProperty));
+      const pairedSides = pairedProperty === "width" ? ["left", "right"] : ["top", "bottom"];
+      const pairedBoxExtrasPx =
+        style.boxSizing === "border-box"
+          ? 0
+          : pairedSides.reduce(
+              (total, side) =>
+                total +
+                Number.parseFloat(style.getPropertyValue(`padding-${side}`)) +
+                Number.parseFloat(style.getPropertyValue(`border-${side}-width`)),
+              0,
+            );
+      const pairedValue = getRatioLockedDimension({
+        previousEditedSizePx: previousSize[row.property],
+        previousPairedSizePx: previousSize[pairedProperty],
+        nextEditedSizePx: nextSize[row.property],
+        currentPairedSizePx: nextSize[pairedProperty],
+        currentPairedCssSizePx: pairedCssSizePx,
+        pairedBorderBoxSizePx: pairedCssSizePx + pairedBoxExtrasPx,
+      });
+      if (pairedValue) setStyleOverrideValue(element, pairedRow, pairedValue, null);
+      return true;
+    });
   };
 
   const resetRow = (row: ElementSpecRow) => {
@@ -169,20 +241,51 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
     const currentSpecs = specs();
     if (!menu || !currentSpecs) return null;
     return (
-      [
-        ...currentSpecs.appliedRows,
-        ...currentSpecs.sections.flatMap((section) => section.rows),
-      ].find((row) => row.property === menu.property) ?? null
+      allRows()
+        .flatMap((row) => [row, ...(row.children ?? [])])
+        .find((row) => row.property === menu.property) ?? null
     );
   };
 
   // Rows are kept by position, not by object: every override change rebuilds
   // the row objects, and a row node replaced under the pointer leaves Chrome
   // without a pointerleave for the panel, which would then stay pinned.
-  const renderRow = (row: () => ElementSpecRow) => (
+  const renderValueRow = (row: () => ElementSpecRow, parent?: () => ElementSpecRow) => (
     <SpecRow
       row={row()}
-      isEditable={isEditable()}
+      isEditable={isEditable() && !parent?.().override?.isOff}
+      isSubRow={Boolean(parent)}
+      isExpanded={expandedProperties().has(row().property)}
+      onToggleExpanded={
+        parent
+          ? undefined
+          : row().children
+            ? (isKeyboardActivation) => {
+                setHasFocusWithin(isKeyboardActivation);
+                setOpenValueMenu(null);
+                setExpandedProperties((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(row().property)) next.delete(row().property);
+                  else next.add(row().property);
+                  return next;
+                });
+              }
+            : undefined
+      }
+      getAdjacentValueButton={(isBackward) => {
+        const rowElements = Array.from(
+          panelRef?.querySelectorAll<HTMLElement>("[data-react-grab-spec-row]") ?? [],
+        );
+        const rowIndex = rowElements.findIndex(
+          (element) => element.getAttribute("data-react-grab-spec-row") === row().property,
+        );
+        const adjacentRow = rowElements[rowIndex + (isBackward ? -1 : 1)];
+        if (!parent && !adjacentRow?.hasAttribute("data-react-grab-spec-sub-row")) return;
+        return (
+          adjacentRow?.querySelector<HTMLButtonElement>("button[data-react-grab-spec-value]") ??
+          undefined
+        );
+      }}
       isMenuOpen={openValueMenu()?.property === row().property}
       onToggle={() => toggleRow(row())}
       onCommitValue={(value) => commitRowValue(row(), value, null)}
@@ -195,6 +298,38 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
     />
   );
 
+  const renderRow = (row: () => ElementSpecRow) => (
+    <>
+      {renderValueRow(row)}
+      <Show when={expandedProperties().has(row().property)}>
+        <Index each={row().children}>{(child) => renderValueRow(child, row)}</Index>
+      </Show>
+      <Show when={row().property === "width"}>
+        <button
+          type="button"
+          data-react-grab-specs-ratio-lock
+          disabled={!isEditable()}
+          aria-label={
+            isRatioLocked() ? "Unlock width and height ratio" : "Lock width and height ratio"
+          }
+          title={isRatioLocked() ? "Unlock width and height ratio" : "Lock width and height ratio"}
+          aria-pressed={isRatioLocked()}
+          class={cn(
+            panelControlClass,
+            "ml-auto",
+            isRatioLocked()
+              ? "bg-[var(--rg-surface-hover)] text-[var(--rg-text-primary)]"
+              : "bg-transparent text-[var(--rg-text-secondary)]",
+          )}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => ratioLock()[1]((previous) => !previous)}
+        >
+          <IconLink size={SPECS_CONTROL_ICON_SIZE_PX} />
+        </button>
+      </Show>
+    </>
+  );
+
   const viewport = createMemo(() => {
     void props.viewportVersion;
     return getVisualViewport();
@@ -205,7 +340,10 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
   const isTwoColumn = createMemo(() => {
     const currentSpecs = specs();
     if (!currentSpecs || props.isPinned) return false;
-    return estimateSingleColumnHeight(currentSpecs) > viewport().height - SPECS_PANEL_MARGIN_PX * 2;
+    return (
+      estimateSingleColumnHeight(currentSpecs, expandedProperties()) >
+      viewport().height - SPECS_PANEL_MARGIN_PX * 2
+    );
   });
 
   const panelWidth = () => (isTwoColumn() ? SPECS_PANEL_WIDTH_PX * 2 : SPECS_PANEL_WIDTH_PX);
@@ -247,7 +385,7 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
   );
 
   createEffect(
-    on([specs, isTwoColumn], () => {
+    on([specs, isTwoColumn, expandedProperties], () => {
       if (panelRef && panelRef.offsetHeight > 0) setPanelHeight(panelRef.offsetHeight);
     }),
   );
@@ -334,7 +472,7 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
                     aria-pressed={props.isPinLocked}
                     title={props.isPinLocked ? "Unpin" : "Keep pinned"}
                     class={cn(
-                      "flex items-center justify-center size-5 m-0 p-0 border-0 rounded-[5px] cursor-pointer hover:bg-[var(--rg-surface-hover)]",
+                      panelControlClass,
                       props.isPinLocked
                         ? "bg-[var(--rg-surface-hover)] text-[var(--rg-text-primary)]"
                         : "bg-transparent text-[var(--rg-text-secondary)]",
@@ -342,7 +480,7 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => props.onTogglePinLock()}
                   >
-                    <IconPin size={12} />
+                    <IconPin size={SPECS_CONTROL_ICON_SIZE_PX} />
                   </button>
                 </Show>
               </span>

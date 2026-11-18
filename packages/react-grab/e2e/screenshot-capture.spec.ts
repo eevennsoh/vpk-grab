@@ -3,9 +3,12 @@
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject, type ReactGrabState } from "./fixtures.js";
 import {
+  SCREENSHOT_RECTANGLE_HEIGHT_PX,
+  SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
   MARQUEE_SCREENSHOT_MOVE_PX,
   MARQUEE_OUTSET_SIDE_COUNT,
+  NON_NATIVE_ACTIVATION_KEY,
   PILL_PAGE_BUTTON_POSITION_PX,
   SCREENSHOT_SELECTION_PADDING_PX,
   PILL_PERSISTENCE_CHECK_MS,
@@ -501,6 +504,46 @@ test.describe("Screenshot capture", () => {
     expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
     expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
     expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+  });
+
+  test("a rectangle inside the area is drawn into the image", async ({ reactGrab, page }) => {
+    const rectangleButton = page.locator('[data-react-grab-toolbar-action="annotate-rectangle"]');
+    await rectangleButton.click();
+    await page.mouse.move(LINE_START.x, LINE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(LINE_END.x, LINE_END.y + SCREENSHOT_RECTANGLE_HEIGHT_PX, {
+      steps: DRAG_STEPS,
+    });
+    await page.mouse.up();
+    await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
+    await rectangleButton.click();
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const strokeMidpointX = (LINE_START.x + LINE_END.x) / 2;
+    const pixel = await sampleLastImagePixel(
+      page,
+      strokeMidpointX - CAPTURE_START.x,
+      LINE_START.y - CAPTURE_START.y,
+      CAPTURE_END.x - CAPTURE_START.x,
+    );
+    expect(pixel).not.toBeNull();
+    expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
+    expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
+    expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+    const interiorPixel = await sampleLastImagePixel(
+      page,
+      strokeMidpointX - CAPTURE_START.x,
+      LINE_START.y - CAPTURE_START.y + SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
+      CAPTURE_END.x - CAPTURE_START.x,
+    );
+    expect(interiorPixel).not.toBeNull();
+    expect(
+      interiorPixel!.red > STROKE_RED_MIN &&
+        interiorPixel!.green < STROKE_GREEN_MAX &&
+        interiorPixel!.blue < STROKE_BLUE_MAX,
+    ).toBe(false);
   });
 
   test("the camera cursor shows while Shift is held in Grab, not in Pen", async ({ page }) => {
@@ -1107,12 +1150,17 @@ const grabKeepingGrabActive = async (
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
 };
 
+// Ctrl+C is the browser's own copy on Linux and Windows, and a native copy during
+// the hold defers activation to a key repeat or the release; Playwright sends
+// no repeats, so only a non-native key switches Grab on while it is still held.
 const pressActivationShortcutInPlace = async (reactGrab: ReactGrabPageObject, page: Page) => {
-  await page.keyboard.down(reactGrab.modifierKey);
-  await page.keyboard.down("c");
-  await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
-  await page.keyboard.up("c");
-  await page.keyboard.up(reactGrab.modifierKey);
+  await reactGrab.updateOptions({ activationKey: NON_NATIVE_ACTIVATION_KEY });
+  await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+  try {
+    await expect.poll(() => isReactGrabActive(page)).toBe(true);
+  } finally {
+    await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+  }
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
 };
 
@@ -1181,13 +1229,13 @@ const grabFirstTodo = async (
   page: Page,
 ): Promise<CopiedPillGrab> => {
   await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
-  const copyPayloadPromise = reactGrab.captureNextClipboardWrites();
+  const waitForCopyPayload = await reactGrab.captureNextClipboardWrites();
   await page.mouse.down();
   await page.mouse.up();
   // Grabbed boxes leave the state once their feedback fades, timed from the
   // start of the copy, which a slow runner can outlast before the pill lands.
   const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
-  const copyPayload = await copyPayloadPromise;
+  const copyPayload = await waitForCopyPayload();
   const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
   await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
   return {
@@ -1653,6 +1701,59 @@ test.describe("Copied pill", () => {
     expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
     expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
   });
+  test("a rectangle over the element is drawn into the camera's image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const todoBox = await page.locator(FIRST_TODO_SELECTOR).first().boundingBox();
+    if (!todoBox) throw new Error("No box for the first todo item");
+    const rectangleTopPx = todoBox.y + PILL_ANNOTATION_STROKE_Y_OFFSET_PX;
+    const rectangleStart = {
+      x: todoBox.x + PILL_ANNOTATION_STROKE_START_OFFSET_PX,
+      y: rectangleTopPx,
+    };
+    const rectangleEnd = { x: todoBox.x + PILL_ANNOTATION_STROKE_END_OFFSET_PX, y: rectangleTopPx };
+    const rectangleButton = page.locator('[data-react-grab-toolbar-action="annotate-rectangle"]');
+    await rectangleButton.click();
+    await page.mouse.move(rectangleStart.x, rectangleStart.y);
+    await page.mouse.down();
+    await page.mouse.move(rectangleEnd.x, rectangleEnd.y + SCREENSHOT_RECTANGLE_HEIGHT_PX, {
+      steps: DRAG_STEPS,
+    });
+    await page.mouse.up();
+    await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
+    await rectangleButton.click();
+
+    const { captureRect } = await grabFirstTodo(reactGrab, page);
+    await reactGrab
+      .getOverlayHost()
+      .locator(`${COMPLETION_SELECTOR} ${CAMERA_BUTTON_SELECTOR}`)
+      .click();
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const pixel = await sampleLastImagePixel(
+      page,
+      (rectangleStart.x + rectangleEnd.x) / 2 - captureRect.x,
+      rectangleTopPx - captureRect.y,
+      captureRect.width,
+    );
+    expect(pixel).not.toBeNull();
+    expect(pixel!.red).toBeGreaterThan(STROKE_RED_MIN);
+    expect(pixel!.green).toBeLessThan(STROKE_GREEN_MAX);
+    expect(pixel!.blue).toBeLessThan(STROKE_BLUE_MAX);
+    const interiorPixel = await sampleLastImagePixel(
+      page,
+      (rectangleStart.x + rectangleEnd.x) / 2 - captureRect.x,
+      rectangleTopPx - captureRect.y + SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
+      captureRect.width,
+    );
+    expect(interiorPixel).not.toBeNull();
+    expect(
+      interiorPixel!.red > STROKE_RED_MIN &&
+        interiorPixel!.green < STROKE_GREEN_MAX &&
+        interiorPixel!.blue < STROKE_BLUE_MAX,
+    ).toBe(false);
+  });
 
   test("a rejected camera write keeps the copy and offers the camera again", async ({
     reactGrab,
@@ -1907,10 +2008,10 @@ test.describe("Copied pill camera cancellation", () => {
     await startGatedCameraCapture(reactGrab, page);
 
     await reactGrab.hoverUntilSelected(MAIN_TITLE_SELECTOR);
-    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    const waitForNewerCopy = await reactGrab.captureNextClipboardWrites();
     await page.mouse.down();
     await page.mouse.up();
-    const newerCopy = await newerCopyPromise;
+    const newerCopy = await waitForNewerCopy();
     expect(newerCopy["text/plain"]).toContain("React Grab");
 
     await expectCameraCaptureCancelled(reactGrab, page, pageErrors, newerCopy["text/plain"]);
@@ -1924,9 +2025,9 @@ test.describe("Copied pill camera cancellation", () => {
     await grabFirstTodo(reactGrab, page);
     const completion = await startGatedCameraCapture(reactGrab, page);
 
-    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    const waitForNewerCopy = await reactGrab.captureNextClipboardWrites();
     expect(await reactGrab.copyElementViaApi(MAIN_TITLE_SELECTOR)).toBe(true);
-    const newerCopy = await newerCopyPromise;
+    const newerCopy = await waitForNewerCopy();
 
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);

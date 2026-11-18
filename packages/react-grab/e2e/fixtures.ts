@@ -19,6 +19,14 @@ const TOUCH_DRAG_STEPS = 10;
 const PAGE_SETUP_RETRY_BACKOFF_MS = 250;
 const SELECTION_HOVER_ATTEMPTS = 3;
 const SELECTION_HOVER_TIMEOUT_MS = 4_000;
+const ANY_SELECTION_LABEL_SELECTOR = "[data-react-grab-selection-label]";
+const LIVE_SELECTION_LABEL_SELECTOR = `${ANY_SELECTION_LABEL_SELECTOR}:not([data-react-grab-label-instance])`;
+const COPIED_PILL_LABEL_SELECTOR = `${ANY_SELECTION_LABEL_SELECTOR}[data-react-grab-label-instance]`;
+const SPACING_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-redlines"]';
+
+interface PendingClipboardCopy {
+  writes: Promise<Record<string, string> | null>;
+}
 
 interface ContextMenuInfo {
   isVisible: boolean;
@@ -119,7 +127,7 @@ export interface ReactGrabPageObject {
   rightClickAtPosition: (x: number, y: number) => Promise<void>;
   dragSelect: (startSelector: string, endSelector: string) => Promise<void>;
   getClipboardContent: () => Promise<string>;
-  captureNextClipboardWrites: () => Promise<Record<string, string>>;
+  captureNextClipboardWrites: () => Promise<() => Promise<Record<string, string>>>;
   waitForSelectionBox: (timeout?: number) => Promise<void>;
   waitForSelectionSource: () => Promise<void>;
   isContextMenuVisible: () => Promise<boolean>;
@@ -161,6 +169,8 @@ export interface ReactGrabPageObject {
 
   getSelectionLabelInfo: () => Promise<SelectionLabelInfo>;
   getSelectionLabelBounds: () => Promise<SelectionLabelBounds | null>;
+  getCopiedPillBounds: () => Promise<SelectionLabelBounds | null>;
+  dismissCopiedPills: () => Promise<void>;
   isSelectionLabelVisible: () => Promise<boolean>;
   waitForSelectionLabel: () => Promise<void>;
   getLabelStatusText: () => Promise<string | null>;
@@ -356,33 +366,50 @@ const createReactGrabPageObject = (
 
   const getClipboardContent = async () => page.evaluate(() => navigator.clipboard.readText());
 
-  const captureNextClipboardWrites = async () =>
-    page.evaluate(() => {
-      return new Promise<Record<string, string>>((resolve) => {
-        const originalSetData = DataTransfer.prototype.setData;
-        const clipboardWrites: Record<string, string> = {};
-        DataTransfer.prototype.setData = function (type: string, value: string) {
-          clipboardWrites[type] = value;
-          return originalSetData.call(this, type, value);
-        };
+  const captureNextClipboardWrites = async () => {
+    const pendingCopyHandle = await page.evaluateHandle((timeoutMs): PendingClipboardCopy => {
+      const originalSetData = DataTransfer.prototype.setData;
+      const clipboardWrites: Record<string, string> = {};
+      DataTransfer.prototype.setData = function (type: string, value: string) {
+        clipboardWrites[type] = value;
+        return originalSetData.call(this, type, value);
+      };
 
-        const cleanup = () => {
+      const writes = new Promise<Record<string, string> | null>((resolve) => {
+        const timeoutId = setTimeout(() => {
           DataTransfer.prototype.setData = originalSetData;
-          resolve(clipboardWrites);
-        };
-
-        const safetyTimeout = setTimeout(cleanup, 5000);
+          resolve(null);
+        }, timeoutMs);
 
         document.addEventListener(
           "copy",
           () => {
-            clearTimeout(safetyTimeout);
-            queueMicrotask(cleanup);
+            clearTimeout(timeoutId);
+            queueMicrotask(() => {
+              DataTransfer.prototype.setData = originalSetData;
+              resolve(clipboardWrites);
+            });
           },
           { once: true, capture: true },
         );
       });
-    });
+      return { writes };
+    }, UI_STATE_TIMEOUT_MS);
+
+    return async () => {
+      try {
+        const clipboardWrites = await pendingCopyHandle.evaluate(
+          (pendingCopy) => pendingCopy.writes,
+        );
+        if (!clipboardWrites) {
+          throw new Error(`No copy event within ${UI_STATE_TIMEOUT_MS}ms of the capture starting`);
+        }
+        return clipboardWrites;
+      } finally {
+        await pendingCopyHandle.dispose();
+      }
+    };
+  };
 
   const waitForSelectionBox = async (timeout = 10_000) => {
     await page.waitForFunction(
@@ -1061,99 +1088,126 @@ const createReactGrabPageObject = (
   };
 
   const getSelectionLabelInfo = async (): Promise<SelectionLabelInfo> => {
-    return page.evaluate((attrName) => {
-      const host = document.querySelector(`[${attrName}]`);
-      const shadowRoot = host?.shadowRoot;
-      if (!shadowRoot)
-        return {
-          isVisible: false,
-          tagName: null,
-          componentName: null,
-          status: null,
-          elementsCount: null,
-          filePath: null,
-        };
-      const root = shadowRoot.querySelector(`[${attrName}]`);
-      if (!root)
-        return {
-          isVisible: false,
-          tagName: null,
-          componentName: null,
-          status: null,
-          elementsCount: null,
-          filePath: null,
-        };
+    return page.evaluate(
+      ({ attrName, liveSelector, anySelector }) => {
+        const host = document.querySelector(`[${attrName}]`);
+        const shadowRoot = host?.shadowRoot;
+        if (!shadowRoot)
+          return {
+            isVisible: false,
+            tagName: null,
+            componentName: null,
+            status: null,
+            elementsCount: null,
+            filePath: null,
+          };
+        const root = shadowRoot.querySelector(`[${attrName}]`);
+        if (!root)
+          return {
+            isVisible: false,
+            tagName: null,
+            componentName: null,
+            status: null,
+            elementsCount: null,
+            filePath: null,
+          };
 
-      const label = root.querySelector("[data-react-grab-selection-label]");
-      if (!label)
-        return {
-          isVisible: false,
-          tagName: null,
-          componentName: null,
-          status: null,
-          elementsCount: null,
-          filePath: null,
-        };
+        const label = root.querySelector(liveSelector) ?? root.querySelector(anySelector);
+        if (!label)
+          return {
+            isVisible: false,
+            tagName: null,
+            componentName: null,
+            status: null,
+            elementsCount: null,
+            filePath: null,
+          };
 
-      let tagName: string | null = null;
-      let componentName: string | null = null;
-      let elementsCount: number | null = null;
+        let tagName: string | null = null;
+        let componentName: string | null = null;
+        let elementsCount: number | null = null;
 
-      const allSpans = Array.from(label.querySelectorAll("span"));
-      for (const span of allSpans) {
-        const spanText = span.textContent?.trim() ?? "";
-        if (spanText.includes("elements")) {
-          const match = spanText.match(/(\d+)\s*elements/);
-          elementsCount = match ? parseInt(match[1], 10) : null;
-        } else if (spanText.includes(".") && !spanText.startsWith(".")) {
-          const parts = spanText.split(".");
-          componentName = parts[0] ?? null;
-          tagName = parts[1] ?? null;
-        } else if (spanText && !tagName) {
-          tagName = spanText;
+        const allSpans = Array.from(label.querySelectorAll("span"));
+        for (const span of allSpans) {
+          const spanText = span.textContent?.trim() ?? "";
+          if (spanText.includes("elements")) {
+            const match = spanText.match(/(\d+)\s*elements/);
+            elementsCount = match ? parseInt(match[1], 10) : null;
+          } else if (spanText.includes(".") && !spanText.startsWith(".")) {
+            const parts = spanText.split(".");
+            componentName = parts[0] ?? null;
+            tagName = parts[1] ?? null;
+          } else if (spanText && !tagName) {
+            tagName = spanText;
+          }
         }
-      }
 
-      const statusElement = label.querySelector(".animate-pulse");
-      const status = statusElement ? "copying" : "idle";
+        const statusElement = label.querySelector(".animate-pulse");
+        const status = statusElement ? "copying" : "idle";
 
-      return {
-        isVisible: true,
-        tagName,
-        componentName,
-        status,
-        elementsCount,
-        filePath: null,
-      };
-    }, ATTRIBUTE_NAME);
+        return {
+          isVisible: true,
+          tagName,
+          componentName,
+          status,
+          elementsCount,
+          filePath: null,
+        };
+      },
+      {
+        attrName: ATTRIBUTE_NAME,
+        liveSelector: LIVE_SELECTION_LABEL_SELECTOR,
+        anySelector: ANY_SELECTION_LABEL_SELECTOR,
+      },
+    );
   };
 
-  const getSelectionLabelBounds = async (): Promise<SelectionLabelBounds | null> => {
-    return page.evaluate((attrName) => {
-      const host = document.querySelector(`[${attrName}]`);
-      const shadowRoot = host?.shadowRoot;
-      if (!shadowRoot) return null;
-      const root = shadowRoot.querySelector(`[${attrName}]`);
-      if (!root) return null;
+  const readLabelBounds = (labelSelectors: string[]): Promise<SelectionLabelBounds | null> =>
+    page.evaluate(
+      ({ attrName, selectors }) => {
+        const host = document.querySelector(`[${attrName}]`);
+        const shadowRoot = host?.shadowRoot;
+        if (!shadowRoot) return null;
+        const root = shadowRoot.querySelector(`[${attrName}]`);
+        if (!root) return null;
 
-      const label = root.querySelector<HTMLElement>("[data-react-grab-selection-label]");
-      if (!label) return null;
+        const label = selectors
+          .map((selector) => root.querySelector<HTMLElement>(selector))
+          .find((candidate) => candidate !== null);
+        if (!label) return null;
 
-      const toRect = (rect: DOMRect) => ({
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      });
+        const toRect = (rect: DOMRect) => ({
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        });
 
-      const arrowElement = label.querySelector<HTMLElement>("[data-react-grab-arrow]");
+        const arrowElement = label.querySelector<HTMLElement>("[data-react-grab-arrow]");
 
-      return {
-        label: toRect(label.getBoundingClientRect()),
-        arrow: arrowElement ? toRect(arrowElement.getBoundingClientRect()) : null,
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-      };
-    }, ATTRIBUTE_NAME);
+        return {
+          label: toRect(label.getBoundingClientRect()),
+          arrow: arrowElement ? toRect(arrowElement.getBoundingClientRect()) : null,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+        };
+      },
+      { attrName: ATTRIBUTE_NAME, selectors: labelSelectors },
+    );
+
+  const getSelectionLabelBounds = () =>
+    readLabelBounds([LIVE_SELECTION_LABEL_SELECTOR, ANY_SELECTION_LABEL_SELECTOR]);
+
+  const getCopiedPillBounds = () => readLabelBounds([COPIED_PILL_LABEL_SELECTOR]);
+
+  // A press on the toolbar dismisses every pill and leaves Grab on; the second
+  // press puts the spacing toggle back as it was.
+  const dismissCopiedPills = async () => {
+    const spacingToggle = page.locator(SPACING_TOGGLE_SELECTOR);
+    const wasSpacingPressed = await spacingToggle.getAttribute("aria-pressed");
+    await spacingToggle.click();
+    await expect(getOverlayHost().locator(COPIED_PILL_LABEL_SELECTOR)).toHaveCount(0);
+    await spacingToggle.click();
+    await expect(spacingToggle).toHaveAttribute("aria-pressed", wasSpacingPressed ?? "false");
   };
 
   const isSelectionLabelVisible = async (): Promise<boolean> => {
@@ -1809,6 +1863,8 @@ const createReactGrabPageObject = (
 
     getSelectionLabelInfo,
     getSelectionLabelBounds,
+    getCopiedPillBounds,
+    dismissCopiedPills,
     isSelectionLabelVisible,
     waitForSelectionLabel,
     getLabelStatusText,

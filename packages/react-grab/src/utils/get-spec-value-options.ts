@@ -6,6 +6,7 @@ import { formatCssColor } from "./format-css-color.js";
 import { formatCssNumber } from "./format-css-number.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
 import { getElementStyleSheets } from "./get-element-style-sheets.js";
+import { getSpecShorthandProperty } from "./get-spec-shorthand-property.js";
 import { getSpecKeywordOptions } from "./spec-keyword-options.js";
 import { getStyleProbe } from "./get-style-probe.js";
 import { truncateString } from "./truncate-string.js";
@@ -77,7 +78,7 @@ const formatResolvedValue = (property: string, computedValue: string): string =>
 // keywords the property takes.
 export const getSpecValueOptions = (element: Element, property: string): SpecValueOption[] => {
   const computedStyle = getElementComputedStyle(element);
-  const nameHints = NAME_HINTS_BY_PROPERTY[property] ?? [];
+  const nameHints = NAME_HINTS_BY_PROPERTY[getSpecShorthandProperty(property)] ?? [];
   const isNameHintRequired = NAME_HINT_REQUIRED_PROPERTIES.has(property);
   const probe = getStyleProbe();
   const probeComputedStyle = probe ? getComputedStyle(probe) : null;

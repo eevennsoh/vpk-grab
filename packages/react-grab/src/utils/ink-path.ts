@@ -118,8 +118,12 @@ export const createInkPath = (
   points: readonly AnnotationPoint[],
   widthPx: number,
   isStraight = false,
+  isRectangle = false,
 ): string => {
   if (points.length === 0) return "";
+  if (isRectangle) {
+    return `M${points[0].x} ${points[0].y}L${points[1].x} ${points[1].y}L${points[2].x} ${points[2].y}L${points[3].x} ${points[3].y}Z`;
+  }
   const line = createInkLine(points, widthPx, isStraight);
   const firstSpot = line[0];
   const lastSpot = line[line.length - 1];

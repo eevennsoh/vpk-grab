@@ -1,6 +1,6 @@
 # vpk-grab
 
-[React Grab](https://github.com/aidenybai/react-grab) with a design inspector built in: applied styles and the design tokens behind them, spacing measurements, element-to-element measuring, and pen and text annotations.
+[React Grab](https://github.com/aidenybai/react-grab) with a design inspector built in: applied styles and the design tokens behind them, spacing measurements, element-to-element measuring, and pen, rectangle and text annotations.
 
 It is a fork, and a drop-in one. The package is still named `react-grab` and the global is still `window.__REACT_GRAB__`, so everything written for React Grab (its CLI, its plugins, its agent skill) keeps working.
 
@@ -12,12 +12,13 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Specs** (**1**)      | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`.                        |
 | **Spacing** (**2**)    | The element's distance to the nearest sibling or container edge on each side, with its size in the name tag. Around elements too small to hold them, the numbers move out past the end of each line so they never overlap.                                   |
-| **Pen**                | Draw on the page in one of five colors. Hold **Shift** for a straight line. While active, tap **⌘** (**Ctrl** on Windows and Linux) to step Grab → Pen → Text, or **⇧⌘** to step back.                                                                       |
+| **Pen**                | Draw on the page in Red, Orange, Yellow, Green or Black. Hold **Shift** for a straight line. While active, tap **⌘** (**Ctrl** on Windows and Linux) to step Grab → Pen → Rectangle → Text, or **⇧⌘** to step back.                                          |
+| **Rectangle**          | Drag an outline in the selected color. Hold **Shift** for a square.                                                                                                                                                                                          |
 | **Text**               | Click to place a note, in the same colors as the pen.                                                                                                                                                                                                        |
 | **Move** and **Clear** | Appear once something is drawn; press **v** to pick Move up or put it down. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all. |
 | **Changes**            | Appears with the first style change, showing how many there are. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                                         |
 
-While active, press a control's number to switch it on or off without going back to the toolbar. **Specs** and **Spacing** appear only while Grab is the tool in hand; **⌘C** (**Ctrl+C**) picks Grab back up from Pen, Text or Move.
+With Grab in hand, **1** and **2** toggle **Specs** and **Spacing**, which appear only with Grab. With Pen, Rectangle, Text or Move in hand, **1** picks Pen, **2** picks Rectangle and **3** picks Text. **⌘C** (**Ctrl+C**) picks Grab back up from any drawing tool or Move.
 
 Holding a key changes what the pointer does:
 
@@ -35,9 +36,11 @@ While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal 
 
 After a grab, the **Copied** pill stays until you click anywhere else, press **Esc** or start Grab again. Its camera button copies the same element references again together with a PNG of the element and a little space around it, with your drawings and notes, so one paste brings both. On an address without HTTPS the image downloads instead and the references stay on the clipboard.
 
+The pill also has an **Add context** field for a quick follow-up. When Grab stays on after the copy, the field takes focus as the pill appears, so you can type straight away; while you hold the shortcut, or on touch, click the field first. **Enter** copies the same elements again with your text above them, and the pill reads **Copied with prompt**; the camera then adds the image to that. **Shift+Enter** starts a new line, and **Esc** clears the text. While the field is empty only typing goes into it, so arrow keys, **Esc** and the shortcut work as before, but single keys such as a control's number type into the field instead. There is no field after a screenshot or once the camera has copied an image.
+
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.9`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.10`.
 
 ### Let your agent do it
 
@@ -53,7 +56,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.9/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.10/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -69,7 +72,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.9/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.10/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -86,7 +89,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.9/react-grab-0.2.0-vpk.9.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.10/react-grab-0.2.0-vpk.10.tgz
 ```
 
 Then load it at the top of the entry file:

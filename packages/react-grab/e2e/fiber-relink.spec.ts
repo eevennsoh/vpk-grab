@@ -144,7 +144,7 @@ test.describe("Fiber-latched selection", () => {
     await reactGrab.clickElement("[data-testid='fiber-swap-target']");
     await expect.poll(() => reactGrab.getLabelStatusText(), { timeout: 2000 }).toBe("Copied");
 
-    const labelBefore = await reactGrab.getSelectionLabelBounds();
+    const labelBefore = await reactGrab.getCopiedPillBounds();
     if (!labelBefore) throw new Error("Expected a post-copy label before the swap");
 
     await page.evaluate(() => (window as unknown as FiberSwapWindow).__triggerFiberSwap?.());
@@ -152,7 +152,7 @@ test.describe("Fiber-latched selection", () => {
     await expect
       .poll(
         async () => {
-          const labelAfter = await reactGrab.getSelectionLabelBounds();
+          const labelAfter = await reactGrab.getCopiedPillBounds();
           return labelAfter ? labelAfter.label.y - labelBefore.label.y : 0;
         },
         { timeout: 1200 },

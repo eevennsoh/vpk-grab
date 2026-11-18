@@ -29,6 +29,12 @@ describe("createInkPath", () => {
     expect(createInkPath([], 3)).toBe("");
   });
 
+  it("closes a rectangle through its corners without smoothing or filling its interior", () => {
+    expect(
+      createInkPath([point(10, 20), point(80, 20), point(80, 60), point(10, 60)], 3, false, true),
+    ).toBe("M10 20L80 20L80 60L10 60Z");
+  });
+
   it("draws a single point as a dot", () => {
     const path = createInkPath([point(10, 10)], 4);
     expect(path.startsWith("M8 10a2 2")).toBe(true);

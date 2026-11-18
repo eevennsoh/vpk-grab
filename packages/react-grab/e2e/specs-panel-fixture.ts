@@ -42,6 +42,8 @@ export const installSpecsFixture = (page: Page) =>
       styleElement.textContent = `
         :root {
           --ds-space-050: 2px;
+          --vertical: 6px;
+          --horizontal: 14px;
           --ds-radius-medium: 6px;
           --ds-shadow-raised: 0 1px 2px rgba(9, 30, 66, 0.25);
           --ds-background-brand-bold: #0c66e4;
@@ -52,6 +54,7 @@ export const installSpecsFixture = (page: Page) =>
         #${rootId} button { display: block; border: 0; margin: 0 0 24px; }
         @layer utilities {
           .tk-pad { padding: calc(var(--ds-space-050) * 4); }
+          .tk-split-pad { padding: var(--vertical) var(--horizontal); }
           .tk-px { padding-inline: calc(var(--ds-space-050) * 6); }
           .tk-bg { background-color: var(--ds-background-brand-bold); }
           .tk-bg-hover { &:hover { @media (hover: hover) { background-color: var(--ds-background-brand-bold-hovered); } } }
@@ -67,6 +70,9 @@ export const installSpecsFixture = (page: Page) =>
       rootElement.innerHTML = `
         <button data-testid="specs-token-button" class="tk-pad tk-px tk-bg tk-bg-hover tk-radius tk-shadow tk-text">Tokens</button>
         <button data-testid="specs-plain-button" class="tk-pad tk-bg tk-text">Plain</button>
+        <button data-testid="specs-split-padding-button" class="tk-split-pad" style="position: fixed; left: 80px; top: 220px">Split padding</button>
+        <button data-testid="specs-box-button" style="position: fixed; left: 300px; top: 300px; box-sizing: border-box; width: 200px; height: 100px; padding: 4px 8px 12px 16px; margin: 2px 4px 6px 8px; border: solid; border-width: 1px 2px 3px 4px; border-radius: 2px 4px 6px 8px">Sides</button>
+        <button data-testid="specs-ratio-button" style="position: fixed; left: 300px; top: 450px; box-sizing: content-box; width: 200px; height: 100px; padding: 10px; border: 5px solid">Ratio</button>
       `;
       document.body.appendChild(rootElement);
     },
@@ -97,7 +103,9 @@ export const getStyle = (page: Page, testId: string, property: string) =>
 export const inspect = async (page: Page, testId: string) => {
   const center = await getCenter(page, `[data-testid='${testId}']`);
   await page.mouse.move(center.x, center.y, { steps: 6 });
-  await expect(page.locator("[data-react-grab-specs-header]")).toContainText("<button>");
+  await expect(page.locator("[data-react-grab-specs-header] > span").first()).toHaveText(
+    "<button>",
+  );
 };
 
 // Shift is held only for the trip to the panel, as it would be by hand.
@@ -127,4 +135,56 @@ export const typeValue = async (page: Page, property: string, value: string) => 
   await expect(input).toBeFocused();
   await input.fill(value);
   await input.press("Enter");
+};
+
+export const expandSpecRow = async (page: Page, property: string) => {
+  const control = specRow(page, property).locator("[data-react-grab-spec-expand]");
+  await control.click();
+  await expect(control).toHaveAttribute("aria-expanded", "true");
+};
+
+export const prepareBoxSpecs = async (page: Page, property = "padding") => {
+  await inspect(page, "specs-box-button");
+  await pinAndReach(page, property);
+  await expandSpecRow(page, property);
+};
+
+export const resetSpecRow = (page: Page, property: string) =>
+  specRow(page, property).locator("[data-react-grab-spec-reset]").click();
+
+export const expectStyles = async (
+  page: Page,
+  testId: string,
+  properties: string[],
+  values: string[],
+) => {
+  await expect
+    .poll(() =>
+      page.getByTestId(testId).evaluate((element, propertyNames) => {
+        const style = getComputedStyle(element);
+        return propertyNames.map((property) => style.getPropertyValue(property));
+      }, properties),
+    )
+    .toEqual(values);
+};
+
+export const getRenderedSize = (page: Page, testId: string) =>
+  page.getByTestId(testId).evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return { width: bounds.width, height: bounds.height };
+  });
+
+export const expectRenderedRatio = async (page: Page, testId: string, ratio: number) => {
+  await expect
+    .poll(async () => {
+      const size = await getRenderedSize(page, testId);
+      return size.width / size.height;
+    })
+    .toBeCloseTo(ratio, 2);
+};
+
+export const moveToSpecsElement = async (page: Page, testId: string) => {
+  await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y, { steps: 8 });
+  await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(0);
+  await inspect(page, testId);
 };

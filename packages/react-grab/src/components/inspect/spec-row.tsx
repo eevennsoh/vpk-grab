@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, on, Show, type Component } from "solid-js";
-import { SPECS_INPUT_ATTRIBUTE } from "../../constants.js";
+import { SPECS_CONTROL_ICON_SIZE_PX, SPECS_INPUT_ATTRIBUTE } from "../../constants.js";
 import type { ElementSpecRow } from "../../types.js";
 import { cn } from "../../utils/cn.js";
 import { IconChevron } from "../icons/icon-chevron.js";
@@ -13,6 +13,10 @@ interface SpecRowProps {
   onCommitValue: (value: string) => boolean;
   onOpenMenu: (anchorRect: DOMRect) => void;
   onReset: () => void;
+  isExpanded?: boolean;
+  isSubRow?: boolean;
+  onToggleExpanded?: (isKeyboardActivation: boolean) => void;
+  getAdjacentValueButton?: (isBackward: boolean) => HTMLButtonElement | undefined;
 }
 
 // Keeps a press from moving the page's focus or extending its text selection
@@ -32,9 +36,14 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
   const isToggleable = () => props.isEditable && (props.row.isApplied || hasOverride());
   const isChecked = () => (hasOverride() ? !isOff() : props.row.isApplied);
 
+  const editableValue = () =>
+    props.row.override?.longhands?.length
+      ? props.row.value
+      : (props.row.override?.value ?? props.row.value);
+
   const startEditing = () => {
     setIsDraftInvalid(false);
-    setDraftValue(props.row.override?.value ?? props.row.value);
+    setDraftValue(editableValue());
   };
 
   let inputRef: HTMLInputElement | undefined;
@@ -53,8 +62,7 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
   const commitDraft = (shouldKeepInvalidDraft: boolean) => {
     const value = draftValue();
     if (value === null) return;
-    const currentValue = props.row.override?.value ?? props.row.value;
-    if (value.trim() === currentValue || props.onCommitValue(value)) {
+    if (value.trim() === editableValue() || props.onCommitValue(value)) {
       stopEditing();
       return;
     }
@@ -64,15 +72,18 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
 
   // The row node is reused when its slot shows another property.
   createEffect(
-    on(
-      () => props.row.property,
-      () => stopEditing(),
-      { defer: true },
-    ),
+    on([() => props.row.property, () => props.isEditable], () => stopEditing(), { defer: true }),
   );
 
   const handleInputKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Enter") {
+    if (event.key === "Tab") {
+      const adjacentValueButton = props.getAdjacentValueButton?.(event.shiftKey);
+      if (adjacentValueButton) {
+        event.preventDefault();
+        commitDraft(false);
+        adjacentValueButton.click();
+      }
+    } else if (event.key === "Enter") {
       event.preventDefault();
       commitDraft(true);
     } else if (event.key === "Escape") {
@@ -86,11 +97,13 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
     <div
       ref={rowRef}
       data-react-grab-spec-row={props.row.property}
+      data-react-grab-spec-sub-row={props.isSubRow ? "" : undefined}
       data-applied={props.row.isApplied ? "" : undefined}
       data-off={isOff() ? "" : undefined}
       data-overridden={hasOverride() ? "" : undefined}
       class={cn(
         "group/row -mx-1 px-1 rounded-[4px]",
+        props.isSubRow && "ml-3",
         props.row.isApplied || hasOverride()
           ? "text-[var(--rg-text-primary)]"
           : "text-[var(--rg-text-secondary)] opacity-70",
@@ -133,8 +146,31 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
         </Show>
         <span
           class={cn("shrink-0 font-mono", isOff() && "line-through")}
-          textContent={props.row.property}
+          textContent={props.row.label ?? props.row.property}
         />
+        <Show when={props.onToggleExpanded}>
+          <button
+            type="button"
+            data-react-grab-spec-expand
+            disabled={!props.isEditable}
+            aria-label={`${props.isExpanded ? "Collapse" : "Expand"} ${props.row.property}`}
+            aria-expanded={Boolean(props.isExpanded)}
+            class={iconButtonClass}
+            onMouseDown={preventPress}
+            onClick={(event) => {
+              // The page freeze blocks focus events crossing the shadow root;
+              // moving focus inside it delivers blur before the input unmounts.
+              event.currentTarget.focus({ preventScroll: true });
+              props.onToggleExpanded?.(event.detail === 0);
+              if (event.detail > 0) event.currentTarget.blur();
+            }}
+          >
+            <IconChevron
+              size={SPECS_CONTROL_ICON_SIZE_PX}
+              class={props.isExpanded ? "" : "-rotate-90"}
+            />
+          </button>
+        </Show>
         <span class="flex-1 min-w-2" />
         <Show when={props.row.swatchColor}>
           <span
@@ -216,7 +252,7 @@ export const SpecRow: Component<SpecRowProps> = (props) => {
               if (rowRef) props.onOpenMenu(rowRef.getBoundingClientRect());
             }}
           >
-            <IconChevron size={12} />
+            <IconChevron size={SPECS_CONTROL_ICON_SIZE_PX} />
           </button>
           <Show when={hasOverride()}>
             <button

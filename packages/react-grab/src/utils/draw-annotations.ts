@@ -29,9 +29,22 @@ export const drawAnnotations = (
 
   for (const stroke of visibleAnnotations.strokes) {
     context.fillStyle = stroke.color;
-    context.fill(
-      new Path2D(createInkPath(stroke.points, ANNOTATION_STROKE_WIDTH_PX, stroke.isStraight)),
+    const path = new Path2D(
+      createInkPath(
+        stroke.points,
+        ANNOTATION_STROKE_WIDTH_PX,
+        stroke.isStraight,
+        stroke.isRectangle,
+      ),
     );
+    if (stroke.isRectangle) {
+      context.strokeStyle = stroke.color;
+      context.lineWidth = ANNOTATION_STROKE_WIDTH_PX;
+      context.lineJoin = "round";
+      context.stroke(path);
+    } else {
+      context.fill(path);
+    }
   }
 
   context.textBaseline = "middle";

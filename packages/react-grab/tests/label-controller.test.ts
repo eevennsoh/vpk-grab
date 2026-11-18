@@ -1,7 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { FADE_COMPLETE_BUFFER_MS, FEEDBACK_DURATION_MS } from "../src/constants.js";
 import { createLabelController } from "../src/core/label-controller.js";
-import type { SelectionLabelInstance, SelectionLabelInstancePatch } from "../src/types.js";
+import type {
+  OverlayBounds,
+  SelectionLabelInstance,
+  SelectionLabelInstancePatch,
+} from "../src/types.js";
+
+interface ElementWithBounds extends Element {
+  testBounds: OverlayBounds;
+}
+
+vi.mock("../src/utils/create-element-bounds.js", () => ({
+  createElementBounds: (element: ElementWithBounds) => element.testBounds,
+}));
 
 const LABEL_BOUNDS = {
   borderRadius: "0px",
@@ -168,6 +180,30 @@ describe("createLabelController", () => {
     expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
     expect(labelInstances[0]?.screenshotErrorMessage).toBeUndefined();
     expect(labelInstances[0]?.status).toBe("copied");
+  });
+
+  it("cancels one label's screenshot capture and leaves the others running", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const elements = [createElementAt(0, 40), createElementAt(100, 40)];
+    const [firstInstanceId, secondInstanceId] = controller.createPerElementInstances(
+      elements.map((element) => ({ element, tagName: "li" })),
+      "copying",
+    );
+    controller.updateAfterCopy(firstInstanceId, true);
+    controller.updateAfterCopy(secondInstanceId, true);
+    const firstCaptureSignal = controller.startScreenshotCapture(firstInstanceId);
+    const secondCaptureSignal = controller.startScreenshotCapture(secondInstanceId);
+
+    controller.cancelScreenshotCapture(firstInstanceId);
+
+    expect(firstCaptureSignal.aborted).toBe(true);
+    expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
+    expect(secondCaptureSignal.aborted).toBe(false);
+    expect(labelInstances[1]?.isCapturingScreenshot).toBe(true);
   });
 
   it("cancels a label's screenshot capture when the label is dismissed or replaced", () => {
@@ -394,5 +430,110 @@ describe("createLabelController", () => {
     controller.dismissCompletedIfAnchorDetached();
     vi.advanceTimersByTime(FADE_COMPLETE_BUFFER_MS);
     expect(labelInstances[0]?.status).toBe("copying");
+  });
+
+  const createElementAt = (x: number, width: number): ElementWithBounds =>
+    ({
+      isConnected: true,
+      testBounds: { borderRadius: "0px", height: 20, width, x, y: 10 },
+    }) as unknown as ElementWithBounds;
+
+  it("offers the prompt on the one per-element label the pointer is on or nearest to", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const elements = [createElementAt(0, 40), createElementAt(100, 40), createElementAt(200, 40)];
+    const entries = elements.map((element) => ({ element, tagName: "li" }));
+    const target = { primaryElement: elements[0], elements };
+
+    controller.createPerElementInstances(entries, "copying", {
+      target,
+      pointer: { x: 120, y: 20 },
+    });
+    expect(labelInstances.map((instance) => instance.promptTarget)).toEqual([
+      undefined,
+      target,
+      undefined,
+    ]);
+
+    controller.createPerElementInstances(entries, "copying", {
+      target,
+      pointer: { x: 260, y: 90 },
+    });
+    expect(labelInstances.map((instance) => Boolean(instance.promptTarget))).toEqual([
+      false,
+      false,
+      true,
+    ]);
+
+    controller.createPerElementInstances(entries, "copying");
+    expect(labelInstances.some((instance) => instance.promptTarget)).toBe(false);
+  });
+
+  it("reads a prompt copy's status text only once that copy lands, through a retry", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const element = createAnchorElement(true);
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copying", {
+      element,
+      promptTarget: { primaryElement: element, elements: [element] },
+    });
+    controller.updateAfterCopy(instanceId, true);
+
+    controller.startPromptCopy(instanceId, "Copied with prompt");
+    expect(labelInstances[0]).toMatchObject({ status: "copying", statusText: undefined });
+    expect(labelInstances[0]?.promptTarget).toBeUndefined();
+
+    controller.updateAfterCopy(instanceId, false, "Failed to copy");
+    expect(labelInstances[0]).toMatchObject({ status: "error", statusText: undefined });
+
+    controller.markRetrying(instanceId);
+    controller.updateAfterCopy(instanceId, true);
+    expect(labelInstances[0]).toMatchObject({
+      status: "copied",
+      statusText: "Copied with prompt",
+    });
+  });
+
+  it("drops a pending prompt status text with its label", () => {
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied");
+    controller.startPromptCopy(firstInstanceId, "Copied with prompt");
+    controller.dismissInstance(firstInstanceId);
+
+    const nextInstanceId = controller.createInstance(LABEL_BOUNDS, "b", undefined, "copying");
+    controller.updateAfterCopy(nextInstanceId, true);
+    expect(labelInstances[0]?.statusText).toBeUndefined();
+  });
+
+  it("takes the prompt away once the camera has copied an image", () => {
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:camera", revokeObjectURL: vi.fn() });
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const element = createAnchorElement(true);
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied", {
+      element,
+      promptTarget: { primaryElement: element, elements: [element] },
+    });
+
+    controller.setImage(instanceId, "Copied with image", new Blob());
+
+    expect(labelInstances[0]).toMatchObject({
+      statusText: "Copied with image",
+      thumbnailUrl: "blob:camera",
+    });
+    expect(labelInstances[0]?.promptTarget).toBeUndefined();
   });
 });
