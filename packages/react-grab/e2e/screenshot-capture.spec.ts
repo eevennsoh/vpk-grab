@@ -8,6 +8,7 @@ import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
   MARQUEE_SCREENSHOT_MOVE_PX,
   MARQUEE_OUTSET_SIDE_COUNT,
+  NON_NATIVE_ACTIVATION_KEY,
   PILL_PAGE_BUTTON_POSITION_PX,
   SCREENSHOT_SELECTION_PADDING_PX,
   PILL_PERSISTENCE_CHECK_MS,
@@ -1149,12 +1150,17 @@ const grabKeepingGrabActive = async (
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
 };
 
+// Ctrl+C is the browser's own copy on Linux and Windows, and a native copy during
+// the hold defers activation to a key repeat or the release; Playwright sends
+// no repeats, so only a non-native key switches Grab on while it is still held.
 const pressActivationShortcutInPlace = async (reactGrab: ReactGrabPageObject, page: Page) => {
-  await page.keyboard.down(reactGrab.modifierKey);
-  await page.keyboard.down("c");
-  await expect.poll(() => isReactGrabActive(page)).toBe(true);
-  await page.keyboard.up("c");
-  await page.keyboard.up(reactGrab.modifierKey);
+  await reactGrab.updateOptions({ activationKey: NON_NATIVE_ACTIVATION_KEY });
+  await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+  try {
+    await expect.poll(() => isReactGrabActive(page)).toBe(true);
+  } finally {
+    await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+  }
   await expect.poll(() => isReactGrabActive(page)).toBe(true);
 };
 
@@ -1223,13 +1229,13 @@ const grabFirstTodo = async (
   page: Page,
 ): Promise<CopiedPillGrab> => {
   await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
-  const copyPayloadPromise = reactGrab.captureNextClipboardWrites();
+  const waitForCopyPayload = await reactGrab.captureNextClipboardWrites();
   await page.mouse.down();
   await page.mouse.up();
   // Grabbed boxes leave the state once their feedback fades, timed from the
   // start of the copy, which a slow runner can outlast before the pill lands.
   const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
-  const copyPayload = await copyPayloadPromise;
+  const copyPayload = await waitForCopyPayload();
   const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
   await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
   return {
@@ -2002,10 +2008,10 @@ test.describe("Copied pill camera cancellation", () => {
     await startGatedCameraCapture(reactGrab, page);
 
     await reactGrab.hoverUntilSelected(MAIN_TITLE_SELECTOR);
-    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    const waitForNewerCopy = await reactGrab.captureNextClipboardWrites();
     await page.mouse.down();
     await page.mouse.up();
-    const newerCopy = await newerCopyPromise;
+    const newerCopy = await waitForNewerCopy();
     expect(newerCopy["text/plain"]).toContain("React Grab");
 
     await expectCameraCaptureCancelled(reactGrab, page, pageErrors, newerCopy["text/plain"]);
@@ -2019,9 +2025,9 @@ test.describe("Copied pill camera cancellation", () => {
     await grabFirstTodo(reactGrab, page);
     const completion = await startGatedCameraCapture(reactGrab, page);
 
-    const newerCopyPromise = reactGrab.captureNextClipboardWrites();
+    const waitForNewerCopy = await reactGrab.captureNextClipboardWrites();
     expect(await reactGrab.copyElementViaApi(MAIN_TITLE_SELECTOR)).toBe(true);
-    const newerCopy = await newerCopyPromise;
+    const newerCopy = await waitForNewerCopy();
 
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);

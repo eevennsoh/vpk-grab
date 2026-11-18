@@ -24,6 +24,10 @@ const LIVE_SELECTION_LABEL_SELECTOR = `${ANY_SELECTION_LABEL_SELECTOR}:not([data
 const COPIED_PILL_LABEL_SELECTOR = `${ANY_SELECTION_LABEL_SELECTOR}[data-react-grab-label-instance]`;
 const SPACING_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-redlines"]';
 
+interface PendingClipboardCopy {
+  writes: Promise<Record<string, string> | null>;
+}
+
 interface ContextMenuInfo {
   isVisible: boolean;
   tagBadgeText: string | null;
@@ -123,7 +127,7 @@ export interface ReactGrabPageObject {
   rightClickAtPosition: (x: number, y: number) => Promise<void>;
   dragSelect: (startSelector: string, endSelector: string) => Promise<void>;
   getClipboardContent: () => Promise<string>;
-  captureNextClipboardWrites: () => Promise<Record<string, string>>;
+  captureNextClipboardWrites: () => Promise<() => Promise<Record<string, string>>>;
   waitForSelectionBox: (timeout?: number) => Promise<void>;
   waitForSelectionSource: () => Promise<void>;
   isContextMenuVisible: () => Promise<boolean>;
@@ -362,33 +366,50 @@ const createReactGrabPageObject = (
 
   const getClipboardContent = async () => page.evaluate(() => navigator.clipboard.readText());
 
-  const captureNextClipboardWrites = async () =>
-    page.evaluate(() => {
-      return new Promise<Record<string, string>>((resolve) => {
-        const originalSetData = DataTransfer.prototype.setData;
-        const clipboardWrites: Record<string, string> = {};
-        DataTransfer.prototype.setData = function (type: string, value: string) {
-          clipboardWrites[type] = value;
-          return originalSetData.call(this, type, value);
-        };
+  const captureNextClipboardWrites = async () => {
+    const pendingCopyHandle = await page.evaluateHandle((timeoutMs): PendingClipboardCopy => {
+      const originalSetData = DataTransfer.prototype.setData;
+      const clipboardWrites: Record<string, string> = {};
+      DataTransfer.prototype.setData = function (type: string, value: string) {
+        clipboardWrites[type] = value;
+        return originalSetData.call(this, type, value);
+      };
 
-        const cleanup = () => {
+      const writes = new Promise<Record<string, string> | null>((resolve) => {
+        const timeoutId = setTimeout(() => {
           DataTransfer.prototype.setData = originalSetData;
-          resolve(clipboardWrites);
-        };
-
-        const safetyTimeout = setTimeout(cleanup, 5000);
+          resolve(null);
+        }, timeoutMs);
 
         document.addEventListener(
           "copy",
           () => {
-            clearTimeout(safetyTimeout);
-            queueMicrotask(cleanup);
+            clearTimeout(timeoutId);
+            queueMicrotask(() => {
+              DataTransfer.prototype.setData = originalSetData;
+              resolve(clipboardWrites);
+            });
           },
           { once: true, capture: true },
         );
       });
-    });
+      return { writes };
+    }, UI_STATE_TIMEOUT_MS);
+
+    return async () => {
+      try {
+        const clipboardWrites = await pendingCopyHandle.evaluate(
+          (pendingCopy) => pendingCopy.writes,
+        );
+        if (!clipboardWrites) {
+          throw new Error(`No copy event within ${UI_STATE_TIMEOUT_MS}ms of the capture starting`);
+        }
+        return clipboardWrites;
+      } finally {
+        await pendingCopyHandle.dispose();
+      }
+    };
+  };
 
   const waitForSelectionBox = async (timeout = 10_000) => {
     await page.waitForFunction(

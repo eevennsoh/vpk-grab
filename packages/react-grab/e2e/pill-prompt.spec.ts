@@ -77,39 +77,6 @@ const isFocusInOverlay = (page: Page) =>
 const isReactGrabActive = (page: Page) =>
   page.evaluate(() => window.__REACT_GRAB__?.isActive() ?? false);
 
-// Installed and awaited before the key or press that copies, so the copy can
-// never land before the recorder does.
-const startClipboardCapture = (page: Page) =>
-  page.evaluate(() => {
-    const originalSetData = DataTransfer.prototype.setData;
-    const clipboardWrites: Record<string, string> = {};
-    Reflect.deleteProperty(window, "__pillPromptClipboardWrites");
-    DataTransfer.prototype.setData = function (type: string, value: string) {
-      clipboardWrites[type] = value;
-      return originalSetData.call(this, type, value);
-    };
-    document.addEventListener(
-      "copy",
-      () => {
-        queueMicrotask(() => {
-          DataTransfer.prototype.setData = originalSetData;
-          Reflect.set(window, "__pillPromptClipboardWrites", clipboardWrites);
-        });
-      },
-      { once: true, capture: true },
-    );
-  });
-
-const readClipboardCapture = async (page: Page): Promise<Record<string, string>> => {
-  const readCapturedWrites = () =>
-    page.evaluate(
-      (): Record<string, string> | null =>
-        Reflect.get(window, "__pillPromptClipboardWrites") ?? null,
-    );
-  await expect.poll(readCapturedWrites).not.toBeNull();
-  return (await readCapturedWrites()) ?? {};
-};
-
 const readMetadata = (clipboardWrites: Record<string, string>): ReactGrabClipboardMetadata => {
   const metadata: ReactGrabClipboardMetadata & { timestamp?: number } = JSON.parse(
     clipboardWrites[REACT_GRAB_MIME_TYPE],
@@ -119,10 +86,10 @@ const readMetadata = (clipboardWrites: Record<string, string>): ReactGrabClipboa
 
 const clickCopy = async (reactGrab: ReactGrabPageObject, page: Page, selector: string) => {
   await reactGrab.hoverUntilSelected(selector);
-  await startClipboardCapture(page);
+  const waitForClipboardWrites = await reactGrab.captureNextClipboardWrites();
   await page.mouse.down();
   await page.mouse.up();
-  const clipboardWrites = await readClipboardCapture(page);
+  const clipboardWrites = await waitForClipboardWrites();
   await expect(getCompletion(reactGrab)).toContainText("Copied");
   await expect(getPillPrompt(reactGrab)).toHaveCount(1);
   return clipboardWrites;
@@ -130,9 +97,9 @@ const clickCopy = async (reactGrab: ReactGrabPageObject, page: Page, selector: s
 
 const submitPillPrompt = async (reactGrab: ReactGrabPageObject, page: Page, prompt: string) => {
   await page.keyboard.type(prompt);
-  await startClipboardCapture(page);
+  const waitForClipboardWrites = await reactGrab.captureNextClipboardWrites();
   await page.keyboard.press("Enter");
-  const clipboardWrites = await readClipboardCapture(page);
+  const clipboardWrites = await waitForClipboardWrites();
   await expect(getCompletion(reactGrab).filter({ hasText: "Copied with prompt" })).toHaveCount(1);
   return clipboardWrites;
 };
@@ -198,9 +165,9 @@ test.describe("Copied pill prompt", () => {
   }) => {
     await reactGrab.enterPromptMode(FIRST_TODO_SELECTOR);
     await reactGrab.typeInInput(PROMPT_TEXT);
-    await startClipboardCapture(page);
+    const waitForClipboardWrites = await reactGrab.captureNextClipboardWrites();
     await reactGrab.submitInput();
-    const promptModeWrites = await readClipboardCapture(page);
+    const promptModeWrites = await waitForClipboardWrites();
     await expect(getCompletion(reactGrab)).toContainText("Copied");
     expect(promptModeWrites["text/plain"]).toContain(PROMPT_TEXT);
 
@@ -458,9 +425,9 @@ test.describe("Copied pill prompt", () => {
     expect(await isReactGrabActive(page)).toBe(true);
 
     await page.evaluate(() => Reflect.deleteProperty(document, "execCommand"));
-    await startClipboardCapture(page);
+    const waitForClipboardWrites = await reactGrab.captureNextClipboardWrites();
     await reactGrab.getOverlayHost().locator(RETRY_SELECTOR).click();
-    const clipboardWrites = await readClipboardCapture(page);
+    const clipboardWrites = await waitForClipboardWrites();
 
     expect(clipboardWrites["text/plain"]?.startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
     await expect(getCompletion(reactGrab)).toContainText("Copied with prompt");

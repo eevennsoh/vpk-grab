@@ -101,9 +101,9 @@ test.describe("Element Selection", () => {
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
 
-    const copyPayloadPromise = reactGrab.captureNextClipboardWrites();
+    const waitForCopyPayload = await reactGrab.captureNextClipboardWrites();
     await reactGrab.clickElement("[data-testid='todo-list'] h1");
-    const copyPayload = await copyPayloadPromise;
+    const copyPayload = await waitForCopyPayload();
     const clipboardMetadataText = copyPayload["application/x-react-grab"];
     if (!clipboardMetadataText) {
       throw new Error("Missing React Grab clipboard metadata");
