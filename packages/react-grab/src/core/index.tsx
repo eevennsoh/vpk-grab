@@ -78,7 +78,6 @@ import {
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
   DRAWING_TOOL_BY_KEY,
-  TEXT_TOOL_KEY,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
@@ -3243,7 +3242,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
         if (canHandleEditShortcut && isBareKeyPress) {
           const pressedKey = event.key.toLowerCase();
-          const runToolShortcut = (): boolean | null => {
+          const runToolShortcut = (): boolean => {
             if (isAnnotating()) {
               const drawingTool = DRAWING_TOOL_BY_KEY[pressedKey];
               if (drawingTool) {
@@ -3261,8 +3260,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 if (isAnnotating()) return false;
                 inspect.toggleRedlines();
                 return true;
-              case TEXT_TOOL_KEY:
-                return null;
               case MOVE_TOOL_KEY:
                 if (!inspect.hasAnnotations()) return false;
                 handleSelectAnnotationTool("edit");
@@ -3271,9 +3268,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 return false;
             }
           };
-          const didHandleToolShortcut = runToolShortcut();
-          if (didHandleToolShortcut === null) return;
-          if (didHandleToolShortcut) {
+          if (runToolShortcut()) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;

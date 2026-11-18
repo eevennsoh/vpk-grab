@@ -1116,21 +1116,36 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("Grab leaves 3 alone and numbers typed into a note stay text", async ({ page }) => {
+  test("Grab handles 3 like 4 and numbers typed into a note stay text", async ({ page }) => {
     await page.evaluate(() => {
       document.addEventListener("keydown", (event) => {
-        if (event.key !== "3") return;
+        if (event.key !== "3" && event.key !== "4") return;
         document.body.setAttribute("data-page-key", event.key);
         document.body.setAttribute(
-          "data-page-key-default-prevented",
+          `data-page-key-${event.key}-default-prevented`,
           String(event.defaultPrevented),
         );
       });
     });
-    await page.keyboard.press("3");
-    await expect(page.locator("body")).toHaveAttribute("data-page-key", "3");
-    await expect(page.locator("body")).toHaveAttribute("data-page-key-default-prevented", "false");
-    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    for (const key of ["4", "3"]) {
+      await page.keyboard.press(key);
+      await expect(page.locator("body")).toHaveAttribute("data-page-key", key);
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+      await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
+      await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      for (const tool of ["pen", "rectangle", "text"]) {
+        await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      }
+    }
+    expect(await page.locator("body").getAttribute("data-page-key-3-default-prevented")).toBe(
+      await page.locator("body").getAttribute("data-page-key-4-default-prevented"),
+    );
     await toolbarAction(page, "annotate-text").click();
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
     const input = page.locator("[data-react-grab-annotation-input]");
