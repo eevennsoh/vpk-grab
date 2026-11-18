@@ -44,7 +44,7 @@ test("extension hydration does not overwrite its valid default with stale page s
               ratio: 0.5,
               collapsed: false,
               enabled: true,
-              defaultAction: "comment",
+              defaultAction: "extension-action",
             },
           },
           "*",
@@ -64,7 +64,7 @@ test("extension hydration does not overwrite its valid default with stale page s
         () => (window as ExtensionTestWindow).__REACT_GRAB__?.getToolbarState()?.defaultAction,
       ),
     )
-    .toBe("comment");
+    .toBe("extension-action");
 
   const savedDefaultActions = await reactGrab.page.evaluate(() =>
     (window as ExtensionTestWindow).savedToolbarStates?.map((state) => state.defaultAction),

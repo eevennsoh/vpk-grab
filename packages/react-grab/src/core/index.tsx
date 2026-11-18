@@ -208,6 +208,7 @@ import { isTextFieldKeyEvent } from "../utils/is-text-field-key-event.js";
 const builtInPlugins = [copyPlugin, commentPlugin, openPlugin];
 
 interface CopyWithLabelOptions {
+  shouldFocusPrompt?: boolean;
   element: Element;
   cursorX: number;
   selectedElements?: Element[];
@@ -1176,7 +1177,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         });
     };
 
+    const [shouldFocusPromptAfterEnter, setShouldFocusPromptAfterEnter] = createSignal(false);
+
     const performCopyWithLabel = (options: CopyWithLabelOptions) => {
+      setShouldFocusPromptAfterEnter(Boolean(options.shouldFocusPrompt));
       const {
         element,
         cursorX,
@@ -1235,6 +1239,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const performCopyWithPerElementLabels = (options: {
+      shouldFocusPrompt?: boolean;
       elements: Element[];
       labelEntries: Array<{
         element: Element;
@@ -1245,6 +1250,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       shouldDeactivateOnFailure?: boolean;
       onComplete?: () => void;
     }) => {
+      setShouldFocusPromptAfterEnter(Boolean(options.shouldFocusPrompt));
       const { elements, labelEntries, shouldDeactivateOnFailure, onComplete } = options;
       const primaryElement = elements[0];
 
@@ -2286,7 +2292,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       clearKeyboardNavigation();
     };
 
-    const commitShiftMultiSelection = () => {
+    const commitShiftMultiSelection = (shouldFocusPrompt = false) => {
       const accumulatedElements = store.frozenElements.filter(isElementConnected);
 
       const perElementLabelEntries = accumulatedElements.map((element) => {
@@ -2312,6 +2318,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         performCopyWithLabel({
           element: accumulatedElements[0],
           cursorX: perElementLabelEntries[0].mouseX,
+          shouldFocusPrompt,
           selectedElements: accumulatedElements,
           shouldDeactivateOnFailure: store.wasActivatedByToggle,
         });
@@ -2321,6 +2328,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithPerElementLabels({
         elements: accumulatedElements,
         labelEntries: perElementLabelEntries,
+        shouldFocusPrompt,
         shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
     };
@@ -2807,7 +2815,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       clearKeyboardNavigation();
     };
 
-    const copyKeyboardSelection = () => {
+    const copyKeyboardSelection = (shouldFocusPrompt = false) => {
       const selectedElement = keyboardSelection.takeSelection(store.frozenElement);
       if (!selectedElement) {
         discardKeyboardSelection();
@@ -2819,8 +2827,61 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       performCopyWithLabel({
         element: selectedElement,
         cursorX: center.x,
+        shouldFocusPrompt,
         shouldDeactivateOnFailure: store.wasActivatedByToggle,
       });
+    };
+
+    const tryHandleEnterCopy = (event: KeyboardEvent): boolean => {
+      if (!isEnterCode(event.code)) return false;
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return false;
+      if (!isActivated() || isAnnotating() || isPromptMode() || isCopying()) return false;
+      if (isDragging() || isSelectionInteractionLocked() || isAnyPopoverOpen()) return false;
+      if (isTextFieldKeyEvent(event)) return false;
+      if (isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event))
+        return false;
+      if (store.labelInstances.some((instance) => instance.status === "error")) return false;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      actions.relinkLiveElements();
+      const selectedElement = keyboardSelection.selectedElement();
+      const frozenElements = store.frozenElements.filter(isElementConnected);
+      const element =
+        selectedElement ?? frozenElements[0] ?? store.frozenElement ?? targetElement();
+      if (!element || !isElementConnected(element)) return true;
+      const elements = selectedElement
+        ? [selectedElement]
+        : frozenElements.length > 0
+          ? frozenElements
+          : [element];
+      if (isPillPromptEvent(event)) {
+        const promptTarget = store.labelInstances.find(
+          (instance) => instance.promptTarget,
+        )?.promptTarget;
+        const connectedTarget = promptTarget ? getConnectedPromptTarget(promptTarget) : null;
+        if (
+          connectedTarget &&
+          connectedTarget.elements.length === elements.length &&
+          elements.every((candidateElement) => connectedTarget.elements.includes(candidateElement))
+        )
+          return true;
+      }
+      if (isShiftMultiSelecting()) {
+        commitShiftMultiSelection(true);
+      } else if (selectedElement) {
+        copyKeyboardSelection(true);
+      } else {
+        actions.setLastGrabbed(element);
+        performCopyWithLabel({
+          element,
+          cursorX: pointer().x,
+          selectedElements: elements.length > 1 ? elements : undefined,
+          shouldFocusPrompt: true,
+          shouldDeactivateOnFailure: store.wasActivatedByToggle,
+        });
+      }
+      return true;
     };
 
     // Tab / Shift+Tab mirror horizontal (sibling) navigation; arrow keys map to
@@ -3107,7 +3168,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
-        if (isKeyOwnedByPillPrompt(event)) return;
+        if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
         dismissCompletedLabelsOnEscape(event);
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
@@ -3198,8 +3259,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        const isEnterToActivateInput =
-          isEnterCode(event.code) && isHoldingKeys() && !isPromptMode();
+        const isEnterToCopy = isEnterCode(event.code) && isHoldingKeys() && !isPromptMode();
 
         const isFromReactGrabInput = isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE);
         if (
@@ -3227,7 +3287,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         const isFromPillPrompt = isPillPromptEvent(event);
         const isFromOverlay =
           isEventFromOverlay(event, "data-react-grab-ignore-events") &&
-          !isEnterToActivateInput &&
+          !isEnterToCopy &&
           !isFromPillPrompt;
 
         if (isPromptMode() || isFromOverlay) {
@@ -3266,6 +3326,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         if (tryHandleNavigationKey(event)) return;
         if (tryHandleOpenFileShortcut(event)) return;
+        if (tryHandleEnterCopy(event)) return;
         if (tryHandleBareKeyShortcut(event)) return;
         // Demo mode never activates from the global hotkey.
         if (!didWindowJustRegainFocus && !IS_DEMO) {
@@ -4487,7 +4548,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       setToolbarMenuPosition(null);
     };
 
+    const toolbarMenuActions = createMemo(() =>
+      pluginRegistry.store.actions.filter((action) => action.showInToolbarMenu === true),
+    );
+
     const handleToggleToolbarMenu = () => {
+      if (toolbarMenuActions().length <= 1) return;
       if (toolbarMenuPosition() !== null) {
         dismissToolbarMenu();
       } else {
@@ -4500,7 +4566,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const handleSetDefaultAction = (actionId: string) => {
-      updateToolbarState({ defaultAction: actionId });
+      updateToolbarState({ defaultAction: normalizeToolbarDefaultActionId(actionId) });
       if (isPendingToolbarSelection()) setPendingToolbarSelection(actionId);
     };
 
@@ -4626,9 +4692,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onCopyScreenshotInstance={handleCopyScreenshotInstance}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
-                  store.wasActivatedByToggle &&
-                  pluginRegistry.store.options.activationMode !== "hold" &&
-                  !store.isTouchMode
+                  !store.isTouchMode &&
+                  (shouldFocusPromptAfterEnter() ||
+                    (store.wasActivatedByToggle &&
+                      pluginRegistry.store.options.activationMode !== "hold"))
                 }
                 onInstancePromptFocusRelease={() => returnFocusToPage()}
                 onRetryInstance={handleRetryInstance}
@@ -4680,14 +4747,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                   toolbarElement = element;
                 }}
                 toolbarMenuPosition={toolbarMenuPosition()}
-                toolbarMenuActions={pluginRegistry.store.actions.filter(
-                  (action) => action.showInToolbarMenu === true,
-                )}
+                toolbarMenuActions={toolbarMenuActions()}
                 defaultActionId={currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID}
                 defaultActionLabel={defaultToolbarActionLabel()}
                 grabShortcut={formatActivationKey(pluginRegistry.store.options.activationKey)}
                 onSetDefaultAction={handleSetDefaultAction}
-                onToggleToolbarMenu={handleToggleToolbarMenu}
+                onToggleToolbarMenu={
+                  toolbarMenuActions().length > 1 ? handleToggleToolbarMenu : undefined
+                }
                 onToolbarMenuDismiss={dismissToolbarMenu}
                 inspect={inspectRendererState}
               />

@@ -1,17 +1,18 @@
 import { test, expect } from "./fixtures.js";
+import { NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
+import { getCopyEventCount, installClipboardRecorder } from "./screenshot-fixture.js";
 
 test.describe("Prompt Mode", () => {
   test.describe("Entering Prompt Mode", () => {
-    test("bare Enter should enter prompt mode when the action is registered", async ({
-      reactGrab,
-    }) => {
+    test("bare Enter copies when the Comment action is registered", async ({ reactGrab }) => {
       await reactGrab.registerCommentAction();
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");
 
       await reactGrab.pressEnter();
 
-      await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
     });
 
     test("single click should copy without entering prompt mode", async ({ reactGrab }) => {
@@ -130,6 +131,7 @@ test.describe("Prompt Mode", () => {
       await reactGrab.submitInput();
 
       await expect.poll(() => reactGrab.isPromptModeActive()).toBe(false);
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("Test prompt\n");
     });
 
     test("Escape should cancel prompt mode", async ({ reactGrab }) => {
@@ -264,9 +266,198 @@ test.describe("Prompt Mode", () => {
 
       await reactGrab.hoverUntilSelected("li:first-child");
 
-      await reactGrab.pressEnter();
+      await reactGrab.page.evaluate(() => window.__REACT_GRAB__?.comment());
+      await reactGrab.page.mouse.down();
+      await reactGrab.page.mouse.up();
 
       await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
     });
+  });
+});
+
+test.describe("Enter copies first", () => {
+  const targetSelector = "[data-testid='todo-list'] h1";
+  const pillPromptSelector = "[data-react-grab-pill-prompt] textarea";
+
+  test("Enter copies the same reference as a click and focuses optional context", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    const waitForClick = await reactGrab.captureNextClipboardWrites();
+    await page.mouse.down();
+    await page.mouse.up();
+    const clickWrites = await waitForClick();
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    const waitForEnter = await reactGrab.captureNextClipboardWrites();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+    const enterWrites = await waitForEnter();
+    expect(enterWrites["text/plain"]).toBe(clickWrites["text/plain"]);
+    expect(enterWrites["text/html"]).toBe(clickWrites["text/html"]);
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+  });
+
+  test("a hold session focuses optional context after Enter", async ({ reactGrab, page }) => {
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    try {
+      await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
+      await reactGrab.hoverUntilSelected(targetSelector);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(pillPromptSelector)).toBeFocused();
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
+    } finally {
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    }
+  });
+
+  test("empty optional context copies a different arrow selection", async ({ reactGrab, page }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("div");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => getCopyEventCount(page)).toBe(2);
+    await expect.poll(() => reactGrab.getClipboardContent()).toContain("[<div");
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+  });
+
+  test("Enter, context, Enter, ArrowDown, Enter copies the next reference", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilTargetSelected("[data-testid='todo-list'] li:first-child span");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    const reference = await reactGrab.getClipboardContent();
+    await page.keyboard.type("make this blue");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reactGrab.getClipboardContent()).toBe(`make this blue\n${reference}`);
+    await expect(page.locator(pillPromptSelector)).toHaveCount(0);
+    await page.keyboard.press("ArrowDown");
+    const nextSelection = await page.evaluate(() =>
+      window.__REACT_GRAB__?.getState().targetElement?.tagName.toLowerCase(),
+    );
+    await page.keyboard.press("Enter");
+    await expect.poll(() => getCopyEventCount(page)).toBe(3);
+    const nextReference = await reactGrab.getClipboardContent();
+    expect(nextReference).toContain(`[<${nextSelection}`);
+    expect(nextReference).not.toContain("make this blue");
+    expect(nextReference).not.toBe(reference);
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+  });
+
+  test("Enter commits every element in a Shift multi-selection only once", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await page.keyboard.down("Shift");
+    try {
+      for (const selector of [
+        "[data-testid='todo-list'] li:first-child span",
+        "[data-testid='todo-list'] li:nth-child(2) span",
+      ]) {
+        await reactGrab.hoverUntilTargetSelected(selector);
+        await page.mouse.down();
+        await page.mouse.up();
+      }
+      await expect(
+        page.locator("[data-react-grab-selection-label]:not([data-react-grab-label-instance])"),
+      ).toHaveCount(2);
+      await page.keyboard.press("Enter");
+      await expect.poll(() => getCopyEventCount(page)).toBe(1);
+      await expect(page.locator(pillPromptSelector)).toBeFocused();
+      const reference = await reactGrab.getClipboardContent();
+      expect(reference).toContain("Buy groceries");
+      expect(reference).toContain("Walk the dog");
+    } finally {
+      await page.keyboard.up("Shift");
+    }
+    expect(await getCopyEventCount(page)).toBe(1);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+  });
+
+  test("Enter with no hovered or selected element does nothing", async ({ reactGrab, page }) => {
+    await installClipboardRecorder(page);
+    await page.evaluate(() => document.body.setAttribute("data-react-grab-ignore", ""));
+    await page.mouse.move(0, 0);
+    await reactGrab.activate();
+    await expect
+      .poll(() => page.evaluate(() => window.__REACT_GRAB__?.getState().targetElement ?? null))
+      .toBe(null);
+    await page.keyboard.press("Enter");
+    expect(await getCopyEventCount(page)).toBe(0);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+    await expect(page.locator("[data-react-grab-completion]")).toHaveCount(0);
+  });
+
+  test("an Enter copy focuses context without scrolling", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+    const scrollPosition = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    await page.keyboard.press("Enter");
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    expect(await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }))).toEqual(
+      scrollPosition,
+    );
+  });
+
+  test("trusted Enter during IME composition never submits or copies", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected(targetSelector);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    const browserSession = await page.context().newCDPSession(page);
+    await browserSession.send("Input.imeSetComposition", {
+      text: "青",
+      selectionStart: 1,
+      selectionEnd: 1,
+    });
+    await page.locator(pillPromptSelector).evaluate((textarea) => {
+      textarea.addEventListener(
+        "keydown",
+        (event) => {
+          if (event instanceof KeyboardEvent)
+            document.documentElement.dataset.composingEnter = String(
+              event.isTrusted && event.isComposing,
+            );
+        },
+        { once: true },
+      );
+    });
+    await page.keyboard.press("Enter");
+    await expect(page.locator("html")).toHaveAttribute("data-composing-enter", "true");
+    expect(await page.locator(pillPromptSelector).inputValue()).toContain("青");
+    expect(await getCopyEventCount(page)).toBe(1);
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+    await browserSession.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await browserSession.detach();
   });
 });

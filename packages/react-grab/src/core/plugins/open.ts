@@ -8,7 +8,6 @@ export const openPlugin: Plugin = {
       id: "open",
       label: "Open",
       shortcut: "O",
-      showInToolbarMenu: true,
       enabled: (context) => Boolean(context.filePath),
       onAction: (context) => {
         if (!context.filePath) return;

@@ -84,10 +84,7 @@ test.describe("Toolbar Selection Hover", () => {
     test("should keep selection box visible when hovering toolbar after prompt freeze", async ({
       reactGrab,
     }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li");
-
-      await reactGrab.pressEnter();
+      await reactGrab.enterPromptMode("li:first-child span");
 
       await expect.poll(() => reactGrab.isSelectionBoxVisible(), { timeout: 2000 }).toBe(true);
 
@@ -99,10 +96,7 @@ test.describe("Toolbar Selection Hover", () => {
     test("should keep selection box visible after prompt selection and toolbar hover", async ({
       reactGrab,
     }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li");
-
-      await reactGrab.pressEnter();
+      await reactGrab.enterPromptMode("li:first-child span");
 
       await expect.poll(() => reactGrab.isSelectionBoxVisible(), { timeout: 2000 }).toBe(true);
 
@@ -114,10 +108,7 @@ test.describe("Toolbar Selection Hover", () => {
     test("selection box should not flicker when moving between frozen element and toolbar", async ({
       reactGrab,
     }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li");
-
-      await reactGrab.pressEnter();
+      await reactGrab.enterPromptMode("li:first-child span");
 
       for (let hoverIndex = 0; hoverIndex < 3; hoverIndex++) {
         await hoverToolbar(reactGrab.page);

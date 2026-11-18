@@ -962,23 +962,26 @@ test.describe("Screenshot capture after a real activation", () => {
       expect(await getImageWrites(page)).toHaveLength(1);
     });
 
-    test("a pending Comment action does not run for a Shift+drag", async ({ reactGrab, page }) => {
+    test("a removed Comment default falls back to Copy for a Shift+drag", async ({
+      reactGrab,
+      page,
+    }) => {
       await page.evaluate(() => {
         window.__REACT_GRAB__?.setToolbarState({ defaultAction: "comment" });
       });
       await clickToolbarButton(page);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
 
       await shiftDrag(page, CAPTURE_START, CAPTURE_END);
 
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       await expect.poll(() => isReactGrabActive(page)).toBe(true);
       expect(await reactGrab.isPromptModeActive()).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
       expect(await getCopyEventCount(page)).toBe(0);
     });
 
-    test("a capture that keeps Grab on leaves the Comment action pending", async ({
+    test("a capture with a removed Comment default leaves Copy pending", async ({
       reactGrab,
       page,
     }) => {
@@ -997,11 +1000,12 @@ test.describe("Screenshot capture after a real activation", () => {
       );
       expect(await isReactGrabActive(page)).toBe(true);
       expect(await reactGrab.isPromptModeActive()).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
 
       const firstCenter = await getTodoItemCenter(page, 0);
       await page.mouse.click(firstCenter.x, firstCenter.y);
-      await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
     });
 
     test("releasing Shift mid-drag runs the pending action on the elements", async ({

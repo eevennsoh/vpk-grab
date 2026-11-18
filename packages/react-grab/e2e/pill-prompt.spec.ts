@@ -255,7 +255,7 @@ test.describe("Copied pill prompt", () => {
       await expect(getPillPrompt(reactGrab)).toHaveValue("");
     });
 
-    test("Enter does nothing", async ({ reactGrab, page }) => {
+    test("Enter on the copied elements does nothing", async ({ reactGrab, page }) => {
       await page.keyboard.press("Enter");
 
       await page.waitForTimeout(NO_SECOND_COPY_WAIT_MS);

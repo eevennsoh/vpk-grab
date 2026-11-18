@@ -211,6 +211,21 @@ test.describe("specs panel", () => {
     await expect(specRow(page, "background-color")).toHaveAttribute("data-overridden", "");
   });
 
+  test("Enter chooses a Specs value without copying an element", async ({ page }) => {
+    await inspect(page, "specs-plain-button");
+    await pinAndReach(page, "background-color");
+    await clickInside(
+      page,
+      '[data-react-grab-spec-row="background-color"] [data-react-grab-spec-menu-trigger]',
+    );
+    const filter = page.locator("[data-react-grab-spec-value-filter]");
+    await filter.pressSequentially("hovered");
+    await filter.press("Enter");
+    await expect(page.locator("[data-react-grab-spec-value-menu]")).toHaveCount(0);
+    expect(await getStyle(page, "specs-plain-button", "background-color")).toBe("rgb(0, 85, 204)");
+    await expect(page.locator("[data-react-grab-completion]")).toHaveCount(0);
+  });
+
   test("the menu offers keywords for keyword properties", async ({ page }) => {
     await inspect(page, "specs-token-button");
     await pinAndReach(page, "display");

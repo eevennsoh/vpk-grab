@@ -102,7 +102,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
   press Enter to copy the same elements with that context. Its camera adds an
-  image. Use bare Enter or the toolbar’s Comment action for prompt mode, and
+  image. Bare Enter copies the hovered or keyboard-selected elements first,
+  then focuses Optional context, including in a hold session. With an empty
+  field, arrow keys navigate and Enter copies a different selection. Use
   ⌘O / Ctrl+O or the hover label’s component name to open the source.
   Right-click keeps the browser’s menu.
 - **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,

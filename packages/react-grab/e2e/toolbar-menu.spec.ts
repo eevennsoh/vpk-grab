@@ -1,6 +1,29 @@
 import { test, expect } from "./fixtures.js";
 
 test.describe("Toolbar Menu", () => {
+  test("the default Copy action has no menu trigger", async ({ reactGrab }) => {
+    await reactGrab.page.evaluate(() => window.__REACT_GRAB__?.unregisterPlugin("custom-default"));
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await reactGrab.rightClickToolbarToggle();
+    await expect(reactGrab.page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
+  });
+
+  test.beforeEach(async ({ reactGrab }) => {
+    await reactGrab.page.evaluate(() =>
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "custom-default",
+        actions: [
+          {
+            id: "custom-default",
+            label: "Custom copy",
+            showInToolbarMenu: true,
+            onAction: (context) => context.copy?.(),
+          },
+        ],
+      }),
+    );
+  });
+
   test.describe("Open and Close", () => {
     test("right-clicking select button should open the menu", async ({ reactGrab }) => {
       await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 2000 }).toBe(true);
@@ -35,7 +58,7 @@ test.describe("Toolbar Menu", () => {
         .evaluateAll((elements) =>
           elements.map((element) => element.getAttribute("data-react-grab-menu-item")),
         );
-      expect(actionIds).toEqual(["copy", "comment", "open"]);
+      expect(actionIds).toEqual(["copy", "custom-default"]);
     });
 
     test("clicking a menu item should close the menu", async ({ reactGrab }) => {
@@ -47,36 +70,38 @@ test.describe("Toolbar Menu", () => {
       const labels = await reactGrab.getToolbarMenuItemLabels();
       expect(labels.length).toBeGreaterThan(0);
 
-      await reactGrab.clickToolbarMenuItem("comment");
+      await reactGrab.clickToolbarMenuItem("custom-default");
 
       await expect.poll(() => reactGrab.isToolbarMenuVisible(), { timeout: 2000 }).toBe(false);
     });
 
-    test("preserves a registered persisted default action", async ({ reactGrab }) => {
-      await reactGrab.page.evaluate(() => {
-        localStorage.setItem(
-          "react-grab-toolbar-state",
-          JSON.stringify({
-            edge: "bottom",
-            ratio: 0.5,
-            collapsed: false,
-            enabled: true,
-            defaultAction: "comment",
-          }),
-        );
-      });
-      await reactGrab.page.reload();
+    for (const removedAction of ["comment", "open"]) {
+      test(`normalizes ${removedAction} persisted as the default`, async ({ reactGrab }) => {
+        await reactGrab.page.evaluate((defaultAction) => {
+          localStorage.setItem(
+            "react-grab-toolbar-state",
+            JSON.stringify({
+              edge: "bottom",
+              ratio: 0.5,
+              collapsed: false,
+              enabled: true,
+              defaultAction,
+            }),
+          );
+        }, removedAction);
+        await reactGrab.page.reload();
 
-      await expect
-        .poll(() =>
-          reactGrab.page.evaluate(() => window.__REACT_GRAB__?.getToolbarState()?.defaultAction),
-        )
-        .toBe("comment");
-    });
+        await expect
+          .poll(() =>
+            reactGrab.page.evaluate(() => window.__REACT_GRAB__?.getToolbarState()?.defaultAction),
+          )
+          .toBe("copy");
+      });
+    }
 
     test("preserves the default action when toolbar state changes", async ({ reactGrab }) => {
       await reactGrab.page.evaluate(() => {
-        window.__REACT_GRAB__?.setToolbarState({ defaultAction: "comment" });
+        window.__REACT_GRAB__?.setToolbarState({ defaultAction: "custom-default" });
       });
 
       await reactGrab.clickToolbarCollapse();
@@ -91,7 +116,9 @@ test.describe("Toolbar Menu", () => {
             persisted: persistedState?.defaultAction,
           };
         });
-      await expect.poll(defaultActions).toEqual({ api: "comment", persisted: "comment" });
+      await expect
+        .poll(defaultActions)
+        .toEqual({ api: "custom-default", persisted: "custom-default" });
     });
 
     test("normalizes the removed Style action persisted as the default", async ({ reactGrab }) => {
@@ -121,6 +148,21 @@ test.describe("Toolbar Menu", () => {
         apiDefaultAction: "copy",
         persistedDefaultAction: "copy",
       });
+    });
+
+    test("Enter chooses a plugin default in the open menu", async ({ reactGrab, page }) => {
+      await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+      await reactGrab.rightClickToolbarToggle();
+      const pluginOption = page.locator(
+        '[data-react-grab-toolbar-menu] [data-react-grab-menu-item="custom-default"]',
+      );
+      await pluginOption.focus();
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(() => page.evaluate(() => window.__REACT_GRAB__?.getToolbarState()?.defaultAction))
+        .toBe("custom-default");
+      await expect(page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
     });
 
     test("preserves a custom default until its plugin registers", async ({ reactGrab }) => {
