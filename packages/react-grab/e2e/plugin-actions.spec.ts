@@ -135,6 +135,40 @@ test.describe("Plugin actions", () => {
     );
     expect(actionCalled).toBe(false);
   });
+  test("a disabled shortcut leaves the comment box and clipboard unchanged", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate(() => {
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "disabled-prompt-shortcut",
+        actions: [
+          {
+            id: "disabled-prompt-shortcut",
+            label: "Disabled prompt shortcut",
+            shortcut: "K",
+            shortcutModifier: false,
+            enabled: () => false,
+            onAction: () => {
+              window.__disabledShortcutCalled = true;
+            },
+          },
+        ],
+      });
+      return navigator.clipboard.writeText("baseline");
+    });
+    await reactGrab.enterPromptMode("li:first-child");
+    await page.evaluate(() => {
+      if (document.activeElement?.shadowRoot?.activeElement instanceof HTMLElement) {
+        document.activeElement.shadowRoot.activeElement.blur();
+      }
+    });
+    await page.keyboard.press("k");
+    expect(await reactGrab.isPromptModeActive()).toBe(true);
+    expect(await reactGrab.getClipboardContent()).toBe("baseline");
+    expect(await page.evaluate(() => window.__disabledShortcutCalled ?? false)).toBe(false);
+  });
+
   test("action enabled function should receive context", async ({ reactGrab }) => {
     await reactGrab.page.evaluate(() => {
       const api = window.__REACT_GRAB__;

@@ -422,6 +422,29 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.up("Shift");
   });
 
+  test("the image-only pill lets body presses through but keeps Dismiss clickable", async ({
+    reactGrab,
+    page,
+  }) => {
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
+    await expect(completion).toContainText("Image copied");
+    const label = page.locator("[data-react-grab-label-instance]");
+    await expect(label).toHaveCSS("pointer-events", "none");
+    const dismiss = completion.getByRole("button", { name: "Dismiss", exact: true });
+    await expect(dismiss).toHaveCSS("pointer-events", "auto");
+    await dismiss.click();
+    await expect(completion).toHaveCount(0);
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect(completion).toContainText("Image copied");
+    const bodyCenter = await getCenter(page, `${COMPLETION_SELECTOR} > div > span`);
+    await page.mouse.move(bodyCenter.x, bodyCenter.y);
+    await page.mouse.down();
+    await expect(completion).toHaveCount(0);
+    await page.mouse.up();
+  });
+
   test("the Image copied pill stays until dismissed and has no camera button", async ({
     reactGrab,
     page,

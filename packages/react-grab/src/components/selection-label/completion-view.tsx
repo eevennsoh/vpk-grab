@@ -38,7 +38,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
       aria-label={local.label}
       class={cn(
         buttonVariants({ variant: "ghost" }),
-        "group size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
+        "group pointer-events-auto size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
       )}
       // The on: prefix attaches a native event listener (rather than using
       // SolidJS delegation) so stopImmediatePropagation can beat both

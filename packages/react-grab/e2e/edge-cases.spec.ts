@@ -251,8 +251,8 @@ test.describe("Edge Cases", () => {
     });
   });
 
-  test.describe("Context Menu Edge Cases", () => {
-    test("should handle context menu on removed element", async ({ reactGrab }) => {
+  test.describe("Unbound right-click edge cases", () => {
+    test("should handle a right-click followed by element removal", async ({ reactGrab }) => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("[data-testid='dynamic-element-3']");
 

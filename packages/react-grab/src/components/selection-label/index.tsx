@@ -86,11 +86,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
     if (props.discardPrompt) return true;
     if (
       isCompletedStatus() &&
-      (props.onDismiss ||
-        props.onDismissPill ||
-        props.onCopyScreenshot ||
-        props.onSubmitPrompt ||
-        props.thumbnailUrl)
+      (props.onDismiss || props.onCopyScreenshot || props.onSubmitPrompt)
     ) {
       return true;
     }

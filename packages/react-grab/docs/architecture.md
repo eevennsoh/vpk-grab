@@ -11,9 +11,9 @@ This document covers how react-grab's internals work. It's intended to aid in un
 - **Keep orchestration in one place, factor out utilities**
   The [core/index.tsx](../src/core/index.tsx) file is large on purpose. SolidJS components are setup functions that run once (not render functions that re-execute on every update), so `init()` is effectively a single procedural function that wires up the store, plugin registry, event listeners, effects, and renderer. The reactive graph handles all subsequent updates from there. Smaller concerns like element detection, animation freezing, clipboard writing, and bounds calculation are factored out into focused utility files under `utils/`, but the orchestration logic stays together in one place so you can follow the full activation-to-copy flow without jumping between files.
 - **Implement all user-facing actions as plugins**
-  Every user-facing action - copy, comment, and open in editor - is implemented as a plugin that registers context-menu entries and hooks. The core doesn't hardcode any clipboard behavior. When the user triggers a copy, the content passes through a pipeline of plugin transforms (`onBeforeCopy`, `transformSnippet`, `transformCopyContent`) before it reaches the clipboard. This means external consumers can modify or replace any step of the copy process without forking the library.
+  Every user-facing action - copy, comment, and open in editor - is implemented as a plugin that registers actions and hooks. Actions are available through keyboard shortcuts and the toolbar action menu, not an element context menu. The core doesn't hardcode any clipboard behavior. When the user triggers a copy, the content passes through a pipeline of plugin transforms (`onBeforeCopy`, `transformSnippet`, `transformCopyContent`) before it reaches the clipboard. This means external consumers can modify or replace any step of the copy process without forking the library.
 - **Lazy-load the rendering layer separately from the interaction logic**
-  The SolidJS UI components (canvas overlay, toolbar, selection labels, context menus) are loaded via a dynamic `import()` so that the interaction-detection logic in `core/index.tsx` can initialize immediately without waiting for the heavier rendering code to parse and execute. If the dynamic import fails for any reason, react-grab logs the error but continues to function without the visual overlay.
+  The SolidJS UI components (canvas overlay, toolbar, selection labels, toolbar menus) render in a shadow root, isolated from the host application's styles.
 
 ## Overview
 
@@ -195,7 +195,7 @@ If the dev server request fails - for example, because the app uses a framework 
 
 The plugin system is implemented in [core/plugin-registry.ts](../src/core/plugin-registry.ts). Each plugin is an object with a `name`, optional static properties (`theme`, `actions`, `hooks`, `options`), and an optional `setup` function that receives the `ReactGrabAPI` and the registry's hook dispatchers and returns a `PluginConfig`.
 
-When a plugin is registered, its static properties are merged with any values returned by `setup()`. Theme values are deep-merged (so a plugin can override just the hue without replacing the entire theme object). Options are shallow-merged. Context-menu actions are concatenated. If a plugin with the same name was already registered, the old one is unregistered first (its `cleanup` function is called if present).
+When a plugin is registered, its static properties are merged with any values returned by `setup()`. Theme values are deep-merged (so a plugin can override just the hue without replacing the entire theme object). Options are shallow-merged. Actions are concatenated. If a plugin with the same name was already registered, the old one is unregistered first (its `cleanup` function is called if present).
 
 After every registration or unregistration, `recomputeStore` iterates over all plugins in insertion order and rebuilds the merged theme, options, and action list from scratch. This is stored in a SolidJS reactive store, so the UI automatically updates when a plugin is added or removed.
 
@@ -213,6 +213,6 @@ The registry provides several ways to call hooks, each suited to a different use
 
 The three built-in plugins are registered during `init()` through the same `register()` path that external plugins use, so there is nothing architecturally special about them:
 
-- **copy** registers the default "Copy" context-menu action that copies a single-line `[<tag …> in Component (at path:line) …]` reference per selected element, including up to `DEFAULT_MAX_CONTEXT_LINES` (3) budgeted frames from the component stack (raise via the `maxContextLines` option; see "Context line budget" below).
+- **copy** registers the default "Copy" action that copies a single-line `[<tag …> in Component (at path:line) …]` reference per selected element, including up to `DEFAULT_MAX_CONTEXT_LINES` (3) budgeted frames from the component stack (raise via the `maxContextLines` option; see "Context line budget" below).
 - **comment** registers the "Comment" action that enters prompt mode.
 - **open** registers the "Open in editor" action that calls `openFile` with the resolved source location, running the URL through the `transformOpenFileUrl` hook pipeline first.

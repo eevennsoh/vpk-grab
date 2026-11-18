@@ -27,7 +27,7 @@ export const PromptTextarea: Component<PromptTextareaProps> = (props) => {
       }}
       data-react-grab-ignore-events
       data-react-grab-input
-      aria-label="Add context for selected element"
+      aria-label="Optional context"
       aria-keyshortcuts="Enter Escape"
       class={cn(
         "text-[var(--rg-text-primary)] text-[13px] leading-4 font-medium bg-transparent border-none resize-none p-0 m-0 wrap-break-word overflow-y-auto",

@@ -155,8 +155,8 @@ Drag:
 Copy / multi-select:
 `copy-then-deactivate-stress` · `copy-multi-element-batch`
 
-Keyboard / menu:
-`keyboard-rapid-arrows` · `context-menu-open-close-cycle` · `context-menu-arrow-navigation`
+Keyboard:
+`keyboard-rapid-arrows`
 
 Other:
 `prompt-mode-typing` · `toolbar-drag-to-edges` · `toolbar-collapse-expand-cycle` · `dom-rerender-during-selection` · `scroll-during-selection` · `viewport-resize-during-selection`

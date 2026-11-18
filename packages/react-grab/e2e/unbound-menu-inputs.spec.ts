@@ -1,10 +1,54 @@
 import { test, expect } from "./fixtures.js";
+import { KEYBOARD_ACTIVATION_SETTLE_DELAY_MS, NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
 
 const TARGET_SELECTOR = "[data-testid='todo-list'] li:first-child span";
 const MENU_SELECTOR = "[data-react-grab-context-menu]";
 const PEN_SELECTOR = '[data-react-grab-toolbar-action="annotate-pen"]';
 
 test.describe("Unbound menu inputs", () => {
+  for (const releasesPointer of [false, true]) {
+    test(`Ctrl+click contextmenu cancels the press (release: ${releasesPointer})`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await reactGrab.activate();
+      await reactGrab.hoverUntilSelected(TARGET_SELECTOR);
+      await page.evaluate(() => navigator.clipboard.writeText("baseline"));
+      await page.mouse.down();
+      expect((await reactGrab.getState()).isDragging).toBe(true);
+      await page.locator(TARGET_SELECTOR).dispatchEvent("contextmenu", {
+        button: 0,
+        ctrlKey: true,
+      });
+      if (releasesPointer) await page.mouse.up();
+      expect((await reactGrab.getState()).isDragging).toBe(false);
+      expect(await reactGrab.getClipboardContent()).toBe("baseline");
+      await expect(page.locator("[data-react-grab-label-instance]")).toHaveCount(0);
+      if (!releasesPointer) await page.mouse.up();
+    });
+  }
+
+  for (const waitsForActivation of [false, true]) {
+    test(`right-click ends a hold session without keyup (activated: ${waitsForActivation})`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await page.evaluate((activationKey) => {
+        window.__REACT_GRAB__?.setOptions({ activationKey, activationMode: "hold" });
+      }, NON_NATIVE_ACTIVATION_KEY);
+      await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+      if (waitsForActivation) {
+        await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
+      }
+      await page.locator(TARGET_SELECTOR).click({ button: "right", force: true });
+      await page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
+      expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+      expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
+      expect((await reactGrab.getState()).isDragging).toBe(false);
+    });
+  }
+
   for (const frozenSelection of [false, true]) {
     test(`right-click leaves selection and clipboard alone (frozen: ${frozenSelection})`, async ({
       reactGrab,

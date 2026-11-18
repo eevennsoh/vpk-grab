@@ -191,6 +191,7 @@ import { findShortcutAction } from "../utils/action-shortcuts.js";
 import { createKeyboardSelectionController } from "./keyboard-selection.js";
 import { executeContextMenuAction } from "../utils/execute-context-menu-action.js";
 import { executeActionOrCopy } from "../utils/execute-action-or-copy.js";
+import { resolveActionEnabled } from "../utils/resolve-action-enabled.js";
 import { notifyToolbarStateChangeSubscribers } from "../utils/notify-toolbar-state-change-subscribers.js";
 import { forwardSameOriginFrameEvents } from "../utils/forward-same-origin-frame-events.js";
 import { isHtmlElement } from "../utils/is-html-element.js";
@@ -2037,10 +2038,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       setPendingToolbarActionId(null);
     };
 
-    const setPendingToolbarSelection = (actionId: string) => {
-      setPendingToolbarActionId(actionId);
-    };
-
     const runActionForCurrentSelection = (actionId: string): boolean => {
       const element = store.frozenElement || targetElement();
       if (!element) return false;
@@ -2049,10 +2046,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const action = pluginRegistry.store.actions.find(
         (registeredAction) => registeredAction.id === actionId,
       );
+      const context = buildImmediateActionContext(element, position);
+      if (action && !resolveActionEnabled(action, context)) return false;
       actions.clearInputText();
       actions.exitPromptMode();
       clearPendingToolbarSelection();
-      const context = buildImmediateActionContext(element, position);
       executeActionOrCopy(action, context);
       return true;
     };
@@ -2073,14 +2071,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
           actions.setPendingCommentMode(false);
-          setPendingToolbarSelection(actionId);
+          setPendingToolbarActionId(actionId);
           return;
         }
         deactivateRenderer();
         return;
       }
       if (!isEnabled()) return;
-      setPendingToolbarSelection(actionId);
+      setPendingToolbarActionId(actionId);
       toggleActivate();
     };
 
@@ -3710,11 +3708,23 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "contextmenu",
       ignoreRealInput((event: MouseEvent) => {
+        if (isHoldingKeys()) {
+          clearHoldTimer();
+          actions.releaseHold();
+          resetCopyConfirmation();
+          return;
+        }
         if (!isRendererActive() || isCopying() || isPromptMode()) return;
-        const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
         if (isAnnotating()) {
+          const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
           if (!isFromOverlay) event.preventDefault();
           return;
+        }
+        cancelActiveDrag();
+        if (!store.wasActivatedByToggle) {
+          clearHoldTimer();
+          resetCopyConfirmation();
+          deactivateRenderer();
         }
       }),
       { capture: true },
@@ -4604,7 +4614,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const handleSetDefaultAction = (actionId: string) => {
       updateToolbarState({ defaultAction: normalizeToolbarDefaultActionId(actionId) });
-      if (isPendingToolbarSelection()) setPendingToolbarSelection(actionId);
+      if (isPendingToolbarSelection()) setPendingToolbarActionId(actionId);
     };
 
     const getLabelCaptureRect = (instance: SelectionLabelInstance) => {

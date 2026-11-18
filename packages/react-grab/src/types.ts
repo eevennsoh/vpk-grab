@@ -169,6 +169,7 @@ export interface ActionContext {
   enterPromptMode?: () => void;
   hooks: ActionContextHooks;
   performWithFeedback: (action: () => Promise<boolean>) => Promise<void>;
+  /** @deprecated No longer does anything; the element context menu has been removed. */
   hideContextMenu: () => void;
   cleanup: () => void;
 }
@@ -250,6 +251,7 @@ export interface PluginHooks {
     variant: ElementLabelVariant,
     context: ElementLabelContext,
   ) => void | Promise<void>;
+  /** @deprecated No longer does anything; the element context menu has been removed. */
   onContextMenu?: (element: Element, position: Position) => void | Promise<void>;
   onOpenFile?: (filePath: string, lineNumber?: number) => boolean | void;
   transformHtmlContent?: (html: string, elements: Element[]) => string | Promise<string>;
@@ -482,7 +484,6 @@ export interface ReactGrabRendererProps {
   isFrozen?: boolean;
   inputValue?: string;
   isPromptMode?: boolean;
-  onShowContextMenuInstance?: (instanceId: string) => void;
   onCopyScreenshotInstance?: (instanceId: string) => void;
   onSubmitPromptInstance?: (instanceId: string, prompt: string) => void;
   shouldFocusInstancePrompt?: boolean;
@@ -506,15 +507,6 @@ export interface ReactGrabRendererProps {
   onSubscribeToToolbarStateChanges?: (callback: (state: ToolbarState) => void) => () => void;
   onToolbarSelectHoverChange?: (isHovered: boolean) => void;
   onToolbarRef?: (element: HTMLDivElement) => void;
-  contextMenuPosition?: Position | null;
-  contextMenuBounds?: OverlayBounds | null;
-  contextMenuTagName?: string;
-  contextMenuComponentName?: string;
-  contextMenuHasFilePath?: boolean;
-  actions?: ContextMenuAction[];
-  actionContext?: ActionContext;
-  onContextMenuDismiss?: () => void;
-  onContextMenuHide?: () => void;
   toolbarMenuPosition?: DropdownAnchor | null;
   toolbarMenuActions?: ContextMenuAction[];
   defaultActionId?: string;
@@ -624,7 +616,6 @@ export interface CompletionViewProps {
   onDismiss?: () => void;
   onDismissPill?: (event: MouseEvent) => void;
   onFadingChange?: (isFading: boolean) => void;
-  onShowContextMenu?: () => void;
   onCopyScreenshot?: () => void;
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
@@ -673,7 +664,6 @@ export interface SelectionLabelProps {
   error?: string;
   onAcknowledgeError?: () => void;
   onRetry?: () => void;
-  onShowContextMenu?: () => void;
   onCopyScreenshot?: () => void;
   onHoverChange?: (isHovered: boolean) => void;
   hideArrow?: boolean;
