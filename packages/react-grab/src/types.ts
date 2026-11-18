@@ -726,7 +726,7 @@ export interface AnnotationStroke {
 export interface AnnotationColorOption {
   label: string;
   value: string;
-  usesThemeBorder?: boolean;
+  hasInnerRing?: boolean;
 }
 
 export interface AnnotationText extends Position {

@@ -398,10 +398,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     isActive
       ? "text-[var(--rg-accent)]"
       : "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)]";
-  const getColorSwatchShadowClass = (isSelected: boolean) =>
+  const getColorSwatchShadowClass = (isSelected: boolean, hasInnerRing = false) =>
     isSelected
-      ? "[box-shadow:inset_0_0_0_1px_var(--rg-swatch-border),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
-      : "[box-shadow:inset_0_0_0_1px_var(--rg-swatch-border)]";
+      ? hasInnerRing
+        ? "[box-shadow:inset_0_0_0_1px_var(--rg-border-button),0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
+        : "[box-shadow:0_0_0_1.5px_var(--rg-panel-bg),0_0_0_2.5px_var(--rg-text-primary)]"
+      : hasInnerRing
+        ? "[box-shadow:inset_0_0_0_1px_var(--rg-border-button)]"
+        : "";
 
   const handleToggleCollapse = drag.createDragAwareHandler(() => {
     if (isCollapsed()) {
@@ -1074,13 +1078,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                           <span
                             class={cn(
                               "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
-                              getColorSwatchShadowClass(isSelected()),
+                              getColorSwatchShadowClass(isSelected(), colorOption.hasInnerRing),
                             )}
                             style={{
                               "background-color": colorOption.value,
-                              "--rg-swatch-border": colorOption.usesThemeBorder
-                                ? "var(--rg-border-button)"
-                                : "var(--rg-swatch-color-border)",
                             }}
                           />
                         </span>

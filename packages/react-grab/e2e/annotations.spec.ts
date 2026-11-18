@@ -1191,7 +1191,7 @@ test.describe("Rectangle and drawing shortcuts", () => {
     }
   });
 
-  test("rainbow swatches have an inner ring in both themes", async ({
+  test("only Black swatches have an inner ring while selection rings and dot sizes stay consistent in both themes", async ({
     reactGrab,
     page,
   }, testInfo) => {
@@ -1208,19 +1208,28 @@ test.describe("Rectangle and drawing shortcuts", () => {
       await reactGrab
         .getOverlayHost()
         .evaluate((host, theme) => host.setAttribute("data-rg-theme", theme), theme);
-      for (const color of ["red", "orange", "yellow", "green", "black"]) {
-        const dot = toolbarAction(page, `annotation-color-${color}`).locator("span.rounded-full");
-        await expect(dot).toHaveCSS("box-shadow", /inset/);
-        const expectedBorder =
-          color === "black"
-            ? theme === "dark"
-              ? "rgba(255, 255, 255, 0.2)"
-              : "rgba(0, 0, 0, 0.15)"
-            : "rgba(0, 0, 0, 0.2)";
-        await expect(dot).toHaveCSS(
-          "box-shadow",
-          new RegExp(expectedBorder.replace(/[().]/g, "\\$&")),
-        );
+      const expectedBorder = theme === "dark" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.15)";
+      const expectedSelectionRing =
+        theme === "dark"
+          ? "rgb(22, 22, 22) 0px 0px 0px 1.5px, rgb(255, 255, 255) 0px 0px 0px 2.5px"
+          : "rgb(255, 255, 255) 0px 0px 0px 1.5px, rgb(23, 23, 23) 0px 0px 0px 2.5px";
+      for (const selectedColor of ["red", "orange", "yellow", "green", "black"]) {
+        const selectedSwatch = toolbarAction(page, `annotation-color-${selectedColor}`);
+        await selectedSwatch.click();
+        await expect(selectedSwatch).toHaveAttribute("aria-pressed", "true");
+        for (const color of ["red", "orange", "yellow", "green", "black"]) {
+          const dot = toolbarAction(page, `annotation-color-${color}`).locator("span.rounded-full");
+          const expectedShadow =
+            [
+              color === "black" ? `${expectedBorder} 0px 0px 0px 1px inset` : "",
+              color === selectedColor ? expectedSelectionRing : "",
+            ]
+              .filter(Boolean)
+              .join(", ") || "none";
+          await expect(dot).toHaveCSS("box-shadow", expectedShadow);
+          await expect(dot).toHaveCSS("width", "10px");
+          await expect(dot).toHaveCSS("height", "10px");
+        }
       }
       await page
         .locator(TOOLBAR_SELECTOR)
