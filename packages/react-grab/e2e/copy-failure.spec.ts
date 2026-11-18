@@ -78,7 +78,7 @@ const forceCopyResult = (
   }, shouldSucceed);
 
 test.describe("Copy failure feedback", () => {
-  test("a failed context-menu copy in a hold session leaves no arrow-key selection for the next click", async ({
+  test("a failed click copy in a hold session leaves no arrow-key selection for the next click", async ({
     reactGrab,
   }) => {
     const { page } = reactGrab;
@@ -93,12 +93,8 @@ test.describe("Copy failure feedback", () => {
     await reactGrab.clickElement("li:first-child span");
     await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
     await reactGrab.pressArrowUp();
-    await clickErrorButton(reactGrab, "data-react-grab-more-options");
-    await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-    await page.keyboard.up("F8");
-
     await forceCopyResult(reactGrab, false);
-    await reactGrab.clickContextMenuItem("Copy");
+    await reactGrab.clickElement("li:first-child");
     await readErrorView(reactGrab);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
 
@@ -118,6 +114,9 @@ test.describe("Copy failure feedback", () => {
     await reactGrab.clickElement("li");
 
     const snapshot = await readErrorView(reactGrab);
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     expect(snapshot?.role).toBe("alert");
     expect(snapshot?.text).toContain("Failed to copy");
     expect(snapshot?.hasRetry).toBe(true);

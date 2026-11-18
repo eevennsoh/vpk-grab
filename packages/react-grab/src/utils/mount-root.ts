@@ -20,6 +20,11 @@ const attachHostToBody = (host: HTMLElement): void => {
       candidate.remove();
     }
   }
+  if (document.body.lastElementChild === host) return;
+  if (host.parentNode === document.body && typeof document.body.moveBefore === "function") {
+    document.body.moveBefore(host, null);
+    return;
+  }
   // Re-appending moves the host, which drops focus from any overlay input.
   const focusedOverlayElement = host.shadowRoot?.activeElement;
   document.body.appendChild(host);

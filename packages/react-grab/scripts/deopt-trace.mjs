@@ -418,7 +418,7 @@ const runScenarios = async (page) => {
 
 // Mirrors the surfaces the e2e suite hits: real Playwright mouse/keyboard input
 // against the full app (not the perf grid) so we trace deopts in code paths the
-// synthetic per-cell loops above never touch (context menu, keyboard nav, copy
+// synthetic per-cell loops above never touch (browser menu gestures, keyboard nav, copy
 // flow, modals, drag through real listeners, etc.).
 const runFullAppScenarios = async (page) => {
   log("navigating to full e2e-app-vite");
@@ -461,24 +461,19 @@ const runFullAppScenarios = async (page) => {
   }
   await deactivate();
 
-  log("scenario(full): context menu open/navigate/close (40 cycles)");
+  log("scenario(full): unbound right-click gestures (40 cycles)");
   await activate();
-  const contextMenuTargets = [
+  const rightClickTargets = [
     "[data-testid='todo-list'] li:nth-child(2)",
     "[data-testid='nested-card']",
     "[data-testid='span-element']",
     "[data-testid='td-1-2']",
   ];
   for (let cycleIndex = 0; cycleIndex < 40; cycleIndex++) {
-    const selector = contextMenuTargets[cycleIndex % contextMenuTargets.length];
+    const selector = rightClickTargets[cycleIndex % rightClickTargets.length];
     const locator = page.locator(selector).first();
     if ((await locator.count()) === 0) continue;
     await locator.click({ button: "right", force: true });
-    await page.waitForTimeout(40);
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowUp");
-    await page.keyboard.press("Escape");
     await page.waitForTimeout(40);
   }
   await deactivate();

@@ -9,6 +9,7 @@ import { IS_DEMO } from "./runtime-mode.js";
 const DEFAULT_INSPECT_SETTINGS: InspectSettings = {
   isSpecsEnabled: false,
   isRedlinesEnabled: false,
+  isAutoScreenshotEnabled: false,
   annotationColor: ANNOTATION_RED_COLOR,
 };
 
@@ -26,6 +27,7 @@ export const loadInspectSettings = (): InspectSettings => {
     return {
       isSpecsEnabled: record.isSpecsEnabled === true,
       isRedlinesEnabled: record.isRedlinesEnabled === true,
+      isAutoScreenshotEnabled: record.isAutoScreenshotEnabled === true,
       annotationColor: isAnnotationColor(record.annotationColor)
         ? record.annotationColor
         : DEFAULT_INSPECT_SETTINGS.annotationColor,

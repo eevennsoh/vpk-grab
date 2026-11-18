@@ -272,21 +272,11 @@ test.describe("Freeze Animations", () => {
   test.describe("Toolbar Hover Freeze", () => {
     test("should clean up freeze styles after toolbar hover cycle", async ({ reactGrab }) => {
       await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 2000 }).toBe(true);
-
-      const toolbarInfo = await reactGrab.getToolbarInfo();
-
-      if (toolbarInfo.position) {
-        await reactGrab.page.mouse.move(toolbarInfo.position.x + 10, toolbarInfo.position.y + 10);
-        await reactGrab.page.waitForTimeout(200);
-      }
-
+      const freezeStyle = reactGrab.page.locator("[data-react-grab-global-freeze]");
+      await reactGrab.page.locator("[data-react-grab-toolbar]").hover();
+      await expect(freezeStyle).toHaveCount(1);
       await reactGrab.page.mouse.move(0, 0);
-      await reactGrab.page.waitForTimeout(200);
-
-      const hasFreezeStyle = await reactGrab.page.evaluate(() => {
-        return document.querySelector("[data-react-grab-global-freeze]") !== null;
-      });
-      expect(hasFreezeStyle).toBe(false);
+      await expect(freezeStyle).toHaveCount(0);
     });
   });
 

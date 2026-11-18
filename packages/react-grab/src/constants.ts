@@ -257,8 +257,10 @@ export const TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS = 140;
 export const TOOLBAR_DEFAULT_WIDTH_PX = 38;
 export const TOOLBAR_DEFAULT_HEIGHT_PX = 28;
 export const TOOLBAR_DEFAULT_POSITION_RATIO = 0.5;
+export const TOOLBAR_MENU_MIN_ACTION_COUNT = 2;
 export const DEFAULT_ACTION_ID = "copy";
 export const COMMENT_ACTION_ID = "comment";
+export const OPEN_ACTION_ID = "open";
 export const LEGACY_STYLE_ACTION_ID = "edit";
 
 export const TOOLTIP_DELAY_MS = 400;
@@ -506,6 +508,7 @@ export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefi
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
+export const AUTO_SCREENSHOT_TOOL_KEY = "4";
 export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 // A press of the platform modifier on its own counts as a cycle only if let go
 // this soon: held any longer it is the start of a chord (Cmd+C, Cmd+Z) that
@@ -551,8 +554,11 @@ export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
 export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
 export const SCREENSHOT_SELECTION_PADDING_PX = 8;
+export const PROMPT_COPIED_STATUS_TEXT = "Copied with prompt";
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
+export const COMPLETION_MAX_WIDTH_PX = 280;
+export const COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
 export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
 export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
@@ -593,3 +599,11 @@ export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
     { property: "border-bottom-left-radius", label: "Bottom left" },
   ],
 };
+
+export const COMPLETION_DISMISS_ICON_SIZE_PX = 14;
+export const TOOLBAR_ACTION_ICON_SIZE_PX = 14;
+
+export const CLIPBOARD_WRITE_PERMISSION_NAME = "clipboard-write" as PermissionName;
+export const WEB_CUSTOM_FORMAT_SIZE_LIMIT_BYTES = 1024 ** 3;
+export const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
+export const WEB_REACT_GRAB_MIME_TYPE = `web ${REACT_GRAB_MIME_TYPE}`;

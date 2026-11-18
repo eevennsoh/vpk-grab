@@ -99,11 +99,43 @@ example, in `<head>` before the app's own scripts, on development pages only.
 
 ## What the user can do with it
 
-- **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc leaves.
+- **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
+  context or dismisses the pill before leaving.
+- The **Copied** pill’s **Optional context** field adds a follow-up: type, then
+  press Enter to copy the same elements with that context. Its camera adds an
+  image. Its Dismiss close button or Esc dismisses the pill while leaving
+  Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
+  menu takes Esc first; otherwise text in Optional context is cleared before
+  another Esc dismisses the pill. With Grab off and Optional context focused,
+  Esc clears text first, then dismisses the empty pill and returns focus to the
+  page; neither press reaches the page. Elsewhere with Grab off, Esc dismisses
+  the pill without consuming the page's Escape or moving focus.
+  Enter copies the hovered or keyboard-selected elements first, then focuses
+  Optional context, including while the hold shortcut's modifiers are down.
+  Releasing the shortcut switches Grab off but preserves the field's focus only
+  if it still has focus: type and submit context without reactivating Grab.
+  Submitting with Grab off returns focus to the page. Explicitly switching Grab
+  off releases focus. With an empty field, arrow keys navigate while Grab is on.
+  Enter copies a different keyboard or frozen multi-selection even with the
+  pointer over the toolbar; a hovered-element copy requires the pointer not to
+  be over an interactive overlay. Page inputs keep their own
+  arrow keys and Enter. Use
+  ⌘O / Ctrl+O or the hover label’s component name to open the source.
+  Right-click keeps the browser’s menu.
 - **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,
   with the design token under each value that came from one.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
+- **Screenshot** (toolbar toggle, key 4 with Grab in hand, off by default and
+  remembered): every grab copies its references at once, then the pill's camera
+  runs by itself so the clipboard ends with the references and a PNG. Chromium sites
+  with an existing unsanitized clipboard write grant also keep the metadata
+  with the PNG. The fork’s macOS and Linux watchers can then recognize a grab
+  first seen after the image arrives. With default permissions, or on Windows,
+  a poll that misses the initial text copy can miss a repeated grab. A copy
+  with several pills takes one image, on the pill with Optional context, and
+  Optional context stays after the image; a prompt is copied with a fresh
+  image. Over plain HTTP each grab downloads its image instead.
 - **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
   property off and on, pick another token or keyword, or type a value.
 - **Changes** (toolbar, once something is edited): every style change on the

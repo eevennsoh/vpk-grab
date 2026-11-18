@@ -11,7 +11,6 @@ import { FrozenGlow } from "./frozen-glow.js";
 import { ScreenshotMarquee } from "./screenshot-marquee.js";
 import { SelectionLabel } from "./selection-label/index.js";
 import { Toolbar } from "./toolbar/index.js";
-import { ContextMenu } from "./context-menu.js";
 import { ToolbarMenu } from "./toolbar/toolbar-menu.js";
 import { HierarchyMenu } from "./toolbar/hierarchy-menu.js";
 import { AnnotationLayer } from "./inspect/annotation-layer.js";
@@ -108,11 +107,6 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 thumbnailUrl={instance().thumbnailUrl}
                 isCapturingScreenshot={instance().isCapturingScreenshot}
                 screenshotError={instance().screenshotErrorMessage}
-                onShowContextMenu={(() => {
-                  const currentInstance = instance();
-                  if (!hasLabelCompletionActions(currentInstance)) return undefined;
-                  return () => props.onShowContextMenuInstance?.(currentInstance.id);
-                })()}
                 onCopyScreenshot={(() => {
                   const currentInstance = instance();
                   if (
@@ -137,7 +131,9 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                     props.onSubmitPromptInstance?.(currentInstance.id, prompt);
                 })()}
                 shouldFocusPrompt={props.shouldFocusInstancePrompt}
+                isGrabActive={props.isActive}
                 onPromptFocusRelease={props.onInstancePromptFocusRelease}
+                onDismissPill={props.onDismissPill}
                 onRetry={() => props.onRetryInstance?.(instance().id)}
                 onAcknowledgeError={() => props.onAcknowledgeErrorInstance?.(instance().id)}
               />
@@ -220,7 +216,6 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
       <Show when={props.toolbarVisible !== false}>
         <Toolbar
           isActive={props.isActive}
-          isContextMenuOpen={props.contextMenuPosition !== null}
           onToggle={props.onToggleActive}
           activeActionId={props.activeActionId}
           defaultActionId={props.defaultActionId}
@@ -235,12 +230,14 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           onToggleToolbarMenu={props.onToggleToolbarMenu}
           isSpecsEnabled={props.inspect?.isSpecsEnabled()}
           isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
+          isAutoScreenshotEnabled={props.inspect?.isAutoScreenshotEnabled()}
           annotationTool={props.inspect?.annotationTool()}
           annotationColor={props.inspect?.annotationColor()}
           hasAnnotations={props.inspect?.hasAnnotations()}
           hasSelectedAnnotation={(props.inspect?.selectedAnnotationIds().length ?? 0) > 0}
           onToggleSpecs={props.inspect?.onToggleSpecs}
           onToggleRedlines={props.inspect?.onToggleRedlines}
+          onToggleAutoScreenshot={props.inspect?.onToggleAutoScreenshot}
           onSelectAnnotationTool={props.inspect?.onSelectAnnotationTool}
           onSelectAnnotationColor={props.inspect?.onSelectAnnotationColor}
           onClearAnnotations={props.inspect?.onClearAnnotations}
@@ -248,17 +245,6 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           onToggleChangesMenu={props.inspect?.onToggleChangesMenu}
         />
       </Show>
-      <ContextMenu
-        position={props.contextMenuPosition ?? null}
-        selectionBounds={props.contextMenuBounds ?? null}
-        tagName={props.contextMenuTagName}
-        componentName={props.contextMenuComponentName}
-        hasFilePath={props.contextMenuHasFilePath ?? false}
-        actions={props.actions}
-        actionContext={props.actionContext}
-        onDismiss={props.onContextMenuDismiss ?? (() => {})}
-        onHide={props.onContextMenuHide ?? (() => {})}
-      />
       <ToolbarMenu
         position={props.toolbarMenuPosition ?? null}
         actions={props.toolbarMenuActions ?? []}

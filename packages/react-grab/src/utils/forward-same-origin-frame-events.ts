@@ -9,7 +9,7 @@ interface FrameEventForwardingOptions {
   shouldForwardKeyboardEvent: (event: KeyboardEvent) => boolean;
   shouldForwardViewportEvent: (frameDocument: Document) => boolean;
   onFramePointerDown: (event: PointerEvent) => void;
-  onFrameKeyDown: (event: KeyboardEvent) => void;
+  onFrameKeyDown: (event: KeyboardEvent) => boolean;
 }
 
 const dispatchForwardedEvent = (sourceEvent: Event, forwardedEvent: Event): void => {
@@ -106,6 +106,10 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
         forwardKeyboardEvent(event);
       }
     };
+    const handleFrameKeyDown = (event: KeyboardEvent): void => {
+      if (options.onFrameKeyDown(event)) return;
+      forwardKeyboardEventWhenActive(event);
+    };
     const forwardViewportEventWhenActive = (event: Event): void => {
       if (options.shouldForwardInteraction() && options.shouldForwardViewportEvent(frameDocument)) {
         window.dispatchEvent(new Event(event.type));
@@ -113,14 +117,13 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
     };
 
     frameWindow.addEventListener("pointerdown", options.onFramePointerDown, eventOptions);
-    frameWindow.addEventListener("keydown", options.onFrameKeyDown, eventOptions);
     frameWindow.addEventListener("pointermove", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointerdown", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointerup", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointercancel", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("contextmenu", forwardMouseEventWhenActive, eventOptions);
     frameWindow.addEventListener("click", forwardMouseEventWhenActive, eventOptions);
-    frameWindow.addEventListener("keydown", forwardKeyboardEventWhenActive, eventOptions);
+    frameWindow.addEventListener("keydown", handleFrameKeyDown, eventOptions);
     frameWindow.addEventListener("keyup", forwardKeyboardEventWhenActive, eventOptions);
     frameWindow.addEventListener("keypress", forwardKeyboardEventWhenActive, eventOptions);
     frameWindow.addEventListener("scroll", forwardViewportEventWhenActive, eventOptions);

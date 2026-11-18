@@ -378,11 +378,15 @@ test.describe("API Methods", () => {
         const api = (window as LifecycleWindow).__REACT_GRAB__;
         if (!api) throw new Error("React Grab API unavailable");
 
-        api.setToolbarState({ defaultAction: "comment" });
+        api.registerPlugin({
+          name: "state-action",
+          actions: [{ id: "state-action", label: "State action", onAction: () => {} }],
+        });
+        api.setToolbarState({ defaultAction: "state-action" });
         return api.getToolbarState()?.defaultAction;
       });
 
-      expect(defaultAction).toBe("comment");
+      expect(defaultAction).toBe("state-action");
     });
 
     test("isolates throwing state subscribers", async ({ reactGrab }) => {

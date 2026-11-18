@@ -1,6 +1,9 @@
 import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } from "solid-js";
 import type { CompletionViewProps, PillPromptProps } from "../../types.js";
 import {
+  COMPLETION_DISMISS_ICON_SIZE_PX,
+  COMPLETION_MAX_WIDTH_PX,
+  COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX,
   FEEDBACK_DURATION_MS,
   FADE_DURATION_MS,
   SCREENSHOT_THUMBNAIL_SIZE_PX,
@@ -12,19 +15,18 @@ import { isEnterCode } from "../../utils/is-enter-code.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
 import { isKeyboardEventComposing } from "../../utils/is-keyboard-event-composing.js";
 import { IconReturn } from "../icons/icon-return.jsx";
-import { IconEllipsis } from "../icons/icon-ellipsis.jsx";
 import { cn } from "../../utils/cn.js";
 import { Button, buttonVariants } from "../ui/button.js";
 import { Surface } from "../ui/surface.js";
 import { IconCheck } from "../icons/icon-check.jsx";
 import { IconLoader } from "../icons/icon-loader.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
-import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { CLOSE_SMALL_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { PromptTextarea } from "./prompt-textarea.js";
 
 interface CompletionActionButtonProps {
   label: string;
-  onClick: () => void;
+  onClick: (event: MouseEvent) => void;
   children: JSX.Element;
 }
 
@@ -38,7 +40,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
       aria-label={local.label}
       class={cn(
         buttonVariants({ variant: "ghost" }),
-        "group size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
+        "group pointer-events-auto size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
       )}
       // The on: prefix attaches a native event listener (rather than using
       // SolidJS delegation) so stopImmediatePropagation can beat both
@@ -48,7 +50,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
       }}
       on:click={(event) => {
         event.stopImmediatePropagation();
-        local.onClick();
+        local.onClick(event);
       }}
       {...attributes}
     >
@@ -59,18 +61,6 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
 
 const ACTION_ICON_CLASS = "opacity-50 group-hover:opacity-100 transition-opacity";
 
-interface MoreOptionsButtonProps {
-  onClick: () => void;
-}
-
-const MoreOptionsButton: Component<MoreOptionsButtonProps> = (props) => (
-  <CompletionActionButton data-react-grab-more-options label="More options" onClick={props.onClick}>
-    <IconEllipsis size={14} aria-hidden="true" class={ACTION_ICON_CLASS} />
-  </CompletionActionButton>
-);
-
-// An empty prompt leaves every key but text to the page (the overlay's keydown
-// handler sees to that), so Escape only has work here once there is text.
 const PillPrompt: Component<PillPromptProps> = (props) => {
   let textareaRef: HTMLTextAreaElement | undefined;
   let hasFocus = false;
@@ -98,7 +88,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
       event.preventDefault();
       setPromptText("");
       if (textareaRef) autoResizeTextarea(textareaRef, TEXTAREA_MAX_HEIGHT_PX);
-      releaseFocus();
+      if (props.isGrabActive) releaseFocus();
     }
   };
 
@@ -106,6 +96,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
     <div data-react-grab-pill-prompt class="flex items-center min-w-0 ml-1.5">
       <PromptTextarea
         ref={(element) => (textareaRef = element)}
+        placeholder="Optional context"
         class="min-w-0"
         value={promptText()}
         shouldFocusOnMount={props.shouldFocus}
@@ -124,13 +115,12 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
   const [didCopy, setDidCopy] = createSignal(false);
   const [isFading, setIsFading] = createSignal(false);
   const displayStatusText = () => (didCopy() ? "Copied" : props.statusText);
-
-  const handleShowContextMenu = () => {
-    if (fadeTimeoutId !== undefined) window.clearTimeout(fadeTimeoutId);
-    if (dismissTimeoutId !== undefined) window.clearTimeout(dismissTimeoutId);
-    setIsFading(true);
-    props.onFadingChange?.(true);
-    props.onShowContextMenu?.();
+  const maxWidth = () => {
+    if (!props.onSubmitPrompt) return COMPLETION_MAX_WIDTH_PX;
+    return Math.min(
+      props.availableWidth,
+      props.thumbnailUrl ? COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX : COMPLETION_MAX_WIDTH_PX,
+    );
   };
 
   const handleAccept = () => {
@@ -153,7 +143,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
     onEnter: (event) => {
       if (isEventFromOverlay(event, "data-react-grab-completion-action")) return;
       if (!props.onDismiss) return;
-      if (isEventFromOverlay(event, "data-react-grab-context-menu")) return;
       event.preventDefault();
       event.stopPropagation();
       handleAccept();
@@ -178,8 +167,13 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      class="shrink-0 flex flex-col justify-center items-end w-fit h-fit max-w-[280px] transition-opacity duration-100 ease-out"
-      style={{ opacity: isFading() ? 0 : 1 }}
+      class="shrink-0 flex flex-col justify-center items-end w-fit h-fit max-w-(--completion-max-width) has-placeholder-shown:max-w-(--available-width) transition-opacity duration-100 ease-out"
+      style={{
+        opacity: isFading() ? 0 : 1,
+        "--completion-max-width": `${maxWidth()}px`,
+        "--available-width": `${props.availableWidth}px`,
+        width: props.onSubmitPrompt ? "max-content" : undefined,
+      }}
       onPointerDown={claimFocus}
       onClick={claimFocus}
     >
@@ -190,9 +184,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             textContent={displayStatusText()}
           />
           <div class="contain-layout shrink-0 flex items-center gap-2 h-fit">
-            <Show when={props.onShowContextMenu}>
-              <MoreOptionsButton onClick={handleShowContextMenu} />
-            </Show>
             <Show when={props.onDismiss}>
               <Button
                 data-react-grab-dismiss
@@ -247,6 +238,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             {(onSubmitPrompt) => (
               <PillPrompt
                 shouldFocus={props.shouldFocusPrompt}
+                isGrabActive={props.isGrabActive}
                 onSubmit={onSubmitPrompt()}
                 onFocusRelease={props.onPromptFocusRelease}
               />
@@ -287,8 +279,16 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
               </>
             )}
           </Show>
-          <Show when={props.onShowContextMenu}>
-            <MoreOptionsButton onClick={handleShowContextMenu} />
+          <Show when={props.onDismissPill}>
+            {(onDismissPill) => (
+              <CompletionActionButton label="Dismiss" onClick={onDismissPill()}>
+                <MaterialIcon
+                  paths={CLOSE_SMALL_ICON_PATHS}
+                  size={COMPLETION_DISMISS_ICON_SIZE_PX}
+                  class={ACTION_ICON_CLASS}
+                />
+              </CompletionActionButton>
+            )}
           </Show>
         </div>
         <Show when={props.screenshotError}>

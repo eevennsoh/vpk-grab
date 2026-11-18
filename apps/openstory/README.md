@@ -33,7 +33,8 @@ apps/openstory/
 ├── preview.tsx                 global parameters, decorators, CSS import
 ├── vite.config.ts              openstory + vite-plugin-solid config
 └── stories/
-    ├── fixtures.ts             preset comment items and menu actions
+    ├── demo-bounds.ts          shared selection geometry
+    ├── target-box.tsx          selection target preview
     ├── noop.ts                 no-op callback for handlers
     ├── *.stories.tsx           component stories with mocked renderer states
     └── playground/             scenarios with real init() running
@@ -44,7 +45,7 @@ apps/openstory/
 
 ## Two kinds of stories
 
-**Component stories** render toolbar, selection label, context menu, comments dropdown, and renderer states with mocked props. Use these to inspect specific UI states such as idle, context menu, comment input, and pending dismiss.
+**Component stories** render toolbar, selection label, hierarchy menu, and renderer states with mocked props. Use these to inspect specific UI states such as idle, comment input, and pending dismiss.
 
 **Playground stories** import `react-grab` for its side effect, so `init()` runs against the story DOM. Use these for ad-hoc hover and grab testing against realistic fixtures:
 

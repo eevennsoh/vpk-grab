@@ -3,12 +3,17 @@
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject, type ReactGrabState } from "./fixtures.js";
 import {
+  GRAB_CLIPBOARD_TYPE,
+  IMAGE_AND_GRAB_TYPES,
+  IMAGE_AND_TEXT_TYPES,
+  WEB_GRAB_CLIPBOARD_TYPE,
   SCREENSHOT_RECTANGLE_HEIGHT_PX,
   SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX,
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
   MARQUEE_SCREENSHOT_MOVE_PX,
   MARQUEE_OUTSET_SIDE_COUNT,
   NON_NATIVE_ACTIVATION_KEY,
+  MOTIONLESS_SPECS_VIEWPORT_PX,
   PILL_PAGE_BUTTON_POSITION_PX,
   SCREENSHOT_SELECTION_PADDING_PX,
   PILL_PERSISTENCE_CHECK_MS,
@@ -69,6 +74,9 @@ const CAPTURING_SELECTOR = "[data-react-grab-screenshot-capturing]";
 const SCREENSHOT_ERROR_SELECTOR = "[data-react-grab-screenshot-error]";
 const FIRST_TODO_SELECTOR = "[data-testid='todo-list'] li:first-child span";
 const MAIN_TITLE_SELECTOR = "[data-testid='main-title']";
+const TEST_INPUT_SELECTOR = "[data-testid='test-input']";
+const CUT_FIELD_TEXT = "Text cut from a page field";
+const HOST_COPY_TEXT = "Text a host copied while the image rendered";
 const PAGE_BUTTON_ID = "persistent-pill-page-button";
 const SPECS_PIN_SELECTOR = "[data-react-grab-specs-pin]";
 const PEN_TOOL_SELECTOR = '[data-react-grab-toolbar-action="annotate-pen"]';
@@ -78,6 +86,9 @@ const DETACHING_ANCHOR_ID = "persistent-pill-detaching-anchor";
 const SAME_ORIGIN_IFRAME_SELECTOR = "[data-testid='same-origin-iframe']";
 const IFRAME_TARGET_SELECTOR = "[data-testid='iframe-target']";
 const CAMERA_CURSOR_HOTSPOT = "3 6, crosshair";
+const AUTO_SCREENSHOT_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="auto-screenshot"]';
+const PILL_PROMPT_SELECTOR = "[data-react-grab-pill-prompt] textarea";
+const PROMPT_TEXT = "make this blue";
 const HELD_ACTIVATION_KEY = "F8";
 const CAPTURE_START = { x: 250, y: 280 };
 const CAPTURE_END = { x: 610, y: 380 };
@@ -348,6 +359,9 @@ test.describe("Screenshot capture", () => {
 
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
     await expect(completion).toContainText("Image copied");
+    await expect(completion.getByRole("button", { name: "More options", exact: true })).toHaveCount(
+      0,
+    );
     await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     expect(await getCopyEventCount(page)).toBe(0);
   });
@@ -419,6 +433,29 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.up("Shift");
   });
 
+  test("the image-only pill lets body presses through but keeps Dismiss clickable", async ({
+    reactGrab,
+    page,
+  }) => {
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
+    await expect(completion).toContainText("Image copied");
+    const label = page.locator("[data-react-grab-label-instance]");
+    await expect(label).toHaveCSS("pointer-events", "none");
+    const dismiss = completion.getByRole("button", { name: "Dismiss", exact: true });
+    await expect(dismiss).toHaveCSS("pointer-events", "auto");
+    await dismiss.click();
+    await expect(completion).toHaveCount(0);
+
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect(completion).toContainText("Image copied");
+    const bodyCenter = await getCenter(page, `${COMPLETION_SELECTOR} > div > span`);
+    await page.mouse.move(bodyCenter.x, bodyCenter.y);
+    await page.mouse.down();
+    await expect(completion).toHaveCount(0);
+    await page.mouse.up();
+  });
+
   test("the Image copied pill stays until dismissed and has no camera button", async ({
     reactGrab,
     page,
@@ -426,9 +463,15 @@ test.describe("Screenshot capture", () => {
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
     await expect(completion).toContainText("Image copied");
+    await expect(completion.getByRole("button", { name: "More options", exact: true })).toHaveCount(
+      0,
+    );
 
     await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toContainText("Image copied");
+    await expect(completion.getByRole("button", { name: "More options", exact: true })).toHaveCount(
+      0,
+    );
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
 
     await page.keyboard.press("Escape");
@@ -556,6 +599,138 @@ test.describe("Screenshot capture", () => {
     await page.keyboard.down("Shift");
     await expect.poll(() => readPageCursor(page)).toContain("4 20, crosshair");
     await page.keyboard.up("Shift");
+  });
+
+  test("Shift suspends the camera over Specs and its value menu, then rearms on the page", async ({
+    page,
+  }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    const pageCenter = await getCenter(page, "[data-testid='specs-token-button']");
+    const grabCursor = await readPageCursor(page);
+
+    await page.keyboard.down("Shift");
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    const rowCenter = await getCenter(page, '[data-react-grab-spec-row="background-color"]');
+    await page.mouse.move(rowCenter.x, rowCenter.y, { steps: DRAG_STEPS });
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+
+    await page.mouse.move(pageCenter.x, pageCenter.y, { steps: DRAG_STEPS });
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    await page.keyboard.up("Shift");
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+
+    await page.keyboard.down("Shift");
+    await page.mouse.move(rowCenter.x, rowCenter.y, { steps: DRAG_STEPS });
+    const valueMenuTrigger = page.getByRole("button", {
+      name: "Choose a background-color token or value",
+      exact: true,
+    });
+    await expect(valueMenuTrigger).toHaveCSS("cursor", "pointer");
+    await valueMenuTrigger.click();
+    const menuOption = page.locator('[data-react-grab-spec-option="--ds-background-brand-bold"]');
+    await menuOption.hover();
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+    await expect(page.getByRole("textbox", { name: "Filter tokens and values" })).toHaveCSS(
+      "cursor",
+      "text",
+    );
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.up("Shift");
+    await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+  });
+
+  for (const isAlreadyPinned of [false, true]) {
+    test(`Shift over motionless Specs suspends the camera when ${isAlreadyPinned ? "already pinned" : "Shift pins it"}`, async ({
+      page,
+    }) => {
+      await installSpecsFixture(page);
+      await switchOnSpecs(page);
+      await inspect(page, "specs-token-button");
+      if (!isAlreadyPinned) await page.setViewportSize(MOTIONLESS_SPECS_VIEWPORT_PX);
+      if (isAlreadyPinned) {
+        await pinAndReach(page, "padding");
+        await page.locator(SPECS_PIN_SELECTOR).click();
+      }
+      const panelCenter = isAlreadyPinned
+        ? await getCenter(page, "[data-react-grab-specs-panel]")
+        : {
+            x: MOTIONLESS_SPECS_VIEWPORT_PX.width / 2,
+            y: MOTIONLESS_SPECS_VIEWPORT_PX.height / 2,
+          };
+      await page.mouse.move(panelCenter.x, panelCenter.y);
+      await expect(page.locator("[data-react-grab-specs-panel]")).toBeVisible();
+      const panelBounds = await page.locator("[data-react-grab-specs-panel]").boundingBox();
+      if (!panelBounds) throw new Error("Specs panel has no bounds");
+      expect(panelCenter.x).toBeGreaterThan(panelBounds.x);
+      expect(panelCenter.x).toBeLessThan(panelBounds.x + panelBounds.width);
+      expect(panelCenter.y).toBeGreaterThan(panelBounds.y);
+      expect(panelCenter.y).toBeLessThan(panelBounds.y + panelBounds.height);
+      const grabCursor = await readPageCursor(page);
+      await page.evaluate(() => {
+        window.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.code !== "ShiftLeft") return;
+            document.documentElement.dataset.specsShiftCursor =
+              document.querySelector("[data-react-grab-cursor]")?.textContent ?? "";
+          },
+          { capture: true },
+        );
+      });
+      await page.keyboard.down("Shift");
+      try {
+        await expect(page.locator(PINNED_PANEL_SELECTOR)).toBeVisible();
+        await expect(page.locator("html")).toHaveAttribute("data-specs-shift-cursor", grabCursor);
+        await expect.poll(() => readPageCursor(page)).toBe(grabCursor);
+      } finally {
+        await page.keyboard.up("Shift");
+      }
+      if (!isAlreadyPinned) {
+        await page.mouse.move(0, 0);
+        await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(0);
+      }
+    });
+  }
+
+  test("a Shift+drag starting on Specs never starts a screenshot", async ({ reactGrab, page }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    await page.keyboard.down("Shift");
+    const panelCenter = await getCenter(page, "[data-react-grab-specs-header]");
+    await page.mouse.move(panelCenter.x, panelCenter.y);
+    await page.mouse.down();
+    await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y, { steps: DRAG_STEPS });
+    expect((await reactGrab.getState()).isDragging).toBe(false);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getImageWrites(page)).toHaveLength(0);
+  });
+
+  test("a screenshot started on the page continues over Specs and captures on release", async ({
+    reactGrab,
+    page,
+  }) => {
+    await installSpecsFixture(page);
+    await switchOnSpecs(page);
+    await inspect(page, "specs-token-button");
+    await page.keyboard.down("Shift");
+    const panelCenter = await getCenter(page, "[data-react-grab-specs-header]");
+    await page.mouse.down();
+    await page.mouse.move(panelCenter.x, panelCenter.y);
+    await expect.poll(() => readPageCursor(page)).toContain(CAMERA_CURSOR_HOTSPOT);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(1);
+    expect((await reactGrab.getState()).isDragging).toBe(true);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    expect((await reactGrab.getState()).isDragging).toBe(false);
+    await expect(page.locator(MARQUEE_SELECTOR)).toHaveCount(0);
   });
 
   test("a Shift+drag under the minimum size acts as a Shift+click", async ({ reactGrab, page }) => {
@@ -752,6 +927,9 @@ test.describe("Screenshot capture", () => {
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
     const overlayHost = reactGrab.getOverlayHost();
     await expect(overlayHost.locator(ERROR_SELECTOR)).toContainText("Couldn't copy image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
 
     await installClipboardRecorder(page, { isGated: true });
     await overlayHost.locator(RETRY_SELECTOR).click();
@@ -797,6 +975,9 @@ test.describe("Screenshot capture", () => {
   }) => {
     const pageErrors = trackPageErrors(page);
     await startGatedScreenshot(page);
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "Dismiss", exact: true }),
+    ).toHaveCount(0);
 
     await page.keyboard.press("Escape");
     await expect.poll(() => isReactGrabActive(page)).toBe(false);
@@ -834,6 +1015,9 @@ test.describe("Screenshot capture", () => {
     const completion = getCompletion(reactGrab);
     await expect(completion).toHaveCount(1);
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("a second Shift+drag while the first image renders delivers only the second", async ({
@@ -947,23 +1131,26 @@ test.describe("Screenshot capture after a real activation", () => {
       expect(await getImageWrites(page)).toHaveLength(1);
     });
 
-    test("a pending Comment action does not run for a Shift+drag", async ({ reactGrab, page }) => {
+    test("a removed Comment default falls back to Copy for a Shift+drag", async ({
+      reactGrab,
+      page,
+    }) => {
       await page.evaluate(() => {
         window.__REACT_GRAB__?.setToolbarState({ defaultAction: "comment" });
       });
       await clickToolbarButton(page);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
 
       await shiftDrag(page, CAPTURE_START, CAPTURE_END);
 
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       await expect.poll(() => isReactGrabActive(page)).toBe(true);
       expect(await reactGrab.isPromptModeActive()).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
       expect(await getCopyEventCount(page)).toBe(0);
     });
 
-    test("a capture that keeps Grab on leaves the Comment action pending", async ({
+    test("a capture with a removed Comment default leaves Copy pending", async ({
       reactGrab,
       page,
     }) => {
@@ -982,11 +1169,12 @@ test.describe("Screenshot capture after a real activation", () => {
       );
       expect(await isReactGrabActive(page)).toBe(true);
       expect(await reactGrab.isPromptModeActive()).toBe(false);
-      expect(await reactGrab.getToolbarActionPressed("comment")).toBe(true);
+      expect(await reactGrab.getToolbarActionPressed("copy")).toBe(true);
 
       const firstCenter = await getTodoItemCenter(page, 0);
       await page.mouse.click(firstCenter.x, firstCenter.y);
-      await expect.poll(() => reactGrab.isPromptModeActive()).toBe(true);
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+      expect(await reactGrab.isPromptModeActive()).toBe(false);
     });
 
     test("releasing Shift mid-drag runs the pending action on the elements", async ({
@@ -1043,6 +1231,7 @@ interface CopiedPillGrab {
   captureRect: ClientBox;
   copiedText: string;
   copiedHtml: string;
+  copiedMetadata: string;
 }
 
 const waitForGrabbedBoxes = async (
@@ -1242,6 +1431,7 @@ const grabFirstTodo = async (
     captureRect: padBox(getGrabbedBoxesUnion(grabbedBoxes)),
     copiedText: copyPayload["text/plain"],
     copiedHtml: copyPayload["text/html"],
+    copiedMetadata: copyPayload[GRAB_CLIPBOARD_TYPE],
   };
 };
 
@@ -1285,7 +1475,7 @@ const expectCameraCaptureCompleted = async (
   await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
   const imageWrites = await getImageWrites(page);
   expect(imageWrites).toHaveLength(1);
-  expect([...imageWrites[0].types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+  expect([...imageWrites[0].types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
   expect(await getUnhandledRejections(page)).toEqual([]);
   expect(pageErrors).toEqual([]);
 };
@@ -1328,21 +1518,27 @@ test.describe("Copied pill", () => {
     await reactGrab.activate();
   });
 
-  test("a grab shows the camera and more-options buttons on a pill that stays", async ({
+  test("a grab shows the camera without more-options on a pill that stays", async ({
     reactGrab,
     page,
   }) => {
     await grabFirstTodo(reactGrab, page);
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     const cameraButton = completion.locator(CAMERA_BUTTON_SELECTOR);
     await expect(cameraButton).toHaveAttribute("aria-label", "Copy with screenshot");
     await expect(cameraButton).toHaveAttribute("type", "button");
-    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(0);
 
     await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toHaveCount(1);
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
   });
 
@@ -1410,40 +1606,6 @@ test.describe("Copied pill", () => {
 
     await expect(getCompletion(reactGrab)).toHaveCount(0);
     await expect.poll(() => getLabelInstanceCount(reactGrab)).toBe(0);
-  });
-
-  test("the more-options button removes the pill while Grab stays active", async ({
-    reactGrab,
-    page,
-  }) => {
-    await grabKeepingGrabActive(reactGrab, page, FIRST_TODO_SELECTOR);
-
-    await getCompletion(reactGrab).locator(MORE_OPTIONS_SELECTOR).click();
-
-    await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-    await expect(getCompletion(reactGrab)).toHaveCount(0);
-    await expect.poll(() => getLabelInstanceCount(reactGrab)).toBe(0);
-    await installClipboardRecorder(page);
-    await reactGrab.clickContextMenuItem("Copy");
-    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
-  });
-
-  test("the more-options button removes the pill when Grab was off", async ({
-    reactGrab,
-    page,
-  }) => {
-    await grabFirstTodo(reactGrab, page);
-    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
-    await expect.poll(() => isReactGrabActive(page)).toBe(false);
-
-    await getCompletion(reactGrab).locator(MORE_OPTIONS_SELECTOR).click();
-
-    await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-    await expect(getCompletion(reactGrab)).toHaveCount(0);
-    await expect.poll(() => getLabelInstanceCount(reactGrab)).toBe(0);
-    await installClipboardRecorder(page);
-    await reactGrab.clickContextMenuItem("Copy");
-    await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
   });
 
   test("removing an anchor inside a shadow root dismisses its pill", async ({
@@ -1524,28 +1686,36 @@ test.describe("Copied pill", () => {
     await expect(frameTarget).toHaveAttribute("data-press-received", "true");
   });
 
-  test("Escape inside a same-origin frame dismisses the pill", async ({ reactGrab, page }) => {
-    await grabFirstTodo(reactGrab, page);
-    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
-    await expect.poll(() => isReactGrabActive(page)).toBe(false);
-    const frameTarget = page
-      .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
-      .locator(IFRAME_TARGET_SELECTOR);
-    await frameTarget.evaluate((target) => {
-      target.addEventListener("keydown", (event) => {
-        if (event instanceof KeyboardEvent && event.key === "Escape") {
-          target.setAttribute("data-escape-received", "true");
-        }
+  for (const isGrabActive of [false, true]) {
+    test(`Escape inside a same-origin frame dismisses the pill while Grab is ${isGrabActive ? "on" : "off"}`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await grabFirstTodo(reactGrab, page);
+      if (!isGrabActive) {
+        await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+        await expect.poll(() => isReactGrabActive(page)).toBe(false);
+      }
+      const frameTarget = page
+        .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
+        .locator(IFRAME_TARGET_SELECTOR);
+      await frameTarget.evaluate((target) => {
+        target.addEventListener("keydown", (event) => {
+          if (event instanceof KeyboardEvent && event.key === "Escape") {
+            target.setAttribute("data-escape-received", "true");
+          }
+        });
       });
+      await frameTarget.focus();
+      await expect(getCompletion(reactGrab)).toHaveCount(1);
+
+      await page.keyboard.press("Escape");
+
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
+      await expect(frameTarget).toHaveAttribute("data-escape-received", "true");
+      expect(await isReactGrabActive(page)).toBe(isGrabActive);
     });
-    await frameTarget.focus();
-    await expect(getCompletion(reactGrab)).toHaveCount(1);
-
-    await page.keyboard.press("Escape");
-
-    await expect(getCompletion(reactGrab)).toHaveCount(0);
-    await expect(frameTarget).toHaveAttribute("data-escape-received", "true");
-  });
+  }
 
   test("Escape dismisses the pill", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
@@ -1587,7 +1757,7 @@ test.describe("Copied pill", () => {
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     expect(await getClipboardWriteCallCount(page)).toBe(1);
     const [imageWrite] = await getImageWrites(page);
-    expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+    expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
     expect(copiedText).toContain("TodoItem");
     expect(imageWrite.plainText).toBe(copiedText);
     expect(imageWrite.html).toBe(copiedHtml);
@@ -1595,13 +1765,19 @@ test.describe("Copied pill", () => {
     expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
 
     await expect(completion).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
-    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(0);
     expect((await reactGrab.getState()).isActive).toBe(true);
 
     await page.waitForTimeout(PILL_PERSISTENCE_CHECK_MS);
     await expect(completion).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("while the camera's image is copied the pill shows a spinner and still reads Copied", async ({
@@ -1616,13 +1792,19 @@ test.describe("Copied pill", () => {
 
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
-    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(0);
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect(completion).not.toContainText("Copied with image");
     expect((await reactGrab.getState()).isActive).toBe(true);
 
     await openClipboardGate(page);
     await expect(completion).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
   });
 
@@ -1663,6 +1845,9 @@ test.describe("Copied pill", () => {
     expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
     expect(imageWrite.plainText).toContain("TodoItem");
     await expect(completion).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("a pen stroke over the element is drawn into the camera's image", async ({
@@ -1770,6 +1955,9 @@ test.describe("Copied pill", () => {
 
     await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expect(completion).not.toContainText("Copied with image");
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
@@ -1780,17 +1968,52 @@ test.describe("Copied pill", () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test("with the screenshot toggle off a click copy writes no image", async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect(page.locator(AUTO_SCREENSHOT_TOGGLE_SELECTOR)).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await grabFirstTodo(reactGrab, page);
+
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(0);
+    expect(await getImageWrites(page)).toHaveLength(0);
+    const completion = getCompletion(reactGrab);
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(0);
+  });
+
+  test("with the screenshot toggle off the camera's image takes the prompt away", async ({
+    reactGrab,
+    page,
+  }) => {
+    await grabFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion.locator(PILL_PROMPT_SELECTOR)).toHaveCount(1);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+
+    await expect(completion).toContainText("Copied with image");
+    await expect(completion.locator(PILL_PROMPT_SELECTOR)).toHaveCount(0);
+  });
+
   test("the camera button works from the keyboard", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);
     const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
-    await completion.locator(MORE_OPTIONS_SELECTOR).focus();
-    await page.keyboard.press("Shift+Tab");
+    await completion.locator(CAMERA_BUTTON_SELECTOR).focus();
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toBeFocused();
 
     await page.keyboard.press("Enter");
 
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     await expect(completion).toContainText("Copied with image");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     expect(await getClipboardWriteCallCount(page)).toBe(1);
   });
 });
@@ -1834,6 +2057,9 @@ test.describe("Copied pill visibility changes", () => {
       const completion = getCompletion(reactGrab);
       await completion.locator(CAMERA_BUTTON_SELECTOR).click();
       await expect(completion).toContainText("Copied with image");
+      await expect(
+        reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+      ).toHaveCount(0);
       const thumbnailUrl = await completion.locator(THUMBNAIL_SELECTOR).getAttribute("src");
       expect(thumbnailUrl).toMatch(/^blob:/);
 
@@ -1908,29 +2134,19 @@ test.describe("Copied pill camera after a real activation", () => {
       await page.keyboard.press("Enter");
 
       await expect(completion).toContainText("Copied with image");
+      await expect(
+        reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+      ).toHaveCount(0);
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       const [imageWrite] = await getImageWrites(page);
-      expect([...imageWrite.types].sort()).toEqual(["image/png", "text/html", "text/plain"]);
+      expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
       expect(imageWrite.plainText).toContain("TodoItem");
       expect(await getClipboardWriteCallCount(page)).toBe(1);
       expect(await isReactGrabActive(page)).toBe(true);
     });
 
-    test("Enter on more-options while Grab stays active from the keyboard opens the menu", async ({
+    test("Enter copies without leaking page keys while the activation shortcut is held", async ({
       reactGrab,
-      page,
-    }) => {
-      await getCompletion(reactGrab).locator(MORE_OPTIONS_SELECTOR).focus();
-
-      await page.keyboard.press("Enter");
-
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-      await expect(getCompletion(reactGrab)).toHaveCount(0);
-      expect(await getClipboardWriteCallCount(page)).toBe(0);
-      expect(await isReactGrabActive(page)).toBe(true);
-    });
-
-    test("Enter away from pill buttons stays blocked while Grab is active from the keyboard", async ({
       page,
     }) => {
       await injectPageButton(page);
@@ -1943,6 +2159,8 @@ test.describe("Copied pill camera after a real activation", () => {
       await expect(pageButton).toHaveAttribute("data-enter-event-count", "0");
       expect(await getPageButtonClickCount(page)).toBe(0);
       expect(await getClipboardWriteCallCount(page)).toBe(0);
+      await expect.poll(() => getCopyEventCount(page)).toBe(2);
+      await expect(getCompletion(reactGrab).locator("textarea")).toBeFocused();
 
       await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
       await page.keyboard.up(HELD_ACTIVATION_KEY);
@@ -1975,6 +2193,77 @@ test.describe("Copied pill camera after a real activation", () => {
     await expectCameraCaptureCompleted(reactGrab, page, pageErrors);
   });
 });
+
+const switchOnScreenshotToggle = async (page: Page) => {
+  const toggle = page.locator(AUTO_SCREENSHOT_TOGGLE_SELECTOR);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+};
+
+const clickCopyFirstTodo = async (
+  reactGrab: ReactGrabPageObject,
+  page: Page,
+): Promise<CopiedPillGrab> => {
+  await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+  const waitForCopyPayload = await reactGrab.captureNextClipboardWrites();
+  await page.mouse.down();
+  await page.mouse.up();
+  const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
+  const copyPayload = await waitForCopyPayload();
+  return {
+    captureRect: padBox(getGrabbedBoxesUnion(grabbedBoxes)),
+    copiedText: copyPayload["text/plain"],
+    copiedHtml: copyPayload["text/html"],
+    copiedMetadata: copyPayload[GRAB_CLIPBOARD_TYPE],
+  };
+};
+
+const readSystemClipboardText = (page: Page) => page.evaluate(() => navigator.clipboard.readText());
+
+// With Grab off, the platform's copy shortcut is the page's own copy of the
+// selected text; the activation key is moved off Ctrl/Cmd+C so the press is
+// nothing else.
+const copyPageTextNatively = async (page: Page, selector: string) => {
+  const pageText = await page.evaluate((textSelector) => {
+    const element = document.querySelector(textSelector);
+    if (!element) throw new Error(`Missing ${textSelector}`);
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    return window.getSelection()?.toString() ?? "";
+  }, selector);
+  expect(pageText.trim()).not.toBe("");
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect.poll(() => readSystemClipboardText(page)).toBe(pageText);
+  return pageText;
+};
+
+const cutFieldTextNatively = async (page: Page) => {
+  await page.evaluate(
+    ({ fieldSelector, fieldText }) => {
+      const field = document.querySelector<HTMLInputElement>(fieldSelector);
+      if (!field) throw new Error(`Missing ${fieldSelector}`);
+      field.value = fieldText;
+      field.focus();
+      field.select();
+    },
+    { fieldSelector: TEST_INPUT_SELECTOR, fieldText: CUT_FIELD_TEXT },
+  );
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect.poll(() => readSystemClipboardText(page)).toBe(CUT_FIELD_TEXT);
+};
+
+const submitPromptOnPill = async (reactGrab: ReactGrabPageObject, page: Page) => {
+  await getCompletion(reactGrab).locator(PILL_PROMPT_SELECTOR).click();
+  await page.keyboard.type(PROMPT_TEXT);
+  const waitForPromptCopy = await reactGrab.captureNextClipboardWrites();
+  await page.keyboard.press("Enter");
+  const promptCopy = await waitForPromptCopy();
+  expect(promptCopy["text/plain"].startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
+  return promptCopy;
+};
 
 test.describe("Copied pill camera cancellation", () => {
   test.beforeEach(async ({ reactGrab, page }) => {
@@ -2032,8 +2321,83 @@ test.describe("Copied pill camera cancellation", () => {
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
     await expect(completion).toContainText("Copied");
+    await expect(
+      reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
+    ).toHaveCount(0);
     await expectCameraCaptureCancelled(reactGrab, page, pageErrors, newerCopy["text/plain"]);
     await expect(completion).not.toContainText("Copied with image");
+  });
+
+  test("a native copy of page text after Grab switches off keeps that text and drops the image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await reactGrab.updateOptions({ activationKey: NON_NATIVE_ACTIVATION_KEY });
+    await grabFirstTodo(reactGrab, page);
+    const completion = await startGatedCameraCapture(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    const pageText = await copyPageTextNatively(page, MAIN_TITLE_SELECTOR);
+
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, pageText);
+  });
+
+  test("a native cut from a page field while the image renders keeps the cut text", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await reactGrab.updateOptions({ activationKey: NON_NATIVE_ACTIVATION_KEY });
+    await grabFirstTodo(reactGrab, page);
+    const completion = await startGatedCameraCapture(reactGrab, page);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    await cutFieldTextNatively(page);
+
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, CUT_FIELD_TEXT);
+  });
+
+  test("a copy made as the capture starts stops its render before encoding", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await grabFirstTodo(reactGrab, page);
+    await controlImageEncoding(page, { isGated: true });
+    const completion = getCompletion(reactGrab);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).evaluate((camera, hostCopyText) => {
+      camera.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+      const writeHostCopy = (event: ClipboardEvent) => {
+        event.preventDefault();
+        event.clipboardData?.setData("text/plain", hostCopyText);
+      };
+      document.addEventListener("copy", writeHostCopy, { once: true });
+      const field = document.createElement("textarea");
+      field.value = hostCopyText;
+      document.body.appendChild(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }, HOST_COPY_TEXT);
+    await expect.poll(() => readSystemClipboardText(page)).toBe(HOST_COPY_TEXT);
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(1);
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getPendingImageEncodingCount(page)).toBe(1);
+    await openImageEncodingGate(page);
+    await expect(completion).toContainText("Copied with image");
+    expect(await getImageWrites(page)).toHaveLength(1);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 
   test("an image that fails to render shows the capture error and offers the camera again", async ({
@@ -2085,6 +2449,480 @@ test.describe("Copied pill camera cancellation", () => {
       expect(await getClipboardWriteCallCount(page)).toBe(1);
     });
   }
+});
+
+test.describe("Screenshot with every grab", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+    await switchOnScreenshotToggle(page);
+  });
+
+  test("a click copies the references at once, then the same text with an image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    const { captureRect, copiedText, copiedHtml } = await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(1);
+    expect(await reactGrab.getClipboardContent()).toBe(copiedText);
+    expect(await getImageWrites(page)).toHaveLength(0);
+    expect(copiedText).toContain("TodoItem");
+
+    await openImageEncodingGate(page);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const [imageWrite] = await getImageWrites(page);
+    expect([...imageWrite.types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
+    expect(imageWrite.plainText).toBe(copiedText);
+    expect(imageWrite.html).toBe(copiedHtml);
+    const expectedSize = await getExpectedPixelSize(page, captureRect.width, captureRect.height);
+    expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
+    await expect(completion).toContainText("Copied with image");
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(PILL_PROMPT_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("a marquee copy writes one image of the selection", async ({ reactGrab, page }) => {
+    const firstBox = await getTodoItemBox(page, 0);
+    const thirdBox = await getTodoItemBox(page, 2);
+    const dragStart = { x: firstBox.x - DRAG_OUTSET_PX, y: firstBox.y - DRAG_OUTSET_PX };
+    const dragEnd = {
+      x: thirdBox.x + thirdBox.width + DRAG_OUTSET_PX,
+      y: thirdBox.y + thirdBox.height + DRAG_OUTSET_PX,
+    };
+    await page.mouse.move(dragStart.x, dragStart.y);
+    await page.mouse.down();
+    await page.mouse.move(dragEnd.x, dragEnd.y, { steps: DRAG_STEPS });
+    await page.mouse.up();
+    const grabbedBoxes = await waitForGrabbedBoxes(reactGrab);
+    expect(grabbedBoxes.length).toBeGreaterThan(1);
+    const captureRect = padBox(
+      unionBoxes(getGrabbedBoxesUnion(grabbedBoxes), {
+        x: dragStart.x,
+        y: dragStart.y,
+        width: dragEnd.x - dragStart.x,
+        height: dragEnd.y - dragStart.y,
+      }),
+    );
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const [imageWrite] = await getImageWrites(page);
+    const expectedSize = await getExpectedPixelSize(page, captureRect.width, captureRect.height);
+    expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
+    expect(imageWrite.plainText).toBe(await reactGrab.getClipboardContent());
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+  });
+
+  test("an Enter copy writes one image", async ({ reactGrab, page }) => {
+    await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+    await page.keyboard.press("Enter");
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const [imageWrite] = await getImageWrites(page);
+    expect(imageWrite.plainText).toContain("TodoItem");
+    expect(imageWrite.plainText).toBe(await reactGrab.getClipboardContent());
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toContainText("Copied with image");
+    await expect(completion.locator(PILL_PROMPT_SELECTOR)).toBeFocused();
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+  });
+
+  test("a copy with several pills writes one image, from the pill with the prompt", async ({
+    reactGrab,
+    page,
+  }) => {
+    const titleCenter = await getCenter(page, MAIN_TITLE_SELECTOR);
+    const todoCenter = await getTodoItemCenter(page, 0);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(titleCenter.x, titleCenter.y);
+    await page.waitForTimeout(SHIFT_LABEL_SETTLE_DELAY_MS);
+    await page.mouse.click(todoCenter.x, todoCenter.y);
+    await page.waitForTimeout(SHIFT_LABEL_SETTLE_DELAY_MS);
+    await page.keyboard.up("Shift");
+
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toHaveCount(SHIFT_LABEL_ANCHORED_COUNT);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const { grabbedBoxes } = await reactGrab.getState();
+    const [, todoBox] = grabbedBoxes
+      .map((grabbedBox) => grabbedBox.bounds)
+      .sort((firstBox, secondBox) => firstBox.y - secondBox.y);
+    const todoCaptureRect = padBox(todoBox);
+    const [imageWrite] = await getImageWrites(page);
+    const expectedSize = await getExpectedPixelSize(
+      page,
+      todoCaptureRect.width,
+      todoCaptureRect.height,
+    );
+    expect({ width: imageWrite.width, height: imageWrite.height }).toEqual(expectedSize);
+    expect(imageWrite.plainText).toContain("TodoItem");
+    expect(imageWrite.plainText).toContain("<header");
+    expect(imageWrite.plainText).toBe(await reactGrab.getClipboardContent());
+    const imagePill = completion.filter({ has: page.locator(THUMBNAIL_SELECTOR) });
+    await expect(imagePill).toHaveCount(1);
+    await expect(imagePill).toContainText("Copied with image");
+    await expect(imagePill.locator(PILL_PROMPT_SELECTOR)).toHaveCount(1);
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+  });
+
+  test("a prompt after the image copies again and takes a new image", async ({
+    reactGrab,
+    page,
+  }) => {
+    await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toContainText("Copied with image");
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(2);
+    const imageWrites = await getImageWrites(page);
+    expect(imageWrites[1].plainText).toBe(promptText);
+    expect([...imageWrites[1].types].sort()).toEqual(IMAGE_AND_GRAB_TYPES);
+    await expect(completion).toHaveText(/^Copied with prompt/);
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    expect(await reactGrab.getClipboardContent()).toBe(promptText);
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(2);
+  });
+
+  test("a prompt sent while the first image renders drops it for the one after the prompt", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(1);
+
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
+    await expect(completion.filter({ hasText: "Copied with prompt" })).toHaveCount(1);
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(2);
+    await openImageEncodingGate(page);
+
+    await expect.poll(() => getSettledClipboardWriteCount(page)).toBe(2);
+    const imageWrites = await getImageWrites(page);
+    expect(imageWrites).toHaveLength(1);
+    expect(imageWrites[0].plainText).toBe(promptText);
+    await expect(completion).toHaveText(/^Copied with prompt/);
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+    expect(await reactGrab.getClipboardContent()).toBe(promptText);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("Escape while the image renders drops it silently", async ({ reactGrab, page }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab).locator(CAPTURING_SELECTOR)).toHaveCount(1);
+
+    await page.keyboard.press("Escape");
+
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    expect(await isReactGrabActive(page)).toBe(true);
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, copiedText);
+  });
+
+  test("a new click while the image renders drops it for the new copy's image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    await clickCopyFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab).locator(CAPTURING_SELECTOR)).toHaveCount(1);
+
+    await reactGrab.hoverUntilSelected(MAIN_TITLE_SELECTOR);
+    const waitForNewerCopy = await reactGrab.captureNextClipboardWrites();
+    await page.mouse.down();
+    await page.mouse.up();
+    const newerCopy = await waitForNewerCopy();
+    expect(newerCopy["text/plain"]).toContain("React Grab");
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBe(2);
+    await openImageEncodingGate(page);
+
+    await expect.poll(() => getSettledClipboardWriteCount(page)).toBe(2);
+    const imageWrites = await getImageWrites(page);
+    expect(imageWrites).toHaveLength(1);
+    expect(imageWrites[0].plainText).toBe(newerCopy["text/plain"]);
+    await expect(getCompletion(reactGrab)).toHaveCount(1);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(reactGrab.getOverlayHost().locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("switching Grab off while the image renders still copies it, as the camera does", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab).locator(CAPTURING_SELECTOR)).toHaveCount(1);
+
+    await clickToolbarButton(page);
+    expect(await isReactGrabActive(page)).toBe(false);
+
+    await expectCameraCaptureCompleted(reactGrab, page, pageErrors);
+    const [imageWrite] = await getImageWrites(page);
+    expect(imageWrite.plainText).toBe(copiedText);
+  });
+
+  test("a native copy of page text after Grab switches off keeps that text and drops the image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await reactGrab.updateOptions({ activationKey: NON_NATIVE_ACTIVATION_KEY });
+    await controlImageEncoding(page, { isGated: true });
+    await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(1);
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await expect.poll(() => isReactGrabActive(page)).toBe(false);
+
+    const pageText = await copyPageTextNatively(page, MAIN_TITLE_SELECTOR);
+
+    await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, pageText);
+  });
+
+  test("a second image that cannot be copied drops the old thumbnail and offers the camera", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toContainText("Copied with image");
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
+    await installClipboardRecorder(page, { shouldReject: true });
+
+    const { "text/plain": promptText } = await submitPromptOnPill(reactGrab, page);
+
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(0);
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expect(completion).toHaveText(/^Copied with prompt/);
+    expect(await reactGrab.getClipboardContent()).toBe(promptText);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+    await expect.poll(() => getClipboardWriteCallCount(page)).toBe(2);
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("hiding labels while the image renders drops it silently", async ({ reactGrab, page }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { isGated: true });
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab).locator(CAPTURING_SELECTOR)).toHaveCount(1);
+
+    await reactGrab.updateOptions({ theme: { grabbedBoxes: { enabled: false } } });
+
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await expectCameraCaptureCancelled(reactGrab, page, pageErrors, copiedText);
+  });
+
+  test("an image that fails to render shows the capture error and keeps the text", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await controlImageEncoding(page, { shouldFail: true });
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText(
+      "Couldn't capture image",
+    );
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(PILL_PROMPT_SELECTOR)).toHaveCount(1);
+    expect(await getImageWrites(page)).toHaveLength(0);
+    expect(await reactGrab.getClipboardContent()).toBe(copiedText);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("a refused write shows the copy error, keeps the text and offers the camera again", async ({
+    reactGrab,
+    page,
+  }) => {
+    const pageErrors = trackPageErrors(page);
+    await installClipboardRecorder(page, { shouldReject: true });
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
+    await expect(completion).not.toContainText("Copied with image");
+    await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(0);
+    await expect(reactGrab.getOverlayHost().locator(ERROR_SELECTOR)).toHaveCount(0);
+    expect(await reactGrab.getClipboardContent()).toBe(copiedText);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+
+    await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+    await expect.poll(() => getClipboardWriteCallCount(page)).toBe(2);
+    await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText("Couldn't copy image");
+    expect(await reactGrab.getClipboardContent()).toBe(copiedText);
+    expect(await getUnhandledRejections(page)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("a Shift+drag screenshot stays image only", async ({ reactGrab, page }) => {
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const [imageWrite] = await getImageWrites(page);
+    expect(imageWrite.types).toEqual(["image/png"]);
+    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await page.waitForTimeout(NO_IMAGE_SETTLE_MS);
+    expect(await getClipboardWriteCallCount(page)).toBe(1);
+  });
+
+  test("a hold session gets the image too", async ({ reactGrab, page }) => {
+    await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    try {
+      await expect.poll(() => isReactGrabActive(page)).toBe(true);
+      await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect(getCompletion(reactGrab)).toContainText("Copied");
+    } finally {
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    }
+
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const [imageWrite] = await getImageWrites(page);
+    expect(imageWrite.plainText).toContain("TodoItem");
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+  });
+});
+
+const readImageClipboard = (page: Page) =>
+  page.evaluate(async (customType) => {
+    const items = await navigator.clipboard.read();
+    const [item] = items;
+    return {
+      itemCount: items.length,
+      types: [...item.types].sort(),
+      plainText: await (await item.getType("text/plain")).text(),
+      metadata: item.types.includes(customType)
+        ? await (await item.getType(customType)).text()
+        : null,
+    };
+  }, WEB_GRAB_CLIPBOARD_TYPE);
+
+test.describe("Screenshot on the browser clipboard", () => {
+  test.beforeEach(async ({ reactGrab }) => {
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
+    await reactGrab.activate();
+  });
+
+  for (const automatic of [true, false]) {
+    test(`the ${automatic ? "automatic screenshot" : "pill camera"} preserves the text copy's metadata`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const pageErrors = trackPageErrors(page);
+      if (automatic) await switchOnScreenshotToggle(page);
+      const { copiedText, copiedMetadata } = await clickCopyFirstTodo(reactGrab, page);
+      const completion = getCompletion(reactGrab);
+      if (!automatic) await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+      await expect(completion).toContainText("Copied with image");
+
+      expect(await readImageClipboard(page)).toEqual({
+        itemCount: 1,
+        types: IMAGE_AND_GRAB_TYPES,
+        plainText: copiedText,
+        metadata: copiedMetadata,
+      });
+      expect(JSON.parse(copiedMetadata)).toMatchObject({
+        timestamp: expect.any(Number),
+        content: copiedText,
+        entries: [expect.objectContaining({ componentName: "TodoItem" })],
+      });
+      await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveCount(0);
+      expect(pageErrors).toEqual([]);
+    });
+  }
+
+  test("the prompt screenshot preserves the prompt copy's newer metadata", async ({
+    reactGrab,
+    page,
+  }) => {
+    await switchOnScreenshotToggle(page);
+    const { copiedMetadata } = await clickCopyFirstTodo(reactGrab, page);
+    const completion = getCompletion(reactGrab);
+    await expect(completion).toContainText("Copied with image");
+    const promptCopy = await submitPromptOnPill(reactGrab, page);
+    await expect(completion).toContainText("Copied with prompt");
+    await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+
+    expect(await readImageClipboard(page)).toEqual({
+      itemCount: 1,
+      types: IMAGE_AND_GRAB_TYPES,
+      plainText: promptCopy["text/plain"],
+      metadata: promptCopy[GRAB_CLIPBOARD_TYPE],
+    });
+    const promptMetadata = JSON.parse(promptCopy[GRAB_CLIPBOARD_TYPE]);
+    expect(promptMetadata.timestamp).toBeGreaterThan(JSON.parse(copiedMetadata).timestamp);
+    expect(promptMetadata.entries).toMatchObject([{ commentText: PROMPT_TEXT }]);
+  });
+
+  test("an unsupported metadata type still copies the text and image", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.evaluate((customType) => {
+      const supports = ClipboardItem.supports.bind(ClipboardItem);
+      ClipboardItem.supports = (type) => type !== customType && supports(type);
+    }, WEB_GRAB_CLIPBOARD_TYPE);
+    await switchOnScreenshotToggle(page);
+    const { copiedText } = await clickCopyFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    expect(await readImageClipboard(page)).toEqual({
+      itemCount: 1,
+      types: IMAGE_AND_TEXT_TYPES,
+      plainText: copiedText,
+      metadata: null,
+    });
+  });
 });
 
 test("screenshot marquee moves without resizing and captures the moved pixels", async ({

@@ -1,9 +1,8 @@
 import { createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
-import type { Meta, StoryContext, StoryObj } from "openstory/solid";
+import type { Meta, StoryObj } from "openstory/solid";
 import { expect, waitFor } from "openstory/test";
 import { ReactGrabRenderer } from "@react-grab-source/components/renderer.js";
 import type { OverlayBounds } from "@react-grab-source/types.js";
-import { createMenuActions } from "./fixtures.js";
 import { noop } from "./noop.js";
 
 const ELEMENT_KEYS = [
@@ -47,7 +46,6 @@ interface SceneProps {
   enabled: boolean;
   isPromptMode: boolean;
   isPendingDismiss: boolean;
-  showContextMenu: boolean;
   inputValue: string;
   filePath: string;
 }
@@ -114,13 +112,6 @@ const Scene = (props: SceneProps) => {
   const mouseX = (): number => {
     const bounds = selectionBounds();
     return bounds ? bounds.x + bounds.width / 2 : 0;
-  };
-
-  const contextMenuPosition = () => {
-    if (!props.showContextMenu) return null;
-    const bounds = selectionBounds();
-    if (!bounds) return null;
-    return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height + 4 };
   };
 
   return (
@@ -326,19 +317,11 @@ const Scene = (props: SceneProps) => {
         toolbarVisible={props.showToolbar}
         isActive={props.isActive}
         enabled={props.enabled}
-        contextMenuPosition={contextMenuPosition()}
-        contextMenuBounds={props.showContextMenu ? selectionBounds() : null}
-        contextMenuTagName={elementMeta().tagName}
-        contextMenuComponentName={elementMeta().componentName}
-        contextMenuHasFilePath={Boolean(props.filePath)}
-        actions={createMenuActions(Boolean(props.filePath))}
         onInputChange={noop}
         onInputSubmit={noop}
         onConfirmDismiss={noop}
         onToggleActive={noop}
         onToolbarStateChange={noop}
-        onContextMenuDismiss={noop}
-        onContextMenuHide={noop}
       />
     </div>
   );
@@ -369,7 +352,6 @@ const meta: Meta<SceneProps> = {
     enabled: true,
     isPromptMode: false,
     isPendingDismiss: false,
-    showContextMenu: false,
     inputValue: "",
     filePath: "",
   },
@@ -380,7 +362,6 @@ const meta: Meta<SceneProps> = {
     enabled: { control: "boolean" },
     isPromptMode: { control: "boolean" },
     isPendingDismiss: { control: "boolean" },
-    showContextMenu: { control: "boolean" },
     inputValue: { control: "text" },
     filePath: { control: "text" },
   },
@@ -392,21 +373,6 @@ type Story = StoryObj<typeof meta>;
 
 export const Idle: Story = {
   args: { selectedElement: "btn-start" },
-};
-
-export const ContextMenu: Story = {
-  args: {
-    selectedElement: "btn-start",
-    showContextMenu: true,
-    filePath: "src/components/Button.tsx",
-  },
-  play: async (context) => {
-    if (!meta.play) throw new Error("meta.play is required for shared assertions");
-    await meta.play(context as StoryContext<SceneProps>);
-    await waitFor(() => {
-      expect(context.canvasElement.querySelector("[data-react-grab-context-menu]")).not.toBeNull();
-    });
-  },
 };
 
 export const CommentInput: Story = {

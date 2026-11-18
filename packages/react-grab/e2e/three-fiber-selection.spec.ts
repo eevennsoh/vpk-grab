@@ -100,12 +100,7 @@ test.describe("React Three Fiber selection", () => {
       THREE_RIGHT_OBJECT_HORIZONTAL_RATIO,
     );
     await reactGrab.waitForSelectionBox();
-    await reactGrab.rightClickAtPosition(pointerPosition.x, pointerPosition.y);
-
-    const contextMenuInfo = await reactGrab.getContextMenuInfo();
-    expect(contextMenuInfo.tagBadgeText).toBe("ThreeGrabBox.mesh");
-
-    await reactGrab.clickContextMenuItem("Copy");
+    await page.mouse.click(pointerPosition.x, pointerPosition.y);
     await expect.poll(() => reactGrab.getClipboardContent()).toContain('<mesh name="right-cube"');
     const clipboardContent = await reactGrab.getClipboardContent();
     expect(clipboardContent).not.toContain('<mesh name="left-cube"');

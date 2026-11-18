@@ -242,6 +242,32 @@ describe("createLabelController", () => {
     expect(labelInstances[0]?.screenshotErrorMessage).toBe("Couldn't capture image");
   });
 
+  it("drops an image label's thumbnail when a new capture starts, so a failure shows none", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:first", revokeObjectURL });
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied");
+    controller.startScreenshotCapture(instanceId);
+    controller.setImage(instanceId, "Copied with image", new Blob(), true);
+    expect(labelInstances[0]?.thumbnailUrl).toBe("blob:first");
+
+    controller.startScreenshotCapture(instanceId);
+
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:first");
+    expect(labelInstances[0]?.thumbnailUrl).toBeUndefined();
+    expect(labelInstances[0]?.isCapturingScreenshot).toBe(true);
+
+    controller.failScreenshotCapture(instanceId, "Couldn't copy image");
+
+    expect(labelInstances[0]?.thumbnailUrl).toBeUndefined();
+    expect(labelInstances[0]?.screenshotErrorMessage).toBe("Couldn't copy image");
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
   it("revokes an image label's thumbnail when the label goes away", () => {
     let createdUrlCount = 0;
     const createObjectURL = vi.fn(() => {
@@ -535,5 +561,30 @@ describe("createLabelController", () => {
       thumbnailUrl: "blob:camera",
     });
     expect(labelInstances[0]?.promptTarget).toBeUndefined();
+  });
+
+  it("keeps the prompt with the image when the screenshot toggle asks for it", () => {
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:automatic", revokeObjectURL: vi.fn() });
+    const labelInstances: SelectionLabelInstance[] = [];
+    const controller = createLabelController(
+      createLabelStore(labelInstances),
+      () => labelInstances,
+    );
+    const element = createAnchorElement(true);
+    const promptTarget = { primaryElement: element, elements: [element] };
+    const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied", {
+      element,
+      promptTarget,
+    });
+    controller.startScreenshotCapture(instanceId);
+
+    controller.setImage(instanceId, "Copied with image", new Blob(), true);
+
+    expect(labelInstances[0]).toMatchObject({
+      statusText: "Copied with image",
+      thumbnailUrl: "blob:automatic",
+      promptTarget,
+    });
+    expect(labelInstances[0]?.isCapturingScreenshot).toBeUndefined();
   });
 });

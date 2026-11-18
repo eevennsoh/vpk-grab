@@ -9,7 +9,6 @@ import type {
 import { OFFSCREEN_POSITION } from "../constants.js";
 import { createElementBounds } from "../utils/create-element-bounds.js";
 import { getBoundsCenter } from "../utils/get-bounds-center.js";
-import { isElementConnected } from "../utils/is-element-connected.js";
 import { resolveLiveElement, trackElementAnchor } from "./element-anchors.js";
 
 interface FrozenDragRect {
@@ -62,10 +61,6 @@ interface GrabStore {
 
   activationTimestamp: number | null;
   previouslyFocusedElement: Element | null;
-
-  contextMenuPosition: Position | null;
-  contextMenuElement: Element | null;
-  contextMenuClickOffset: Position | null;
 }
 
 interface GrabStoreInput {
@@ -84,7 +79,7 @@ const relinkElement = (element: Element): Element => {
 };
 
 // Re-resolves every element the overlay anchors to — the selection, the hover
-// target, the context-menu target, the post-copy "Copied" labels and what
+// target, the post-copy "Copied" labels and what
 // their prompt copies, and grabbed-box flashes — so they all follow the same
 // DOM swaps. Run on the recalc interval; assigning the same reference back is
 // a no-op for solid, so connected elements produce no store notifications.
@@ -98,7 +93,6 @@ const relinkSlots = (draft: GrabStore): void => {
   }
   draft.frozenElement = draft.frozenElement && relinkElement(draft.frozenElement);
   draft.detectedElement = draft.detectedElement && relinkElement(draft.detectedElement);
-  draft.contextMenuElement = draft.contextMenuElement && relinkElement(draft.contextMenuElement);
 
   for (const instance of draft.labelInstances) {
     if (instance.element) instance.element = relinkElement(instance.element);
@@ -149,10 +143,6 @@ const createInitialStore = (input: GrabStoreInput): GrabStore => ({
 
   activationTimestamp: null,
   previouslyFocusedElement: null,
-
-  contextMenuPosition: null,
-  contextMenuElement: null,
-  contextMenuClickOffset: null,
 });
 
 interface GrabActions {
@@ -207,9 +197,6 @@ interface GrabActions {
   patchLabelInstance: (instanceId: string, patch: SelectionLabelInstancePatch) => void;
   removeLabelInstance: (instanceId: string) => void;
   clearLabelInstances: () => void;
-  showContextMenu: (position: Position, element: Element) => void;
-  hideContextMenu: () => void;
-  updateContextMenuPosition: () => void;
 }
 
 const createGrabStore = (input: GrabStoreInput) => {
@@ -299,9 +286,6 @@ const createGrabStore = (input: GrabStoreInput) => {
             draft.frozenDragRect = null;
             draft.activationTimestamp = null;
             draft.previouslyFocusedElement = null;
-            draft.contextMenuPosition = null;
-            draft.contextMenuElement = null;
-            draft.contextMenuClickOffset = null;
             // In touch mode there is no pointer movement between taps, so a
             // stale detectedElement from the previous interaction would
             // render its selection box the moment the user re-activates.
@@ -667,44 +651,6 @@ const createGrabStore = (input: GrabStoreInput) => {
 
     clearLabelInstances: () => {
       setStore("labelInstances", []);
-    },
-
-    showContextMenu: (position: Position, element: Element) => {
-      const bounds = createElementBounds(element);
-      const { x: centerX, y: centerY } = getBoundsCenter(bounds);
-      trackElementAnchor(element);
-      batch(() => {
-        setStore("contextMenuPosition", position);
-        setStore("contextMenuElement", element);
-        setStore("contextMenuClickOffset", {
-          x: position.x - centerX,
-          y: position.y - centerY,
-        });
-      });
-    },
-
-    hideContextMenu: () => {
-      batch(() => {
-        setStore("contextMenuPosition", null);
-        setStore("contextMenuElement", null);
-        setStore("contextMenuClickOffset", null);
-      });
-    },
-
-    updateContextMenuPosition: () => {
-      const element = store.contextMenuElement;
-      const clickOffset = store.contextMenuClickOffset;
-
-      if (!element || !clickOffset) return;
-      if (!isElementConnected(element)) return;
-
-      const newBounds = createElementBounds(element);
-      const { x: newCenterX, y: newCenterY } = getBoundsCenter(newBounds);
-
-      setStore("contextMenuPosition", {
-        x: newCenterX + clickOffset.x,
-        y: newCenterY + clickOffset.y,
-      });
     },
   };
 

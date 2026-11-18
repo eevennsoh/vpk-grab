@@ -63,3 +63,33 @@ describe("finishJustCopied", () => {
     expect(current()).toEqual({ state: "idle" });
   });
 });
+
+describe("deactivate", () => {
+  it("clears a pending frozen selection and input so reactivation starts hovering", () => {
+    const selectedElement: Element = Object.create(null);
+    vi.stubGlobal("document", { activeElement: null });
+    const { actions, store, current } = createGrabStore({
+      keyHoldDuration: 0,
+      onActivate: () => {},
+    });
+    actions.activate();
+    actions.setFrozenElements([selectedElement]);
+    actions.freeze();
+    actions.setPendingCommentMode(true);
+    actions.setInputText("unfinished context");
+
+    actions.deactivate();
+    actions.activate();
+
+    expect(current()).toEqual({
+      state: "active",
+      phase: "hovering",
+      isPromptMode: false,
+      isPendingDismiss: false,
+    });
+    expect(store.frozenElement).toBeNull();
+    expect(store.frozenElements).toEqual([]);
+    expect(store.pendingCommentMode).toBe(false);
+    expect(store.inputText).toBe("");
+  });
+});

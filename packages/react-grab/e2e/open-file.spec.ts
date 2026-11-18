@@ -90,35 +90,8 @@ test.describe("Open File", () => {
     });
   });
 
-  test.describe("Context Menu", () => {
-    test("Open item should appear in context menu", async ({ reactGrab }) => {
-      await reactGrab.page.evaluate(() => {
-        const api = (
-          window as {
-            __REACT_GRAB__?: {
-              registerPlugin: (plugin: Record<string, unknown>) => void;
-            };
-          }
-        ).__REACT_GRAB__;
-        api?.registerPlugin({
-          name: "test-open-file",
-          hooks: {
-            onOpenFile: () => {},
-          },
-        });
-      });
-
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li:first-child");
-
-      await reactGrab.rightClickElement("li:first-child");
-
-      const menuInfo = await reactGrab.getContextMenuInfo();
-      expect(menuInfo.isVisible).toBe(true);
-      expect(menuInfo.menuItems).toContain("Open");
-    });
-
-    test("Clicking Open in context menu should trigger onOpenFile", async ({ reactGrab }) => {
+  test.describe("Open action", () => {
+    test("Open shortcut should trigger onOpenFile", async ({ reactGrab }) => {
       let openFileCalled = false;
 
       await reactGrab.page.evaluate(() => {
@@ -143,10 +116,10 @@ test.describe("Open File", () => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("li:first-child");
 
-      await reactGrab.rightClickElement("li:first-child");
+      await reactGrab.waitForSelectionSource();
       await reactGrab.page.waitForTimeout(100);
 
-      await reactGrab.clickContextMenuItem("Open");
+      await reactGrab.pressModifierKeyCombo("o");
       await reactGrab.page.waitForTimeout(200);
 
       openFileCalled = await reactGrab.page.evaluate(() => {
@@ -154,17 +127,6 @@ test.describe("Open File", () => {
       });
 
       expect(openFileCalled).toBe(true);
-    });
-
-    test("Open should not be clickable without onOpenFile callback", async ({ reactGrab }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("li:first-child");
-
-      await reactGrab.rightClickElement("li:first-child");
-      await reactGrab.page.waitForTimeout(200);
-
-      const menuInfo = await reactGrab.getContextMenuInfo();
-      expect(menuInfo.isVisible).toBe(true);
     });
   });
 

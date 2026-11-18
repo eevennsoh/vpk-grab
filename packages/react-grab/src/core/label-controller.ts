@@ -78,8 +78,13 @@ interface LabelController {
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
   startPromptCopy: (instanceId: string, copiedStatusText: string) => void;
-  setCopiedContent: (instanceId: string, copiedContent: string) => void;
-  setImage: (instanceId: string, statusText: string, imageBlob: Blob) => void;
+  setCopiedContent: (instanceId: string, copiedContent: string, copiedMetadata?: string) => void;
+  setImage: (
+    instanceId: string,
+    statusText: string,
+    imageBlob: Blob,
+    shouldKeepPrompt?: boolean,
+  ) => void;
   startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
   cancelScreenshotCapture: (instanceId: string) => void;
@@ -269,11 +274,16 @@ export const createLabelController = (
     markRetrying(instanceId);
   };
 
-  const setCopiedContent = (instanceId: string, copiedContent: string) => {
-    store.patchLabelInstance(instanceId, { copiedContent });
+  const setCopiedContent = (instanceId: string, copiedContent: string, copiedMetadata?: string) => {
+    store.patchLabelInstance(instanceId, { copiedContent, copiedMetadata });
   };
 
-  const setImage = (instanceId: string, statusText: string, imageBlob: Blob) => {
+  const setImage = (
+    instanceId: string,
+    statusText: string,
+    imageBlob: Blob,
+    shouldKeepPrompt = false,
+  ) => {
     const instance = findInstance(instanceId);
     if (!instance) return;
     screenshotCaptureControllers.delete(instanceId);
@@ -283,17 +293,21 @@ export const createLabelController = (
       thumbnailUrl: URL.createObjectURL(imageBlob),
       isCapturingScreenshot: undefined,
       screenshotErrorMessage: undefined,
-      promptTarget: undefined,
+      promptTarget: shouldKeepPrompt ? instance.promptTarget : undefined,
     });
   };
 
+  // A new capture follows a new copy, which the old image is no longer part
+  // of, so its thumbnail goes now rather than sitting beside a later failure.
   const startScreenshotCapture = (instanceId: string): AbortSignal => {
     abortScreenshotCapture(instanceId);
+    revokeThumbnail(findInstance(instanceId));
     const captureController = new AbortController();
     screenshotCaptureControllers.set(instanceId, captureController);
     store.patchLabelInstance(instanceId, {
       isCapturingScreenshot: true,
       screenshotErrorMessage: undefined,
+      thumbnailUrl: undefined,
     });
     return captureController.signal;
   };

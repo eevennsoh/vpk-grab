@@ -3,9 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import {
   GRAB_MIME,
+  HISTORY_FILE_NAME,
+  readLinuxGrab,
+  runWatchLoop,
   compileSwiftReader,
   detectLinuxTool,
   extractGrab,
@@ -13,6 +16,7 @@ import {
   isGrabText,
   parseChromiumPickle,
 } from "../src/utils/clipboard.js";
+import * as timer from "../src/utils/sleep.js";
 import { DARWIN_READER_BINARY_NAME } from "../src/utils/constants.js";
 import {
   canUseClipboard,
@@ -22,6 +26,7 @@ import {
   prepareDarwinGrabWriter,
   writeGrab,
   writeText,
+  writeX11Format,
 } from "./clipboard-helpers.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -145,6 +150,124 @@ describe("extractGrab", () => {
   });
 });
 
+const MAP_FORMAT = 'application/web;type="custom/formatmap"';
+const ENTRY_FORMAT = 'application/web;type="custom/format7"';
+const PICKLE_FORMAT = "chromium/x-web-custom-data";
+const REPEATED_TEXT = "[<button> in Button (at App.tsx)]";
+
+const metadataAt = (timestamp: number) =>
+  JSON.stringify({ content: REPEATED_TEXT, entries: [], timestamp });
+
+describe("extractGrab timestamp preference", () => {
+  for (const [webTimestamp, pickleTimestamp] of [
+    [2, 1],
+    [1, 2],
+  ]) {
+    it(`selects the newer entry for web ${webTimestamp} and pickle ${pickleTimestamp}`, () => {
+      expect(
+        extractGrab({
+          grab: metadataAt(webTimestamp),
+          pickleBase64: encodeGrabPickle(metadataAt(pickleTimestamp)).toString("base64"),
+        }),
+      ).toBe(metadataAt(Math.max(webTimestamp, pickleTimestamp)));
+    });
+  }
+
+  it("keeps a valid pickle alongside a malformed web entry", () => {
+    expect(
+      extractGrab({ grab: "?", pickleBase64: encodeGrabPickle(metadataAt(1)).toString("base64") }),
+    ).toBe(metadataAt(1));
+  });
+});
+
+const webFormats = (timestamp: number) =>
+  new Map([
+    [
+      MAP_FORMAT,
+      Buffer.from(
+        JSON.stringify({
+          "application/example": 'application/web;type="custom/format0"',
+          [GRAB_MIME]: ENTRY_FORMAT,
+        }),
+      ),
+    ],
+    [ENTRY_FORMAT, Buffer.from(metadataAt(timestamp))],
+  ]);
+
+describe("readLinuxGrab", () => {
+  it("skips absent formats and falls back to the legacy pickle if listing fails", () => {
+    const read = vi.fn(() => encodeGrabPickle(metadataAt(1)));
+    expect(readLinuxGrab("text/plain\nimage/png\n", read)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+    for (const listing of [PICKLE_FORMAT, null]) {
+      read.mockClear();
+      expect(readLinuxGrab(listing, read)).toBe(metadataAt(1));
+      expect(read.mock.calls).toEqual([[PICKLE_FORMAT]]);
+    }
+  });
+
+  it("uses the mapped entry and prefers the newer timestamp", () => {
+    const formats = webFormats(2);
+    const read = (format: string) => formats.get(format) ?? null;
+    formats.set(PICKLE_FORMAT, encodeGrabPickle(metadataAt(1)));
+    expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(2));
+    formats.set(PICKLE_FORMAT, encodeGrabPickle(metadataAt(3)));
+    expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(3));
+  });
+
+  it("ignores malformed maps and unrelated native targets", () => {
+    for (const invalidMap of ["?", "null", JSON.stringify({ [GRAB_MIME]: "image/png" })]) {
+      const formats = new Map([
+        [MAP_FORMAT, Buffer.from(invalidMap)],
+        [PICKLE_FORMAT, encodeGrabPickle(metadataAt(1))],
+      ]);
+      const read = vi.fn((format: string) => formats.get(format) ?? null);
+      expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(1));
+      expect(read).not.toHaveBeenCalledWith("image/png");
+    }
+  });
+});
+
+describe("runWatchLoop image polling", () => {
+  for (const seeTextWrite of [true, false]) {
+    it(`records a repeat grab once when the poll sees ${seeTextWrite ? "both writes" : "only the image"}`, async () => {
+      const formats = webFormats(2);
+      const imageGrab = readLinuxGrab(
+        [...formats.keys()].join("\n"),
+        (format) => formats.get(format) ?? null,
+      );
+      const baseline = { changeCount: 1, text: REPEATED_TEXT, grab: metadataAt(1) };
+      const textWrite = { changeCount: 2, text: REPEATED_TEXT, grab: metadataAt(2) };
+      const imageWrite = { changeCount: 3, text: REPEATED_TEXT, grab: imageGrab };
+      const polls = [baseline, ...(seeTextWrite ? [textWrite] : []), imageWrite];
+      const finished = new Error("Finished polling");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-polls-"));
+      const sleep = vi.spyOn(timer, "sleep").mockImplementation(async () => {
+        if (!polls.length) throw finished;
+      });
+      try {
+        await expect(
+          runWatchLoop({
+            reader: { mode: "fake", read: () => polls.shift() ?? null },
+            dir,
+            intervalMs: POLL_MS,
+            replayLast: false,
+          }),
+        ).rejects.toBe(finished);
+        const records = fs
+          .readFileSync(path.join(dir, HISTORY_FILE_NAME), "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        expect(records).toMatchObject([{ source: "custom", timestamp: 2, content: REPEATED_TEXT }]);
+      } finally {
+        sleep.mockRestore();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe("extractPrompt", () => {
   it("returns the comment prepended above the element references (prompt mode)", () => {
     const record = {
@@ -230,9 +353,23 @@ describe(`clipboard round-trip via custom format (${process.platform})`, () => {
       if (!writeGrab({ text: "", grabJson })) return;
       const tool = detectLinuxTool();
       expect(tool?.readCustom).toBeTruthy();
-      const buffer = tool?.readCustom?.();
+      const buffer = tool?.readCustom?.("chromium/x-web-custom-data");
       expect(buffer).toBeTruthy();
       expect(parseChromiumPickle(buffer)[GRAB_MIME]).toBe(grabJson);
+    });
+    it.skipIf(!runnable)("reads Chromium's X11 web format map and its numbered entry", () => {
+      const readCustom = detectLinuxTool()?.readCustom;
+      if (!readCustom) throw new Error("No X11 custom format reader");
+      const formats = webFormats(2);
+      // xclip owns a single target at a time, so offer each browser representation
+      // as the reader requests it. Both the map and payload pass through X11.
+      const grab = readLinuxGrab([...formats.keys()].join("\n"), (format) => {
+        const data = formats.get(format);
+        if (!data) return null;
+        expect(writeX11Format(format, data)).toBe(true);
+        return readCustom(format);
+      });
+      expect(grab).toBe(metadataAt(2));
     });
     return;
   }

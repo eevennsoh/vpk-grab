@@ -15,6 +15,9 @@ export const KEYBOARD_ACTIVATION_SETTLE_DELAY_MS =
 export const TEXT_SELECTION_SHORTCUT_PRESS_MS =
   DEFAULT_KEY_HOLD_DURATION_MS + INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS / 2;
 export const NON_NATIVE_ACTIVATION_KEY = "F8";
+export const OUTSIDE_WINDOW_POSITION_PX = { x: -1, y: -1 };
+export const MOTIONLESS_SPECS_VIEWPORT_PX = { width: 500, height: 600 };
+export const TOOLBAR_NO_COPY_SETTLE_MS = 500;
 export const SHIFT_LABEL_CLICK_ANCHOR_RATIO = 0.25;
 export const SHIFT_LABEL_SECOND_CLICK_ANCHOR_RATIO = 0.75;
 export const SHIFT_LABEL_ANCHORED_COUNT = 2;
@@ -102,3 +105,17 @@ export const RECTANGLE_EDGE_HIT_OFFSET_PX = 5;
 
 export const SCREENSHOT_RECTANGLE_HEIGHT_PX = 20;
 export const SCREENSHOT_RECTANGLE_INTERIOR_INSET_PX = 6;
+
+export const PILL_DISMISS_PARENT_RECT_PX = { x: 300, y: 200, width: 400, height: 180 };
+export const PILL_DISMISS_TARGET_HEIGHT_PX = 30;
+
+export const PILL_DISMISS_Z_INDEX = "2147483000";
+
+export const GRAB_CLIPBOARD_TYPE = "application/x-react-grab";
+export const WEB_GRAB_CLIPBOARD_TYPE = `web ${GRAB_CLIPBOARD_TYPE}`;
+export const CLIPBOARD_ACTIVATION_EXPIRY_MS = 5500;
+export const IMAGE_AND_TEXT_TYPES = ["image/png", "text/html", "text/plain"];
+export const IMAGE_AND_GRAB_TYPES = [...IMAGE_AND_TEXT_TYPES, WEB_GRAB_CLIPBOARD_TYPE];
+
+export const PILL_MARGIN_TOLERANCE_PX = 1 / 64;
+export const NARROW_PILL_VIEWPORT_PX = { width: 250, height: 720 };

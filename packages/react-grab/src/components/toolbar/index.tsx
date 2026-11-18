@@ -21,8 +21,11 @@ import { IconRectangle } from "../icons/icon-rectangle.jsx";
 import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
 import { IconText } from "../icons/icon-text.jsx";
+import { MaterialIcon } from "../icons/material-icon.jsx";
+import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { ToolbarActionButton } from "./toolbar-action-button.jsx";
 import {
+  TOOLBAR_ACTION_ICON_SIZE_PX,
   TOOLBAR_SNAP_MARGIN_PX,
   TOOLBAR_FADE_IN_DELAY_MS,
   TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS,
@@ -37,6 +40,7 @@ import {
   DEFAULT_ACTION_ID,
   ANNOTATION_COLOR_OPTIONS,
   MOVE_TOOL_KEY,
+  AUTO_SCREENSHOT_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
 } from "../../constants.js";
@@ -62,7 +66,6 @@ import { accumulateRotationDeg } from "../../utils/accumulate-rotation.js";
 
 interface ToolbarProps {
   isActive?: boolean;
-  isContextMenuOpen?: boolean;
   onToggle?: () => void;
   activeActionId?: string | null;
   defaultActionId?: string;
@@ -77,12 +80,14 @@ interface ToolbarProps {
   onToggleToolbarMenu?: () => void;
   isSpecsEnabled?: boolean;
   isRedlinesEnabled?: boolean;
+  isAutoScreenshotEnabled?: boolean;
   annotationTool?: AnnotationTool;
   annotationColor?: string;
   hasAnnotations?: boolean;
   hasSelectedAnnotation?: boolean;
   onToggleSpecs?: () => void;
   onToggleRedlines?: () => void;
+  onToggleAutoScreenshot?: () => void;
   onSelectAnnotationTool?: (tool: AnnotationTool) => void;
   onSelectAnnotationColor?: (color: string) => void;
   onClearAnnotations?: () => void;
@@ -92,6 +97,7 @@ interface ToolbarProps {
 
 const SPECS_ACTION_ID = "inspect-specs";
 const REDLINES_ACTION_ID = "inspect-redlines";
+const AUTO_SCREENSHOT_ACTION_ID = "auto-screenshot";
 const PEN_ACTION_ID = "annotate-pen";
 const RECTANGLE_ACTION_ID = "annotate-rectangle";
 const TEXT_ACTION_ID = "annotate-text";
@@ -174,14 +180,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     Boolean(props.isActive) && (props.activeActionId ?? DEFAULT_ACTION_ID) === currentActionId();
 
   const isActionHovered = (actionId: string) =>
-    hoveredActionId() === actionId &&
-    !isCollapsed() &&
-    !drag.isDragging() &&
-    !drag.isSnapping() &&
-    !props.isContextMenuOpen;
+    hoveredActionId() === actionId && !isCollapsed() && !drag.isDragging() && !drag.isSnapping();
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
-  // Specs and Spacing describe what Grab hovers, so they join the toolbar
-  // only while Grab is the tool in hand.
+  // Specs, Spacing and Screenshot serve what Grab hovers and copies, so they
+  // join the toolbar only while Grab is the tool in hand.
   const isGrabToolOn = () => isCurrentActionActive() && isGrabTool();
   const getSelectionToolTooltipShortcut = (tool: SelectionTool) =>
     getSelectionToolShortcut(
@@ -221,7 +223,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     onMouseLeave: () => {
       const actionId = getActionId();
       setHoveredActionId((current) => (current === actionId ? null : current));
-      if (!props.isActive && !props.isContextMenuOpen) {
+      if (!props.isActive) {
         releaseInteractionFreeze();
       }
     },
@@ -240,9 +242,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   createEffect(
     on(
-      () => [props.isActive, props.isContextMenuOpen] as const,
-      ([isActive, isContextMenuOpen]) => {
-        if (!isActive && !isContextMenuOpen && unfreezeUpdatesCallback) {
+      () => props.isActive,
+      (isActive) => {
+        if (!isActive && unfreezeUpdatesCallback) {
           releaseInteractionFreeze();
         }
       },
@@ -365,6 +367,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const handleToggle = drag.createDragAwareHandler(() => props.onToggle?.());
   const handleToggleSpecs = drag.createDragAwareHandler(() => props.onToggleSpecs?.());
   const handleToggleRedlines = drag.createDragAwareHandler(() => props.onToggleRedlines?.());
+  const handleToggleAutoScreenshot = drag.createDragAwareHandler(() =>
+    props.onToggleAutoScreenshot?.(),
+  );
   const handleSelectPen = drag.createDragAwareHandler(() => props.onSelectAnnotationTool?.("pen"));
   const handleSelectRectangle = drag.createDragAwareHandler(() =>
     props.onSelectAnnotationTool?.("rectangle"),
@@ -809,7 +814,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   const isInteracting = (): boolean =>
     isToolbarHovered() ||
-    Boolean(props.isContextMenuOpen) ||
     drag.isDragging() ||
     drag.isSnapping() ||
     isCollapseAnimating() ||
@@ -927,7 +931,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(currentActionId)}
               icon={
                 <IconSelect
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   rotationDeg={selectIconRotationDeg()}
                   isFilled={isGrabToolOn()}
                   class={actionIconClass(isGrabToolOn())}
@@ -949,7 +953,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(() => PEN_ACTION_ID)}
               icon={
                 <IconPen
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   isFilled={props.annotationTool === "pen"}
                   class={actionIconClass(props.annotationTool === "pen")}
                 />
@@ -990,7 +994,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(() => TEXT_ACTION_ID)}
               icon={
                 <IconText
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   isFilled={props.annotationTool === "text"}
                   class={actionIconClass(props.annotationTool === "text")}
                 />
@@ -1018,7 +1022,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => SPECS_ACTION_ID)}
                 icon={
                   <IconSpecs
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={Boolean(props.isSpecsEnabled)}
                     class={actionIconClass(Boolean(props.isSpecsEnabled))}
                   />
@@ -1039,7 +1043,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
                 icon={
                   <IconRedlines
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={Boolean(props.isRedlinesEnabled)}
                     class={actionIconClass(Boolean(props.isRedlinesEnabled))}
                   />
@@ -1048,6 +1052,28 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 tooltipPosition={tooltipPosition()}
                 tooltip="Spacing"
                 tooltipShortcut={SPACING_TOOL_KEY}
+              />
+              <ToolbarActionButton
+                actionId={AUTO_SCREENSHOT_ACTION_ID}
+                keepsPageFocus
+                label="Copy a screenshot with every grab"
+                isActive={Boolean(props.isAutoScreenshotEnabled)}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleToggleAutoScreenshot}
+                {...createFreezeHandlers(() => AUTO_SCREENSHOT_ACTION_ID)}
+                icon={
+                  <MaterialIcon
+                    paths={PHOTO_CAMERA_ICON_PATHS}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                    isFilled={Boolean(props.isAutoScreenshotEnabled)}
+                    class={actionIconClass(Boolean(props.isAutoScreenshotEnabled))}
+                  />
+                }
+                tooltipVisible={isActionHovered(AUTO_SCREENSHOT_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Screenshot"
+                tooltipShortcut={AUTO_SCREENSHOT_TOOL_KEY}
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup
@@ -1112,7 +1138,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => EDIT_ACTION_ID)}
                 icon={
                   <IconMove
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={props.annotationTool === "edit"}
                     class={actionIconClass(props.annotationTool === "edit")}
                   />
@@ -1135,7 +1161,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 wrapperClass={actionButtonWrapperClass()}
                 onClick={handleClearAnnotations}
                 {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
-                icon={<IconClear size={14} class={actionIconClass(false)} />}
+                icon={
+                  <IconClear size={TOOLBAR_ACTION_ICON_SIZE_PX} class={actionIconClass(false)} />
+                }
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
                 tooltip="Clear"

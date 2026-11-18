@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures.js";
 import { goToSizedPerfGrid } from "./perf-fixtures.js";
+import { KEYBOARD_ACTIVATION_SETTLE_DELAY_MS, NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
 
 const STATE_SETTLE_WAIT_MS = 300;
 // Copy commits run source resolution before writing the clipboard, which can
@@ -61,51 +62,6 @@ test.describe("Combinatorial Interactions", () => {
       await reactGrab.reinitialize();
       await reactGrab.activate();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
-    });
-  });
-
-  test.describe("Context menu under interrupts", () => {
-    test("should keep the context menu open through a viewport resize", async ({ reactGrab }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-      await reactGrab.rightClickElement("[data-testid='main-title']");
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-
-      await reactGrab.setViewportSize(1000, 650);
-      await reactGrab.page.waitForTimeout(STATE_SETTLE_WAIT_MS);
-
-      const state = await reactGrab.getState();
-      expect(state.isActive).toBe(true);
-    });
-
-    test("should tear down cleanly when disposed while the context menu is open", async ({
-      reactGrab,
-    }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-      await reactGrab.rightClickElement("[data-testid='main-title']");
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-
-      await reactGrab.dispose();
-      await reactGrab.page.waitForTimeout(STATE_SETTLE_WAIT_MS);
-
-      await reactGrab.reinitialize();
-      await reactGrab.activate();
-      expect(await reactGrab.isOverlayVisible()).toBe(true);
-    });
-
-    test("Escape over an open context menu should dismiss both menu and overlay", async ({
-      reactGrab,
-    }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-      await reactGrab.rightClickElement("[data-testid='main-title']");
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-
-      await reactGrab.pressEscape();
-
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(false);
-      await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(false);
     });
   });
 
@@ -184,6 +140,7 @@ test.describe("Combinatorial Interactions", () => {
     test("right-click during shift multi-select should not commit the accumulated copy", async ({
       reactGrab,
     }) => {
+      await reactGrab.page.evaluate(() => navigator.clipboard.writeText("baseline"));
       await reactGrab.activate();
 
       const firstItem = reactGrab.page.locator("[data-testid='todo-list'] li").nth(0);
@@ -197,16 +154,19 @@ test.describe("Combinatorial Interactions", () => {
       );
       await reactGrab.page.waitForTimeout(100);
 
-      await reactGrab.rightClickElement("[data-testid='main-title']");
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
+      await reactGrab.page
+        .locator("[data-testid='main-title']")
+        .first()
+        .click({ button: "right", force: true });
+      await expect(reactGrab.page.locator("[data-react-grab-context-menu]")).toHaveCount(0);
 
+      expect(await reactGrab.getClipboardContent()).toBe("baseline");
+      await reactGrab.pressEscape();
       await reactGrab.page.keyboard.up("Shift");
       await reactGrab.page.waitForTimeout(STATE_SETTLE_WAIT_MS);
 
-      expect(await reactGrab.isContextMenuVisible()).toBe(true);
-      expect((await reactGrab.getState()).isActive).toBe(true);
-
-      await reactGrab.pressEscape();
+      await expect(reactGrab.page.locator("[data-react-grab-context-menu]")).toHaveCount(0);
+      expect((await reactGrab.getState()).isActive).toBe(false);
     });
   });
 
@@ -230,16 +190,22 @@ test.describe("Combinatorial Interactions", () => {
       reactGrab,
     }) => {
       await reactGrab.activate();
-      await reactGrab.updateOptions({ activationKey: "g", activationMode: "toggle" });
+      await reactGrab.updateOptions({
+        activationKey: NON_NATIVE_ACTIVATION_KEY,
+        activationMode: "toggle",
+      });
 
       expect((await reactGrab.getState()).isActive).toBe(true);
 
       await reactGrab.deactivate();
       await reactGrab.page.click("body");
-      await reactGrab.page.keyboard.down("g");
-      await reactGrab.page.waitForTimeout(STATE_SETTLE_WAIT_MS);
-      await reactGrab.page.keyboard.up("g");
-      await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(true);
+      await reactGrab.page.waitForTimeout(KEYBOARD_ACTIVATION_SETTLE_DELAY_MS);
+      await reactGrab.page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+      try {
+        await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(true);
+      } finally {
+        await reactGrab.page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+      }
 
       await reactGrab.pressEscape();
     });
@@ -252,7 +218,8 @@ test.describe("Combinatorial Interactions", () => {
       await reactGrab.activate();
       await reactGrab.hoverUntilSelected("[data-testid='main-title']");
       await reactGrab.clickElement("[data-testid='main-title']");
-      await reactGrab.deactivate();
+      await reactGrab.page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+      expect((await reactGrab.getState()).isActive).toBe(false);
       await reactGrab.activate();
 
       const state = await reactGrab.getState();
@@ -344,24 +311,6 @@ test.describe("Combinatorial Interactions", () => {
         .poll(() => reactGrab.getClipboardContent(), { timeout: CLIPBOARD_COMMIT_TIMEOUT_MS })
         .not.toBe("");
       expect((await reactGrab.getState()).isDragging).toBe(false);
-    });
-
-    test("arrow keys while the context menu is open do not move the frozen selection", async ({
-      reactGrab,
-    }) => {
-      await reactGrab.activate();
-      await reactGrab.hoverUntilSelected("[data-testid='main-title']");
-      await reactGrab.rightClickElement("[data-testid='main-title']");
-      await expect.poll(() => reactGrab.isContextMenuVisible()).toBe(true);
-
-      const boundsBefore = await reactGrab.getSelectionBoxBounds();
-      await reactGrab.pressArrowUp();
-      await reactGrab.pressArrowDown();
-      await reactGrab.page.waitForTimeout(STATE_SETTLE_WAIT_MS);
-
-      expect(await reactGrab.isContextMenuVisible()).toBe(true);
-      const boundsAfter = await reactGrab.getSelectionBoxBounds();
-      expect(boundsAfter).toEqual(boundsBefore);
     });
 
     test("arrow keys typed inside the prompt textarea do not move the selection", async ({

@@ -1,15 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { runCopyFlow } from "../src/core/copy.js";
 import { resolveElementReferenceContext } from "../src/core/context.js";
-import { copyContent } from "../src/utils/copy-content.js";
 
 vi.mock("../src/core/context.js", () => ({
   resolveElementReferenceContext: vi.fn(),
 }));
 
-vi.mock("../src/utils/copy-content.js", () => ({
-  copyContent: vi.fn(),
-}));
+afterEach(() => vi.unstubAllGlobals());
 
 const createHooks = () => ({
   onBeforeCopy: vi.fn(async () => {}),
@@ -41,24 +38,36 @@ describe("copy payload", () => {
       stack: [],
       stackContext: "\n  in DocsLink",
     });
-    vi.mocked(copyContent).mockReturnValue(true);
+    const writes = new Map<string, string>();
+    const documentEvents = new EventTarget();
+    vi.stubGlobal(
+      "document",
+      Object.assign(documentEvents, {
+        createElement: () => ({ style: {}, select: vi.fn(), remove: vi.fn() }),
+        body: { appendChild: vi.fn() },
+        execCommand: () =>
+          documentEvents.dispatchEvent(
+            Object.assign(new Event("copy"), {
+              clipboardData: { setData: (type: string, value: string) => writes.set(type, value) },
+            }),
+          ),
+      }),
+    );
 
     const result = await runCopyFlow({}, createHooks(), [element]);
 
+    expect(resolveElementReferenceContext).toHaveBeenCalledOnce();
+    const content = '[<button data-testid="docs-link">Docs</button>]';
+    const metadata = writes.get("application/x-react-grab");
+    expect(JSON.parse(metadata ?? "")).toMatchObject({
+      content,
+      entries: [{ componentName: "LinkComponent" }],
+      timestamp: expect.any(Number),
+    });
     expect(result).toEqual({
       status: "succeeded",
-      copiedContent: vi.mocked(copyContent).mock.calls[0]?.[0],
+      copiedContent: content,
+      copiedMetadata: metadata,
     });
-    expect(resolveElementReferenceContext).toHaveBeenCalledOnce();
-    expect(copyContent).toHaveBeenCalledWith(
-      '[<button data-testid="docs-link">Docs</button>]',
-      expect.objectContaining({
-        entries: [
-          expect.objectContaining({
-            componentName: "LinkComponent",
-          }),
-        ],
-      }),
-    );
   });
 });
