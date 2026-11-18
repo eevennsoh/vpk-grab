@@ -882,6 +882,19 @@ test.describe("expanded specs and ratio lock", () => {
     await expect(specTokens(page, "padding-left")).toHaveText(["--ds-space-050 × 6"]);
   });
 
+  test("expanded sides name only their component of a two-token shorthand", async ({ page }) => {
+    await inspect(page, "specs-split-padding-button");
+    await pinAndReach(page, "padding");
+    await expect(specTokens(page, "padding")).toHaveText(["--vertical, --horizontal"]);
+    await expandSpecRow(page, "padding");
+    await expect(page.locator(PINNED_PANEL_SELECTOR)).toHaveCount(1);
+    await expect(specTokens(page, "padding-top")).toHaveText(["--vertical"]);
+    await expect(specTokens(page, "padding-bottom")).toHaveText(["--vertical"]);
+    await expect(specTokens(page, "padding-left")).toHaveText(["--horizontal"]);
+    await expect(specTokens(page, "padding-right")).toHaveText(["--horizontal"]);
+    await expect(specTokens(page, "padding")).toHaveText(["--vertical, --horizontal"]);
+  });
+
   test("reopening Changes pinned keeps a corner clear of its element", async ({
     page,
     reactGrab,

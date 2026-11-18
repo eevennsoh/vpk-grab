@@ -42,6 +42,8 @@ export const installSpecsFixture = (page: Page) =>
       styleElement.textContent = `
         :root {
           --ds-space-050: 2px;
+          --vertical: 6px;
+          --horizontal: 14px;
           --ds-radius-medium: 6px;
           --ds-shadow-raised: 0 1px 2px rgba(9, 30, 66, 0.25);
           --ds-background-brand-bold: #0c66e4;
@@ -52,6 +54,7 @@ export const installSpecsFixture = (page: Page) =>
         #${rootId} button { display: block; border: 0; margin: 0 0 24px; }
         @layer utilities {
           .tk-pad { padding: calc(var(--ds-space-050) * 4); }
+          .tk-split-pad { padding: var(--vertical) var(--horizontal); }
           .tk-px { padding-inline: calc(var(--ds-space-050) * 6); }
           .tk-bg { background-color: var(--ds-background-brand-bold); }
           .tk-bg-hover { &:hover { @media (hover: hover) { background-color: var(--ds-background-brand-bold-hovered); } } }
@@ -67,6 +70,7 @@ export const installSpecsFixture = (page: Page) =>
       rootElement.innerHTML = `
         <button data-testid="specs-token-button" class="tk-pad tk-px tk-bg tk-bg-hover tk-radius tk-shadow tk-text">Tokens</button>
         <button data-testid="specs-plain-button" class="tk-pad tk-bg tk-text">Plain</button>
+        <button data-testid="specs-split-padding-button" class="tk-split-pad" style="position: fixed; left: 80px; top: 220px">Split padding</button>
         <button data-testid="specs-box-button" style="position: fixed; left: 300px; top: 300px; box-sizing: border-box; width: 200px; height: 100px; padding: 4px 8px 12px 16px; margin: 2px 4px 6px 8px; border: solid; border-width: 1px 2px 3px 4px; border-radius: 2px 4px 6px 8px">Sides</button>
         <button data-testid="specs-ratio-button" style="position: fixed; left: 300px; top: 450px; box-sizing: content-box; width: 200px; height: 100px; padding: 10px; border: 5px solid">Ratio</button>
       `;

@@ -4,6 +4,7 @@ import { formatSpecToken } from "./format-spec-token.js";
 import { getElementComputedStyle } from "./get-element-computed-style.js";
 import { getPhysicalSpecProperty } from "./get-physical-spec-property.js";
 import { getSpecShorthandProperty } from "./get-spec-shorthand-property.js";
+import { getSpecSideValue } from "./get-spec-side-value.js";
 import { getStyleProbe } from "./get-style-probe.js";
 import { getElementStyleSheets } from "./get-element-style-sheets.js";
 import { isSpecSourceProperty } from "./is-spec-source-property.js";
@@ -164,9 +165,23 @@ export const getSpecTokens = (
       if (appliedProperties.length === 0) continue;
       for (const appliedProperty of appliedProperties) claimedProperties.add(appliedProperty);
 
-      const tokenNames = resolveTokenNames(substitution.variableNames, 0);
+      const tokenValue = getSpecSideValue({
+        property: declaration.property,
+        value: declaration.value,
+        specProperty,
+        writingMode: computedStyle.writingMode,
+        direction: computedStyle.direction,
+        readVariable,
+      });
+      if (tokenValue === null) continue;
+      const tokenSubstitution =
+        tokenValue === declaration.value
+          ? substitution
+          : substituteCssVariables(tokenValue, readVariable);
+      if (!tokenSubstitution) continue;
+      const tokenNames = resolveTokenNames(tokenSubstitution.variableNames, 0);
       if (tokenNames.length === 0) continue;
-      const token = formatSpecToken(declaration.value, tokenNames);
+      const token = formatSpecToken(tokenValue, tokenNames);
       if (!tokens.includes(token)) tokens.push(token);
     }
 

@@ -558,6 +558,15 @@ export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
 export const ANNOTATION_MARQUEE_FILL_OPACITY = 0.08;
 
+export const SPECS_BOX_COMPONENT_INDEXES_BY_COUNT: Record<number, number[]> = {
+  1: [0, 0, 0, 0],
+  2: [0, 1, 0, 1],
+  3: [0, 1, 2, 1],
+  4: [0, 1, 2, 3],
+};
+export const SPECS_RADIUS_MAX_AXES = 2;
+export const SPECS_LOGICAL_SIDE_SUFFIXES = ["start", "end"];
+
 export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
   padding: [
     { property: "padding-top", label: "Top" },
