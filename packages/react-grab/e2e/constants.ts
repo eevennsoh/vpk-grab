@@ -113,6 +113,7 @@ export const PILL_DISMISS_Z_INDEX = "2147483000";
 
 export const GRAB_CLIPBOARD_TYPE = "application/x-react-grab";
 export const WEB_GRAB_CLIPBOARD_TYPE = `web ${GRAB_CLIPBOARD_TYPE}`;
+export const CLIPBOARD_ACTIVATION_EXPIRY_MS = 5500;
 export const IMAGE_AND_TEXT_TYPES = ["image/png", "text/html", "text/plain"];
 export const IMAGE_AND_GRAB_TYPES = [...IMAGE_AND_TEXT_TYPES, WEB_GRAB_CLIPBOARD_TYPE];
 

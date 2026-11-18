@@ -84,6 +84,7 @@ interface ClipboardReader {
 interface LinuxTool {
   name: string;
   readText: () => string | null;
+  listFormats?: () => string | null;
   readCustom: ((format: string) => Buffer | null) | null;
 }
 
@@ -232,6 +233,7 @@ export const detectLinuxTool = (): LinuxTool | null => {
       name: "wl-paste",
       readText: () =>
         runText("wl-paste", ["-n", "-t", "text/plain"]) ?? runText("wl-paste", ["-n"]),
+      listFormats: () => runText("wl-paste", ["-l"]),
       readCustom: (format) => runBuffer("wl-paste", ["-n", "-t", format]),
     };
   }
@@ -239,6 +241,7 @@ export const detectLinuxTool = (): LinuxTool | null => {
     return {
       name: "xclip",
       readText: () => runText("xclip", ["-selection", "clipboard", "-o"]),
+      listFormats: () => runText("xclip", ["-selection", "clipboard", "-t", "TARGETS", "-o"]),
       readCustom: (format) => runBuffer("xclip", ["-selection", "clipboard", "-t", format, "-o"]),
     };
   }
@@ -253,9 +256,15 @@ export const detectLinuxTool = (): LinuxTool | null => {
 };
 
 export const readLinuxGrab = (
+  formatList: string | null,
   readFormat: (format: string) => Buffer | null,
 ): string | undefined => {
-  const pickleGrab = parseChromiumPickle(readFormat(CHROMIUM_CUSTOM_FORMAT))[GRAB_MIME];
+  const formats = formatList?.split("\n");
+  const pickleGrab =
+    !formats || formats.includes(CHROMIUM_CUSTOM_FORMAT)
+      ? parseChromiumPickle(readFormat(CHROMIUM_CUSTOM_FORMAT))[GRAB_MIME]
+      : undefined;
+  if (!formats?.includes(LINUX_WEB_FORMAT_MAP)) return pickleGrab;
   const map = readFormat(LINUX_WEB_FORMAT_MAP);
   if (!map) return pickleGrab;
   let entry: unknown;
@@ -264,7 +273,13 @@ export const readLinuxGrab = (
   } catch {
     return pickleGrab;
   }
-  if (typeof entry !== "string" || !LINUX_WEB_FORMAT_ENTRY.test(entry)) return pickleGrab;
+  if (
+    typeof entry !== "string" ||
+    !LINUX_WEB_FORMAT_ENTRY.test(entry) ||
+    !formats.includes(entry)
+  ) {
+    return pickleGrab;
+  }
   return getNewerGrab(readFormat(entry)?.toString("utf8"), pickleGrab);
 };
 
@@ -277,9 +292,10 @@ const createLinuxReader = (options: CreateReaderOptions): ClipboardReader | null
     read: () => {
       const text = tool.readText();
       if (text == null) return null;
-      // No clipboard sequence number on X11/Wayland, so always read the custom
-      // blob; its timestamp dedups re-grabs of the identical element.
-      const grab = useCustom && tool.readCustom ? readLinuxGrab(tool.readCustom) : undefined;
+      const grab =
+        useCustom && tool.readCustom
+          ? readLinuxGrab(tool.listFormats?.() ?? null, tool.readCustom)
+          : undefined;
       return { changeCount: null, text, grab };
     },
   };

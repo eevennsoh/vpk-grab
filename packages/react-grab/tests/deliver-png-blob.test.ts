@@ -32,8 +32,16 @@ describe("deliverPngBlob without the async clipboard", () => {
 });
 
 describe("deliverPngBlob with grab metadata", () => {
-  for (const supports of [true, false, undefined]) {
-    it(`writes the supported representations when supports is ${supports}`, async () => {
+  const cases: [boolean | undefined, PermissionState | undefined][] = [
+    [true, "granted"],
+    [false, "granted"],
+    [undefined, "granted"],
+    [true, "denied"],
+    [true, "prompt"],
+    [true, undefined],
+  ];
+  for (const [supports, permission] of cases) {
+    it(`writes the supported representations when supports is ${supports} and permission is ${permission}`, async () => {
       const customType = "web application/x-react-grab";
       const metadata = '{"timestamp":123}';
       const png = Promise.resolve(new Blob(["png"], { type: "image/png" }));
@@ -45,17 +53,18 @@ describe("deliverPngBlob with grab metadata", () => {
       vi.stubGlobal("ClipboardItem", TestClipboardItem);
       vi.stubGlobal("navigator", { clipboard: { write } });
 
-      await expect(deliverPngBlob(png, "text", metadata)).resolves.toBe("copied");
+      await expect(deliverPngBlob(png, "text", metadata, permission)).resolves.toBe("copied");
       const [items] = write.mock.calls[0];
       expect(items).toHaveLength(1);
       const { representations } = items[0];
+      const includesMetadata = supports && permission === "granted";
       expect(Object.keys(representations).sort()).toEqual([
         "image/png",
         "text/html",
         "text/plain",
-        ...(supports ? [customType] : []),
+        ...(includesMetadata ? [customType] : []),
       ]);
-      if (supports) {
+      if (includesMetadata) {
         const blob = await representations[customType];
         expect(blob.type).toBe("application/x-react-grab");
         expect(await blob.text()).toBe(metadata);

@@ -195,13 +195,24 @@ const webFormats = (timestamp: number) =>
   ]);
 
 describe("readLinuxGrab", () => {
+  it("skips absent formats and falls back to the legacy pickle if listing fails", () => {
+    const read = vi.fn(() => encodeGrabPickle(metadataAt(1)));
+    expect(readLinuxGrab("text/plain\nimage/png\n", read)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+    for (const listing of [PICKLE_FORMAT, null]) {
+      read.mockClear();
+      expect(readLinuxGrab(listing, read)).toBe(metadataAt(1));
+      expect(read.mock.calls).toEqual([[PICKLE_FORMAT]]);
+    }
+  });
+
   it("uses the mapped entry and prefers the newer timestamp", () => {
     const formats = webFormats(2);
     const read = (format: string) => formats.get(format) ?? null;
     formats.set(PICKLE_FORMAT, encodeGrabPickle(metadataAt(1)));
-    expect(readLinuxGrab(read)).toBe(metadataAt(2));
+    expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(2));
     formats.set(PICKLE_FORMAT, encodeGrabPickle(metadataAt(3)));
-    expect(readLinuxGrab(read)).toBe(metadataAt(3));
+    expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(3));
   });
 
   it("ignores malformed maps and unrelated native targets", () => {
@@ -211,7 +222,7 @@ describe("readLinuxGrab", () => {
         [PICKLE_FORMAT, encodeGrabPickle(metadataAt(1))],
       ]);
       const read = vi.fn((format: string) => formats.get(format) ?? null);
-      expect(readLinuxGrab(read)).toBe(metadataAt(1));
+      expect(readLinuxGrab([...formats.keys()].join("\n"), read)).toBe(metadataAt(1));
       expect(read).not.toHaveBeenCalledWith("image/png");
     }
   });
@@ -221,7 +232,10 @@ describe("runWatchLoop image polling", () => {
   for (const seeTextWrite of [true, false]) {
     it(`records a repeat grab once when the poll sees ${seeTextWrite ? "both writes" : "only the image"}`, async () => {
       const formats = webFormats(2);
-      const imageGrab = readLinuxGrab((format) => formats.get(format) ?? null);
+      const imageGrab = readLinuxGrab(
+        [...formats.keys()].join("\n"),
+        (format) => formats.get(format) ?? null,
+      );
       const baseline = { changeCount: 1, text: REPEATED_TEXT, grab: metadataAt(1) };
       const textWrite = { changeCount: 2, text: REPEATED_TEXT, grab: metadataAt(2) };
       const imageWrite = { changeCount: 3, text: REPEATED_TEXT, grab: imageGrab };
@@ -349,7 +363,7 @@ describe(`clipboard round-trip via custom format (${process.platform})`, () => {
       const formats = webFormats(2);
       // xclip owns a single target at a time, so offer each browser representation
       // as the reader requests it. Both the map and payload pass through X11.
-      const grab = readLinuxGrab((format) => {
+      const grab = readLinuxGrab([...formats.keys()].join("\n"), (format) => {
         const data = formats.get(format);
         if (!data) return null;
         expect(writeX11Format(format, data)).toBe(true);
@@ -364,23 +378,6 @@ describe(`clipboard round-trip via custom format (${process.platform})`, () => {
     process.platform === "win32"
       ? canUseClipboard()
       : process.platform === "darwin" && hasCommand("swift") && hasCommand("swiftc");
-
-  if (process.platform === "win32") {
-    it.skipIf(!customSupported)(
-      "reads the newer mapped Windows entry alongside a pickle",
-      async () => {
-        const content = "Élément ✓";
-        const windowsWebGrab = JSON.stringify({ content, entries: [], timestamp: Date.now() });
-        expect(writeGrab({ text: REPEATED_TEXT, grabJson: metadataAt(1), windowsWebGrab })).toBe(
-          true,
-        );
-        expect(await collectGrabs([], { timeoutMs: 20000, minRecords: 1 })).toMatchObject([
-          { source: "custom", content },
-        ]);
-      },
-      25000,
-    );
-  }
 
   // The macOS round-trip needs two Swift binaries: the fixture that writes the
   // pasteboard and the reader the watcher compiles. Both are built once here,

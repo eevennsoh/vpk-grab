@@ -1,4 +1,8 @@
-import { REACT_GRAB_MIME_TYPE, WEB_REACT_GRAB_MIME_TYPE } from "../constants.js";
+import {
+  REACT_GRAB_MIME_TYPE,
+  WEB_REACT_GRAB_MIME_TYPE,
+  WEB_CUSTOM_FORMAT_SIZE_LIMIT_BYTES,
+} from "../constants.js";
 import type { ImageDeliveryResult } from "../types.js";
 import { downloadBlob } from "./download-blob.js";
 import { getClipboardHtml } from "./get-clipboard-html.js";
@@ -13,6 +17,7 @@ export const deliverPngBlob = async (
   blobPromise: Promise<Blob>,
   textContent?: string,
   copiedMetadata?: string,
+  unsanitizedWritePermission?: PermissionState,
 ): Promise<ImageDeliveryResult> => {
   if (IS_DEMO) {
     await blobPromise;
@@ -29,14 +34,17 @@ export const deliverPngBlob = async (
           "text/plain": new Blob([textContent], { type: "text/plain" }),
           "text/html": new Blob([getClipboardHtml(textContent)], { type: "text/html" }),
         };
+  // Chromium can prompt for a custom format even inside a click. Use only an existing grant.
   if (
+    unsanitizedWritePermission === "granted" &&
     textContent !== undefined &&
     copiedMetadata !== undefined &&
     ClipboardItem.supports?.(WEB_REACT_GRAB_MIME_TYPE)
   ) {
-    textRepresentations[WEB_REACT_GRAB_MIME_TYPE] = new Blob([copiedMetadata], {
-      type: REACT_GRAB_MIME_TYPE,
-    });
+    const metadataBlob = new Blob([copiedMetadata], { type: REACT_GRAB_MIME_TYPE });
+    if (metadataBlob.size < WEB_CUSTOM_FORMAT_SIZE_LIMIT_BYTES) {
+      textRepresentations[WEB_REACT_GRAB_MIME_TYPE] = metadataBlob;
+    }
   }
   await navigator.clipboard.write([
     new ClipboardItem({ ...textRepresentations, "image/png": blobPromise }),

@@ -47,6 +47,7 @@ import { createNoopApi } from "./noop-api.js";
 import { createEventListenerManager } from "./events.js";
 import { runCopyFlow, type CopyFlowResult } from "./copy.js";
 import { capturePageRect } from "../utils/capture-page-rect.js";
+import { getScreenshotWritePermission } from "../utils/get-screenshot-write-permission.js";
 import { deliverPngBlob } from "../utils/deliver-png-blob.js";
 import { padPageRect } from "../utils/pad-page-rect.js";
 import { isKeyboardEventComposing } from "../utils/is-keyboard-event-composing.js";
@@ -4681,6 +4682,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
     };
 
+    let screenshotWritePermission: PermissionStatus | undefined;
+    void getScreenshotWritePermission().then((permission) => {
+      screenshotWritePermission = permission;
+    });
+
     // The camera's click issues the clipboard write in its own call stack,
     // before the image has rendered; the automatic capture issues it as soon
     // as the copy lands, moments after the gesture that made the copy, and a
@@ -4716,7 +4722,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         return captureResult;
       });
-      const deliveryPromise = deliverPngBlob(blobPromise, copiedContent, copiedMetadata);
+      const deliveryPromise = deliverPngBlob(
+        blobPromise,
+        copiedContent,
+        copiedMetadata,
+        screenshotWritePermission?.state,
+      );
 
       void Promise.allSettled([blobPromise, deliveryPromise]).then(
         ([blobOutcome, deliveryOutcome]) => {

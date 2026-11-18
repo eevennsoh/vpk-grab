@@ -95,13 +95,7 @@ export const writeX11Format = (format: string, data: Buffer): boolean =>
 // Writes a React Grab grab to the clipboard the way a browser would. macOS and
 // Windows can offer the custom format alongside plain text; X11 xclip serves one
 // target per invocation, so on Linux only the custom blob is offered.
-interface WriteGrabOptions {
-  text: string;
-  grabJson: string;
-  windowsWebGrab?: string;
-}
-
-export const writeGrab = ({ text, grabJson, windowsWebGrab }: WriteGrabOptions): boolean => {
+export const writeGrab = ({ text, grabJson }: { text: string; grabJson: string }): boolean => {
   const pickle = encodeGrabPickle(grabJson);
   if (process.platform === "darwin") {
     const [command, commandArguments] = compiledDarwinGrabWriter
@@ -123,7 +117,6 @@ export const writeGrab = ({ text, grabJson, windowsWebGrab }: WriteGrabOptions):
         fixture,
         text,
         pickle.toString("base64"),
-        ...(windowsWebGrab ? [Buffer.from(windowsWebGrab).toString("base64")] : []),
       ]).status === 0
     );
   }

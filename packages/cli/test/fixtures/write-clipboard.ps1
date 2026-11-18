@@ -1,4 +1,4 @@
-param([string]$Text, [string]$PickleBase64, [string]$WebGrabBase64)
+param([string]$Text, [string]$PickleBase64)
 
 # Test fixture: emulate a browser writing React Grab data to the Windows
 # clipboard. Offers CF_UNICODETEXT and the registered "Chromium Web Custom MIME
@@ -39,7 +39,7 @@ public static class RgWrite {
     return handle;
   }
 
-  public static bool Write(string text, byte[] pickle, byte[] webGrab) {
+  public static bool Write(string text, byte[] pickle) {
     if (!OpenClipboard(IntPtr.Zero)) return false;
     try {
       EmptyClipboard();
@@ -47,11 +47,6 @@ public static class RgWrite {
       SetClipboardData(CF_UNICODETEXT, CopyToGlobal(textBytes));
       uint customFormat = RegisterClipboardFormat("Chromium Web Custom MIME Data Format");
       SetClipboardData(customFormat, CopyToGlobal(pickle));
-      if (webGrab != null) {
-        byte[] map = System.Text.Encoding.UTF8.GetBytes("{\"application/x-react-grab\":\"Web Custom Format7\"}");
-        SetClipboardData(RegisterClipboardFormat("Web Custom Format Map"), CopyToGlobal(map));
-        SetClipboardData(RegisterClipboardFormat("Web Custom Format7"), CopyToGlobal(webGrab));
-      }
       return true;
     } finally {
       CloseClipboard();
@@ -63,8 +58,6 @@ public static class RgWrite {
 Add-Type -TypeDefinition $source -Language CSharp | Out-Null
 
 $pickle = [System.Convert]::FromBase64String($PickleBase64)
-$webGrab = $null
-if ($WebGrabBase64) { $webGrab = [System.Convert]::FromBase64String($WebGrabBase64) }
-if (-not [RgWrite]::Write($Text, $pickle, $webGrab)) {
+if (-not [RgWrite]::Write($Text, $pickle)) {
   exit 1
 }
