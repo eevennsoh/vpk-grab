@@ -443,7 +443,7 @@ export const ANNOTATION_COLOR_OPTIONS: AnnotationColorOption[] = [
   { label: "Orange", value: "#fb923c" },
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#22c55e" },
-  { label: "Black", value: "#111827", usesThemeBorder: true },
+  { label: "Black", value: "#111827", hasInnerRing: true },
 ];
 
 export const ANNOTATION_RECTANGLE_POINT_COUNT = 4;
