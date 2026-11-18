@@ -25,6 +25,7 @@ import { MaterialIcon } from "../icons/material-icon.jsx";
 import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { ToolbarActionButton } from "./toolbar-action-button.jsx";
 import {
+  TOOLBAR_ACTION_ICON_SIZE_PX,
   TOOLBAR_SNAP_MARGIN_PX,
   TOOLBAR_FADE_IN_DELAY_MS,
   TOOLBAR_ANNOTATION_ACTIONS_HIDE_DURATION_MS,
@@ -930,7 +931,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(currentActionId)}
               icon={
                 <IconSelect
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   rotationDeg={selectIconRotationDeg()}
                   isFilled={isGrabToolOn()}
                   class={actionIconClass(isGrabToolOn())}
@@ -952,7 +953,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(() => PEN_ACTION_ID)}
               icon={
                 <IconPen
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   isFilled={props.annotationTool === "pen"}
                   class={actionIconClass(props.annotationTool === "pen")}
                 />
@@ -993,7 +994,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               {...createFreezeHandlers(() => TEXT_ACTION_ID)}
               icon={
                 <IconText
-                  size={14}
+                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
                   isFilled={props.annotationTool === "text"}
                   class={actionIconClass(props.annotationTool === "text")}
                 />
@@ -1021,7 +1022,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => SPECS_ACTION_ID)}
                 icon={
                   <IconSpecs
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={Boolean(props.isSpecsEnabled)}
                     class={actionIconClass(Boolean(props.isSpecsEnabled))}
                   />
@@ -1042,7 +1043,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
                 icon={
                   <IconRedlines
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={Boolean(props.isRedlinesEnabled)}
                     class={actionIconClass(Boolean(props.isRedlinesEnabled))}
                   />
@@ -1064,7 +1065,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 icon={
                   <MaterialIcon
                     paths={PHOTO_CAMERA_ICON_PATHS}
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={Boolean(props.isAutoScreenshotEnabled)}
                     class={actionIconClass(Boolean(props.isAutoScreenshotEnabled))}
                   />
@@ -1137,7 +1138,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {...createFreezeHandlers(() => EDIT_ACTION_ID)}
                 icon={
                   <IconMove
-                    size={14}
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
                     isFilled={props.annotationTool === "edit"}
                     class={actionIconClass(props.annotationTool === "edit")}
                   />
@@ -1160,7 +1161,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 wrapperClass={actionButtonWrapperClass()}
                 onClick={handleClearAnnotations}
                 {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
-                icon={<IconClear size={14} class={actionIconClass(false)} />}
+                icon={
+                  <IconClear size={TOOLBAR_ACTION_ICON_SIZE_PX} class={actionIconClass(false)} />
+                }
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
                 tooltip="Clear"

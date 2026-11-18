@@ -601,6 +601,7 @@ export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
 };
 
 export const COMPLETION_DISMISS_ICON_SIZE_PX = 14;
+export const TOOLBAR_ACTION_ICON_SIZE_PX = 14;
 
 export const CLIPBOARD_WRITE_PERMISSION_NAME = "clipboard-write" as PermissionName;
 export const WEB_CUSTOM_FORMAT_SIZE_LIMIT_BYTES = 1024 ** 3;
