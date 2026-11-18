@@ -8,6 +8,24 @@ test.describe("Toolbar Menu", () => {
     await expect(reactGrab.page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
   });
 
+  test("removing the last plugin choice hides an open menu and restores Enter copying", async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await reactGrab.rightClickToolbarToggle();
+    await expect(page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(1);
+
+    await page.evaluate(() => window.__REACT_GRAB__?.unregisterPlugin("custom-default"));
+
+    await expect(page.locator("[data-react-grab-toolbar-menu]")).toHaveCount(0);
+    await reactGrab.activate();
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+  });
+
   test.beforeEach(async ({ reactGrab }) => {
     await reactGrab.page.evaluate(() =>
       window.__REACT_GRAB__?.registerPlugin({

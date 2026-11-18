@@ -560,8 +560,7 @@ const createReactGrabPageObject = (
     await activate();
     await hoverUntilSelected(selector);
     await page.evaluate(() => window.__REACT_GRAB__?.comment());
-    await page.mouse.down();
-    await page.mouse.up();
+    await clickElement(selector);
     await waitForPromptMode(true);
     const promptInput = page.locator("textarea[data-react-grab-input]");
     await promptInput.waitFor({ state: "visible", timeout: UI_STATE_TIMEOUT_MS });
@@ -1490,7 +1489,7 @@ const createReactGrabPageObject = (
       ({ expectedWidth, expectedHeight }) =>
         window.innerWidth === expectedWidth && window.innerHeight === expectedHeight,
       { expectedWidth: width, expectedHeight: height },
-      { timeout: 2000 },
+      { timeout: UI_STATE_TIMEOUT_MS },
     );
     await page.evaluate(() => {
       window.dispatchEvent(new Event("resize"));

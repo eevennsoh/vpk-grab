@@ -396,6 +396,42 @@ test.describe("Enter copies first", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(false);
   });
 
+  test("Enter copies every element of a frozen marquee selection", async ({ reactGrab, page }) => {
+    await installClipboardRecorder(page);
+    await page.evaluate(() => {
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "freeze-selection",
+        actions: [
+          {
+            id: "freeze-selection",
+            label: "Freeze selection",
+            showInToolbarMenu: true,
+            onAction: () => {},
+          },
+        ],
+      });
+      window.__REACT_GRAB__?.setToolbarState({ defaultAction: "freeze-selection" });
+    });
+    await reactGrab.clickToolbarAction("freeze-selection");
+    await reactGrab.dragSelect(
+      "[data-testid='todo-list'] li:first-child span",
+      "[data-testid='todo-list'] li:nth-child(2) span",
+    );
+    await expect(
+      page.locator("[data-react-grab-selection-label]:not([data-react-grab-label-instance])"),
+    ).toHaveCount(2);
+    expect(await getCopyEventCount(page)).toBe(0);
+
+    await page.keyboard.press("Enter");
+
+    await expect.poll(() => getCopyEventCount(page)).toBe(1);
+    const reference = await reactGrab.getClipboardContent();
+    expect(reference).toContain("Buy groceries");
+    expect(reference).toContain("Walk the dog");
+    await expect(page.locator(pillPromptSelector)).toBeFocused();
+    expect(await reactGrab.isPromptModeActive()).toBe(false);
+  });
+
   test("Enter with no hovered or selected element does nothing", async ({ reactGrab, page }) => {
     await installClipboardRecorder(page);
     await page.evaluate(() => document.body.setAttribute("data-react-grab-ignore", ""));

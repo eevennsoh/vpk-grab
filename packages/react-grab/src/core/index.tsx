@@ -453,7 +453,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       null,
     );
 
-    const isAnyPopoverOpen = () => toolbarMenuPosition() !== null;
+    const isAnyPopoverOpen = () =>
+      toolbarMenuActions().length > 1 && toolbarMenuPosition() !== null;
     let toolbarElement: HTMLDivElement | undefined;
     let stopToolbarMenuTracking: (() => void) | null = null;
 
@@ -2756,7 +2757,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return false;
       }
       const isEnterKey = originalKey === "Enter" || isEnterCode(event.code);
-      const isOverlayActive = isActivated() || isHoldingKeys();
+      const isOverlayActive = isActivated() || isHoldingKeys() || isCopying();
       const shouldBlockEnter =
         isEnterKey &&
         isOverlayActive &&
@@ -4746,7 +4747,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onToolbarRef={(element) => {
                   toolbarElement = element;
                 }}
-                toolbarMenuPosition={toolbarMenuPosition()}
+                toolbarMenuPosition={isAnyPopoverOpen() ? toolbarMenuPosition() : null}
                 toolbarMenuActions={toolbarMenuActions()}
                 defaultActionId={currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID}
                 defaultActionLabel={defaultToolbarActionLabel()}

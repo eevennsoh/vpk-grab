@@ -1933,7 +1933,8 @@ test.describe("Copied pill camera after a real activation", () => {
       expect(await isReactGrabActive(page)).toBe(true);
     });
 
-    test("Enter away from pill buttons stays blocked while Grab is active from the keyboard", async ({
+    test("Enter copies without leaking page keys while the activation shortcut is held", async ({
+      reactGrab,
       page,
     }) => {
       await injectPageButton(page);
@@ -1946,6 +1947,8 @@ test.describe("Copied pill camera after a real activation", () => {
       await expect(pageButton).toHaveAttribute("data-enter-event-count", "0");
       expect(await getPageButtonClickCount(page)).toBe(0);
       expect(await getClipboardWriteCallCount(page)).toBe(0);
+      await expect.poll(() => getCopyEventCount(page)).toBe(2);
+      await expect(getCompletion(reactGrab).locator("textarea")).toBeFocused();
 
       await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
       await page.keyboard.up(HELD_ACTIVATION_KEY);
