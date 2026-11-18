@@ -2460,9 +2460,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const pageRect = createPageRectFromBounds(dragSelectionRect);
       const annotations = { strokes: inspect.strokes(), texts: inspect.texts() };
       let capturedBlobPromise: Promise<Blob> | null = null;
-      const getCapturedBlob = () => {
+      const getCapturedBlob = (signal: AbortSignal) => {
         if (!capturedBlobPromise) {
-          const blobPromise = capturePageRect(pageRect, annotations);
+          const blobPromise = capturePageRect(pageRect, annotations, signal);
           capturedBlobPromise = blobPromise;
           blobPromise.catch(() => {
             if (capturedBlobPromise === blobPromise) capturedBlobPromise = null;
@@ -2486,7 +2486,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       const copyScreenshotToClipboard = async (signal: AbortSignal): Promise<CopyFlowResult> => {
         labelController.cancelScreenshotCaptures();
-        const blobPromise = racePromiseWithAbort(getCapturedBlob(), signal).then(
+        const blobPromise = racePromiseWithAbort(getCapturedBlob(signal), signal).then(
           (captureResult) => {
             if (captureResult === ABORTED_PROMISE_RESULT) {
               throw new Error("Screenshot capture cancelled");
@@ -3981,6 +3981,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       { capture: true },
     );
 
+    // A pending image would overwrite any copy that lands before it: the
+    // page's own copy or cut, or a host's copyContent(). Grab's own text copy
+    // fires this too, but always before the image that follows it starts.
+    const cancelScreenshotCapturesForNewerCopy = () => labelController.cancelScreenshotCaptures();
+    eventListenerManager.addWindowListener("copy", cancelScreenshotCapturesForNewerCopy, {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("cut", cancelScreenshotCapturesForNewerCopy, {
+      capture: true,
+    });
+
     onCleanup(() => {
       const cleanupErrors: unknown[] = [];
       collectCleanupError(stopForwardingSameOriginFrameEvents, cleanupErrors);
@@ -4669,7 +4680,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // before the image has rendered; the automatic capture issues it as soon
     // as the copy lands, moments after the gesture that made the copy, and a
     // browser that refuses that later write gets "Couldn't copy image" while
-    // the text copy stays. A newer Grab clipboard write or the pill's removal
+    // the text copy stays. Any newer clipboard write or the pill's removal
     // cancels the capture, and the pending image then rejects so this write
     // cannot overwrite the newer one.
     const copyLabelScreenshot = (instanceId: string) => {
@@ -4688,10 +4699,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       labelController.cancelScreenshotCaptures();
       const captureSignal = labelController.startScreenshotCapture(instanceId);
       const blobPromise = racePromiseWithAbort(
-        capturePageRect(getLabelCaptureRect(instance), {
-          strokes: inspect.strokes(),
-          texts: inspect.texts(),
-        }),
+        capturePageRect(
+          getLabelCaptureRect(instance),
+          { strokes: inspect.strokes(), texts: inspect.texts() },
+          captureSignal,
+        ),
         captureSignal,
       ).then((captureResult) => {
         if (captureResult === ABORTED_PROMISE_RESULT) {

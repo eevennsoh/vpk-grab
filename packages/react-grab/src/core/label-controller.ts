@@ -297,13 +297,17 @@ export const createLabelController = (
     });
   };
 
+  // A new capture follows a new copy, which the old image is no longer part
+  // of, so its thumbnail goes now rather than sitting beside a later failure.
   const startScreenshotCapture = (instanceId: string): AbortSignal => {
     abortScreenshotCapture(instanceId);
+    revokeThumbnail(findInstance(instanceId));
     const captureController = new AbortController();
     screenshotCaptureControllers.set(instanceId, captureController);
     store.patchLabelInstance(instanceId, {
       isCapturingScreenshot: true,
       screenshotErrorMessage: undefined,
+      thumbnailUrl: undefined,
     });
     return captureController.signal;
   };

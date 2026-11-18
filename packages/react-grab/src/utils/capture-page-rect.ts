@@ -9,7 +9,11 @@ import { isReactGrabHost } from "./is-react-grab-host.js";
 export const capturePageRect = async (
   pageRect: PageRect,
   annotations: AnnotationSnapshotForCapture,
+  signal: AbortSignal,
 ): Promise<Blob> => {
+  // snapdom's clone and raster passes cannot be interrupted, so a cancelled
+  // capture stops at the next boundary instead of rendering on to the encoder.
+  signal.throwIfAborted();
   const { scale, pixelWidth, pixelHeight, outputScaleX, outputScaleY } = getScreenshotSize(
     pageRect.width,
     pageRect.height,
@@ -22,7 +26,9 @@ export const capturePageRect = async (
     exclude: isReactGrabHost,
     excludeMode: "remove",
   });
+  signal.throwIfAborted();
   const pageCanvas = await capture.toCanvas();
+  signal.throwIfAborted();
 
   const outputCanvas = document.createElement("canvas");
   outputCanvas.width = pixelWidth;
