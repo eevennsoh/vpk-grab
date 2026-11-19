@@ -4164,6 +4164,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       isSpecsEnabled: inspect.isSpecsEnabled,
       isRedlinesEnabled: inspect.isRedlinesEnabled,
       isAutoScreenshotEnabled: inspect.isAutoScreenshotEnabled,
+      isScreenshotMode,
       annotationTool: inspect.annotationTool,
       element: inspectElement,
       measureTarget: inspect.measureTargetElement,

@@ -231,6 +231,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
           isSpecsEnabled={props.inspect?.isSpecsEnabled()}
           isRedlinesEnabled={props.inspect?.isRedlinesEnabled()}
           isAutoScreenshotEnabled={props.inspect?.isAutoScreenshotEnabled()}
+          isScreenshotMode={props.inspect?.isScreenshotMode()}
           annotationTool={props.inspect?.annotationTool()}
           annotationColor={props.inspect?.annotationColor()}
           hasAnnotations={props.inspect?.hasAnnotations()}

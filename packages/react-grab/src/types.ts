@@ -865,6 +865,7 @@ export interface InspectRendererState {
   isSpecsEnabled: Accessor<boolean>;
   isRedlinesEnabled: Accessor<boolean>;
   isAutoScreenshotEnabled: Accessor<boolean>;
+  isScreenshotMode: Accessor<boolean>;
   annotationTool: Accessor<AnnotationTool>;
   element: Accessor<Element | null>;
   measureTarget: Accessor<Element | null>;

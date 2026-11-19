@@ -375,6 +375,34 @@ test.describe("Screenshot capture", () => {
     expect(await reactGrab.isOverlayVisible()).toBe(true);
   });
 
+  test("holding Shift lights the Screenshot toggle without switching it on", async ({ page }) => {
+    const toggle = page.locator(AUTO_SCREENSHOT_TOGGLE_SELECTOR);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.down("Shift");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.down();
+    await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("Escape");
+    await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
+    await page.keyboard.down("Shift");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up("Shift");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await switchOnScreenshotToggle(page);
+    await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
+    await page.keyboard.down("Shift");
+    await page.keyboard.up("Shift");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+
   test("draws the capture marquee with its size while Shift is held", async ({
     reactGrab,
     page,

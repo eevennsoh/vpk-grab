@@ -23,11 +23,11 @@ With Grab in hand, **1**, **2** and **3** toggle **Specs**, **Spacing** and **Sc
 
 Holding a key changes what the pointer does:
 
-| Key            | With     | What it does                                                                                                                                                                                                                      |
-| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hold **Shift** | Specs on | Pins the panel to the element so the pointer can reach it. Each row gets a checkbox to switch it off and on, a value to type into, a menu of tokens and keywords, and a reset. The pin button keeps it open; **Esc** releases it. |
-| Hold **Alt**   | Grab     | Shows the spacing for as long as it is held, even with Spacing off, and anchors it to the element. Move to any other element to read the distances between the two.                                                               |
-| **Shift**+drag | Grab     | Copies a PNG of the dragged area, with your drawings and notes, instead of the elements in it. Let go of **Shift** before the mouse to select elements again. On an address without HTTPS the image downloads instead.            |
+| Key            | With     | What it does                                                                                                                                                                                                                                                                        |
+| -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hold **Shift** | Specs on | Pins the panel to the element so the pointer can reach it. Each row gets a checkbox to switch it off and on, a value to type into, a menu of tokens and keywords, and a reset. The pin button keeps it open; **Esc** releases it.                                                   |
+| Hold **Alt**   | Grab     | Shows the spacing for as long as it is held, even with Spacing off, and anchors it to the element. Move to any other element to read the distances between the two.                                                                                                                 |
+| **Shift**+drag | Grab     | Copies a PNG of the dragged area, with your drawings and notes, instead of the elements in it. The **Screenshot** toggle lights up while **Shift** is held. Let go of **Shift** before the mouse to select elements again. On an address without HTTPS the image downloads instead. |
 
 While drawing either marquee, hold **Space** to move the rectangle without changing its size. Release **Space** to resize it again.
 
