@@ -25,6 +25,7 @@ import {
   Z_INDEX_OVERLAY_CANVAS,
 } from "../../constants.js";
 import type { AnnotationStroke, AnnotationText, Position, Rect } from "../../types.js";
+import { getToolCycleDirection } from "../../utils/get-tool-cycle-direction.js";
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
 import { getAnnotationStrokeBounds } from "../../utils/get-annotation-stroke-bounds.js";
 import { createInkPath } from "../../utils/ink-path.js";
@@ -57,7 +58,9 @@ const textBaseStyle = {
   "font-weight": String(ANNOTATION_TEXT_FONT_WEIGHT),
 };
 
-const stopKeyPropagation = (event: KeyboardEvent) => event.stopPropagation();
+const stopKeyPropagation = (event: KeyboardEvent) => {
+  if (!getToolCycleDirection(event)) event.stopPropagation();
+};
 
 export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
   const [scrollOffset, setScrollOffset] = createSignal<Position>({
@@ -285,7 +288,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
               on:keydown={(event) => {
                 // Kept inside the overlay: the page's own shortcuts must not
                 // fire for keys typed into a note.
-                event.stopPropagation();
+                stopKeyPropagation(event);
                 if (isKeyboardEventComposing(event)) return;
                 if (event.key === "Enter") {
                   event.preventDefault();

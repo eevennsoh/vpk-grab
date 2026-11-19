@@ -11,8 +11,8 @@ import type { AnnotationTool, SelectionTool } from "../types.js";
 import { getCycledSelectionTool } from "./get-cycled-selection-tool.js";
 import { isMac } from "./is-mac.js";
 
-// From Grab, the next tool in the ring is one modifier tap away and the
-// previous one is a Shift tap away. Drawing tools and Move show the drawing
+// From Grab, the platform modifier and horizontal arrows reach the adjacent
+// tools in the ring. Drawing tools and Move show the drawing
 // numbers, including the tool in hand. Before activation only Grab has a key,
 // the one that activates.
 export const getSelectionToolShortcut = (

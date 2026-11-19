@@ -87,7 +87,6 @@ import {
   SPECS_TOOL_KEY,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
-  TOOL_CYCLE_TAP_MAX_MS,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -175,7 +174,7 @@ import { createAutoScroller, getAutoScrollDirection } from "./auto-scroll.js";
 import { logIntro } from "./log-intro.js";
 import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
-import { isMac } from "../utils/is-mac.js";
+import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
@@ -650,6 +649,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void dragPreviewElements();
     };
     let keydownSpamTimerId: number | null = null;
+    let heldActivationKeyCode: string | null = null;
     let toggleShortcutPressTimestampMs: number | null = null;
     const activationHoldState = {
       timerId: null as number | null,
@@ -1965,6 +1965,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const deactivateRenderer = (shouldPreservePillPromptFocus = false) => {
       clearCopyFeedbackCooldown();
       cancelPendingCopies();
+      heldActivationKeyCode = null;
       toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
@@ -2120,9 +2121,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       didAnnotationToolActivate = false;
     };
 
-    // Grab, pen and text are one choice, so a tap of the platform modifier
-    // steps through them in the toolbar's order, and Shift steps back; Move
-    // sits just after Text.
     const cycleSelectionTool = (direction: ToolCycleDirection) => {
       const nextTool = getCycledSelectionTool(inspect.annotationTool(), direction);
       if (nextTool === "grab") {
@@ -2712,61 +2710,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const eventListenerManager = createEventListenerManager();
 
-    // The platform modifier (Cmd on the Mac, Ctrl elsewhere) tapped on its own
-    // steps through Grab, Pen and Text, and with Shift steps back. It is the
-    // key that starts every chord (Cmd+C, Cmd+Z, Cmd-click), so a press counts
-    // only if it is let go soon with nothing else in between. These listeners
-    // come first so they still see a chord's key when a later handler stops it.
-    let toolCycleTap: { startedAtMs: number; isBackward: boolean } | null = null;
-    const getToolCycleModifierKey = () => (isMac() ? "Meta" : "Control");
-    const canCycleTools = () =>
-      isActivated() &&
-      !isPromptMode() &&
-      !isCopying() &&
-      pluginRegistry.store.options.activationMode !== "hold";
-    const cancelToolCycleTap = () => {
-      toolCycleTap = null;
-    };
-
-    eventListenerManager.addWindowListener(
-      "keydown",
-      ignoreRealInput((event: KeyboardEvent) => {
-        if (event.key === getToolCycleModifierKey()) {
-          if (event.repeat) return;
-          const isTypingIntoField =
-            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) ||
-            isSpecsFieldEvent(event) ||
-            isTextFieldKeyEvent(event);
-          toolCycleTap =
-            canCycleTools() && !isTypingIntoField
-              ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
-              : null;
-          return;
-        }
-        if (!toolCycleTap) return;
-        if (event.key === "Shift") {
-          toolCycleTap.isBackward = true;
-          return;
-        }
-        cancelToolCycleTap();
-      }),
-      { capture: true },
-    );
-
-    eventListenerManager.addWindowListener(
-      "keyup",
-      ignoreRealInput((event: KeyboardEvent) => {
-        if (event.key !== getToolCycleModifierKey() || !toolCycleTap) return;
-        const tap = toolCycleTap;
-        cancelToolCycleTap();
-        if (Date.now() - tap.startedAtMs > TOOL_CYCLE_TAP_MAX_MS || !canCycleTools()) return;
-        cycleSelectionTool(tap.isBackward || event.shiftKey ? "backward" : "forward");
-      }),
-      { capture: true },
-    );
-
-    eventListenerManager.addWindowListener("pointerdown", cancelToolCycleTap, { capture: true });
-    eventListenerManager.addWindowListener("blur", cancelToolCycleTap);
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: () =>
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
@@ -2775,6 +2718,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
+        if (getToolCycleDirection(event) && isKeyboardEventTriggeredByInput(event)) return true;
         return dismissPopoverOnEscape(event) || dismissCompletedLabelsOnEscape(event);
       },
       shouldForwardViewportEvent: (frameDocument) => {
@@ -3168,7 +3112,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
       if (isActivated()) {
         if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold") {
-          if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
+          if (!event.repeat) {
+            toggleShortcutPressTimestampMs = performance.now();
+            heldActivationKeyCode = event.code;
+          }
           return;
         }
         if (event.repeat) return;
@@ -3213,6 +3160,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           activationDuration += INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS;
         }
         resetCopyConfirmation();
+        heldActivationKeyCode = event.code;
         actions.startHold(activationDuration);
       }
     };
@@ -3325,6 +3273,25 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         )
           return;
 
+        const toolCycleDirection = getToolCycleDirection(event);
+        if (toolCycleDirection) {
+          if (isPillPromptEvent(event)) return;
+          if (
+            isActivated() &&
+            !isPromptMode() &&
+            pluginRegistry.store.options.activationMode !== "hold" &&
+            heldActivationKeyCode === null &&
+            !isAnyPopoverOpen() &&
+            !isDragging() &&
+            !isShiftMultiSelecting()
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (!event.repeat) cycleSelectionTool(toolCycleDirection);
+            return;
+          }
+        }
+
         blockEnterIfNeeded(event);
 
         if (!isEnabled()) {
@@ -3406,6 +3373,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
+        const requiredModifiers = getModifiersFromActivationKey(
+          pluginRegistry.store.options.activationKey,
+        );
+        const isReleasingModifier =
+          (requiredModifiers.metaKey && !event.metaKey) ||
+          (requiredModifiers.ctrlKey && !event.ctrlKey) ||
+          (requiredModifiers.shiftKey && !event.shiftKey) ||
+          (requiredModifiers.altKey && !event.altKey);
+
+        if (isReleasingModifier || event.code === heldActivationKeyCode)
+          heldActivationKeyCode = null;
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         // A key the pill's prompt owns is still a release: it may end a hold
@@ -3433,15 +3411,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         ) {
           return;
         }
-
-        const requiredModifiers = getModifiersFromActivationKey(
-          pluginRegistry.store.options.activationKey,
-        );
-        const isReleasingModifier =
-          (requiredModifiers.metaKey && !event.metaKey) ||
-          (requiredModifiers.ctrlKey && !event.ctrlKey) ||
-          (requiredModifiers.shiftKey && !event.shiftKey) ||
-          (requiredModifiers.altKey && !event.altKey);
 
         const isReleasingActivationKey = pluginRegistry.store.options.activationKey
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
@@ -3799,6 +3768,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // the window loses focus) but do not deactivate if already active, since
       // the user may alt-tab back.
       eventListenerManager.addWindowListener("blur", () => {
+        heldActivationKeyCode = null;
         cancelActiveDrag();
         if (isHoldingKeys()) {
           clearHoldTimer();

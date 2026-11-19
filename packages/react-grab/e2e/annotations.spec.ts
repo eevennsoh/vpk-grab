@@ -1,8 +1,16 @@
 // Drawings and notes placed with the toolbar's Pen, Rectangle and Text tools, and the
 // Move tool that selects, drags and deletes them.
-import type { Page } from "@playwright/test";
-import { test, expect } from "./fixtures.js";
+import type { Locator, Page } from "@playwright/test";
+import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
+  inspect,
+  installSpecsFixture,
+  pinAndReach,
+  specRow,
+  switchOnSpecs,
+} from "./specs-panel-fixture.js";
+import {
+  NON_NATIVE_ACTIVATION_KEY,
   RECTANGLE_START_PX,
   RECTANGLE_END_PX,
   RECTANGLE_INTERIOR_PX,
@@ -19,8 +27,6 @@ const TEXT_SELECTOR = "[data-react-grab-annotation-text]";
 const SELECTED_SELECTOR = "[data-react-grab-annotation-selected]";
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
 const TOOLBAR_SETTLE_POLL_INTERVAL_MS = 150;
-// Long enough for a tool switch to land if the tap had counted.
-const TOOL_CYCLE_SETTLE_MS = 300;
 const ANNOTATION_ACTIONS_SELECTOR = "[data-react-grab-toolbar-annotation-actions]";
 const ANNOTATION_COLORS_SELECTOR = "[data-react-grab-toolbar-annotation-colors]";
 const INSPECT_SETTINGS_STORAGE_KEY = "react-grab-inspect-settings";
@@ -507,87 +513,259 @@ test.describe("Annotations", () => {
   });
 });
 
-test.describe("Cmd cycles Grab, Pen, Rectangle and Text on a Mac", () => {
-  test.beforeEach(async ({ reactGrab, page }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
-    });
-    await page.reload();
-    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+test.describe("Tool cycling with the platform modifier and horizontal arrows", () => {
+  test.beforeEach(async ({ reactGrab }) => {
     await reactGrab.activate();
   });
 
-  test("a bare Cmd tap steps Grab, Pen, Rectangle, Text and back to Grab", async ({
+  test("steps around the ring in either direction without releasing the modifier", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.keyboard.down(reactGrab.modifierKey);
+    for (const action of ["annotate-pen", "annotate-rectangle", "annotate-text", "copy"]) {
+      await page.keyboard.press("ArrowRight");
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+    }
+    for (const action of ["annotate-text", "annotate-rectangle", "annotate-pen", "copy"]) {
+      await page.keyboard.press("ArrowLeft");
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+    }
+    await page.keyboard.up(reactGrab.modifierKey);
+  });
+
+  test("from Move, Right lands on Grab and Left on Text", async ({ reactGrab, page }) => {
+    await drawStraightLine(page);
+    for (const [arrow, action] of [
+      ["ArrowRight", "copy"],
+      ["ArrowLeft", "annotate-text"],
+    ]) {
+      await toolbarAction(page, "annotate-edit").click();
+      await page.mouse.click(LINE_START.x, LINE_START.y);
+      await expect(page.locator(SELECTED_SELECTOR)).toHaveCount(1);
+      await reactGrab.pressKeyCombo([reactGrab.modifierKey], arrow);
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+    }
+  });
+
+  test("bare and Shift-modified taps and extra modifiers leave Grab in hand", async ({
     reactGrab,
     page,
   }) => {
     const grab = toolbarAction(page, "copy");
-    const pen = toolbarAction(page, "annotate-pen");
-    const rectangle = toolbarAction(page, "annotate-rectangle");
-    const text = toolbarAction(page, "annotate-text");
+    await page.keyboard.press(reactGrab.modifierKey);
     await expect(grab).toHaveAttribute("aria-pressed", "true");
-
-    await page.keyboard.press("Meta");
-    await expect(pen).toHaveAttribute("aria-pressed", "true");
-    await expect(grab).toHaveAttribute("aria-pressed", "false");
-
-    await page.keyboard.press("Meta");
-    await expect(rectangle).toHaveAttribute("aria-pressed", "true");
-
-    await page.keyboard.press("Meta");
-    await expect(text).toHaveAttribute("aria-pressed", "true");
-
-    await page.keyboard.press("Meta");
+    await page.keyboard.press(`Shift+${reactGrab.modifierKey}`);
     await expect(grab).toHaveAttribute("aria-pressed", "true");
-    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    for (const extraModifier of [
+      "Shift",
+      "Alt",
+      reactGrab.modifierKey === "Meta" ? "Control" : "Meta",
+    ]) {
+      await reactGrab.pressKeyCombo([reactGrab.modifierKey, extraModifier], "ArrowRight");
+      await expect(grab).toHaveAttribute("aria-pressed", "true");
+    }
   });
 
-  test("Shift+Cmd steps the other way", async ({ page }) => {
-    await page.keyboard.down("Shift");
-    await page.keyboard.press("Meta");
-    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("Meta");
-    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("Meta");
+  test("a repeated keydown steps only once", async ({ reactGrab, page }) => {
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("ArrowRight");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.up("Shift");
+    await page.keyboard.down("ArrowRight");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up("ArrowRight");
+    await page.keyboard.up(reactGrab.modifierKey);
   });
 
-  test("from Move, Cmd lands on Grab and Shift+Cmd on Text", async ({ page }) => {
-    await drawStraightLine(page);
-    await toolbarAction(page, "annotate-edit").click();
-    await page.keyboard.press("Meta");
-    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+  test("the chord preserves the element selected by plain Left and Right", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+    await page.keyboard.press("ArrowUp");
+    const selected = page.getByRole("menuitemradio", { checked: true });
+    const first = await selected.getAttribute("data-react-grab-menu-item");
+    if (!first) throw new Error("Missing selected hierarchy row");
+    await page.keyboard.press("ArrowRight");
+    await expect(selected).not.toHaveAttribute("data-react-grab-menu-item", first);
+    await page.keyboard.press("ArrowLeft");
+    await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.press("ArrowRight");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
+  });
 
-    await toolbarAction(page, "annotate-edit").click();
-    await page.keyboard.press("Shift+Meta");
+  for (const activationMode of ["hold", "toggle"]) {
+    test(`holding the activation shortcut in ${activationMode} mode keeps sibling navigation`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await reactGrab.deactivate();
+      await reactGrab.updateOptions({
+        activationMode,
+        activationKey: `${reactGrab.modifierKey}+${NON_NATIVE_ACTIVATION_KEY}`,
+      });
+      await page.keyboard.down(reactGrab.modifierKey);
+      await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+      await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+      await page.keyboard.press("ArrowUp");
+      const selected = page.getByRole("menuitemradio", { checked: true });
+      const first = await selected.getAttribute("data-react-grab-menu-item");
+      if (!first) throw new Error("Missing selected hierarchy row");
+      await page.keyboard.press("ArrowRight");
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+      await expect(selected).not.toHaveAttribute("data-react-grab-menu-item", first);
+      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+      if (activationMode === "toggle") {
+        await page.keyboard.press("ArrowRight");
+        await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+      }
+      await page.keyboard.up(reactGrab.modifierKey);
+    });
+  }
+
+  const expectCaretMovement = async (reactGrab: ReactGrabPageObject, field: Locator) => {
+    await field.evaluate((element) => {
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          element.setAttribute("data-page-key", event.defaultPrevented ? "prevented" : event.key);
+        }
+      });
+    });
+    const word = "example";
+    await field.fill(word);
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(word);
+    await reactGrab.page.keyboard.down(reactGrab.modifierKey);
+    await reactGrab.page.keyboard.press("ArrowLeft");
+    await expect(field).toHaveJSProperty("selectionStart", 0);
+    await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
+    await reactGrab.page.keyboard.press("ArrowRight");
+    await expect(field).toHaveJSProperty("selectionStart", word.length);
+    await expect(field).toHaveAttribute("data-page-key", "ArrowRight");
+    await reactGrab.page.keyboard.up(reactGrab.modifierKey);
+  };
+
+  for (const scope of ["page", "same-origin frame"]) {
+    test(`the ${scope} field keeps native caret movement and propagation`, async ({
+      reactGrab,
+      page,
+    }) => {
+      const root =
+        scope === "page" ? page : page.frameLocator("[data-testid='same-origin-iframe']");
+      await root.locator("body").evaluate((body) => {
+        const field = document.createElement("input");
+        field.dataset.testid = "cycle-page-field";
+        body.prepend(field);
+      });
+      await expectCaretMovement(reactGrab, root.getByTestId("cycle-page-field"));
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    });
+  }
+
+  test("the pill field keeps the chord with and without context", async ({ reactGrab, page }) => {
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await page.keyboard.press("Enter");
+    const field = page.getByPlaceholder("Optional context");
+    await expect(field).toBeFocused();
+    await expectCaretMovement(reactGrab, field);
+    await field.fill("");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("the comment field keeps native caret movement and propagation", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.enterPromptMode("[data-testid='todo-list'] h1");
+    await expectCaretMovement(reactGrab, page.getByPlaceholder("Add context"));
+    expect(await reactGrab.isPromptModeActive()).toBe(true);
+  });
+
+  test("the note field keeps native caret movement and propagation", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-text").click();
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
+    await expectCaretMovement(reactGrab, page.getByLabel("Annotation text"));
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("a Cmd tap while typing in a page field leaves the tool alone", async ({ page }) => {
-    await page.evaluate(() => {
-      const field = document.createElement("input");
-      field.setAttribute("data-testid", "cycle-page-field");
-      document.body.appendChild(field);
-      field.focus();
+  for (const control of ["value", "filter"]) {
+    test(`the Specs ${control} field keeps native caret movement and propagation`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await installSpecsFixture(page);
+      await switchOnSpecs(page);
+      await inspect(page, "specs-token-button");
+      await pinAndReach(page, "padding");
+      const row = specRow(page, "padding");
+      if (control === "filter") {
+        await row.locator("[data-react-grab-spec-menu-trigger]").click();
+        await expectCaretMovement(reactGrab, page.getByPlaceholder("Filter tokens and values"));
+      } else {
+        await row.locator("[data-react-grab-spec-value]").click();
+        await expectCaretMovement(reactGrab, row.locator("[data-react-grab-specs-input]"));
+      }
+      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
     });
-    await expect(page.getByTestId("cycle-page-field")).toBeFocused();
-    await page.keyboard.press("Meta");
-    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
-    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
-    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "false");
+  }
+
+  test("claims the chord before page listeners only while active", async ({ reactGrab, page }) => {
+    await page.addInitScript(() => {
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "ArrowRight") {
+            setTimeout(() => {
+              document.body.dataset.arrowPrevented = String(event.defaultPrevented);
+            });
+          }
+        },
+        true,
+      );
+    });
+    await page.reload();
+    await reactGrab.activate();
+    await page.evaluate(() => {
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
+        },
+        true,
+      );
+    });
+    const body = page.locator("body");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(body).toHaveAttribute("data-arrow-prevented", "true");
+    await expect(body).not.toHaveAttribute("data-page-arrow");
+    await reactGrab.deactivate();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(body).toHaveAttribute("data-arrow-prevented", "false");
+    await expect(body).toHaveAttribute("data-page-arrow", "ArrowRight");
   });
 
-  test("Cmd held for a chord does not cycle", async ({ page }) => {
+  test("using the modifier for undo leaves the tool in hand", async ({ reactGrab, page }) => {
     await drawStraightLine(page);
-    const pen = toolbarAction(page, "annotate-pen");
-    await expect(pen).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("Meta+z");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "z");
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
-    await expect(pen).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("tooltips name the key that reaches each tool from the one in hand", async ({ page }) => {
+  test("tooltips name the key that reaches each tool from the one in hand", async ({
+    reactGrab,
+    page,
+  }) => {
+    const modifier = reactGrab.modifierKey === "Meta" ? "⌘" : "Ctrl+";
     const readShortcut = async (actionId: string, name: string) => {
       await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
       await toolbarAction(page, actionId).hover();
@@ -599,15 +777,15 @@ test.describe("Cmd cycles Grab, Pen, Rectangle and Text on a Mac", () => {
         : shortcut.getAttribute("data-react-grab-tooltip-shortcut");
     };
 
-    expect(await readShortcut("annotate-pen", "Pen")).toBe("⌘");
-    expect(await readShortcut("annotate-text", "Text")).toBe("⇧⌘");
+    expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}→`);
+    expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}←`);
     expect(await readShortcut("annotate-rectangle", "Rectangle")).toBeNull();
     expect(await readShortcut("copy", "Grab")).toBeNull();
 
     await toolbarAction(page, "annotate-pen").click();
     expect(await readShortcut("annotate-text", "Text")).toBe("3");
     expect(await readShortcut("annotate-rectangle", "Rectangle")).toBe("2");
-    expect(await readShortcut("copy", "Grab")).toBe("⇧⌘");
+    expect(await readShortcut("copy", "Grab")).toBe(`${modifier}←`);
     expect(await readShortcut("annotate-pen", "Pen")).toBe("1");
   });
 
@@ -621,7 +799,7 @@ test.describe("Cmd cycles Grab, Pen, Rectangle and Text on a Mac", () => {
     const grabTooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Grab" });
     await expect(grabTooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
       "data-react-grab-tooltip-shortcut",
-      "⌘C",
+      reactGrab.modifierKey === "Meta" ? "⌘C" : "Ctrl+C",
     );
 
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
@@ -859,14 +1037,12 @@ test.describe("The screenshot toggle", () => {
   }) => {
     const toggle = toolbarAction(page, "auto-screenshot");
     await page.keyboard.press("3");
-    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
 
     await toolbarAction(page, "annotate-pen").click();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await page.keyboard.press("4");
-    await page.waitForTimeout(TOOL_CYCLE_SETTLE_MS);
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("3");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
@@ -1061,7 +1237,7 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
   });
 
-  for (const interruption of ["1", "platform modifier"]) {
+  for (const interruption of ["1", "next-tool shortcut"]) {
     test(`${interruption} cancels an active rectangle and the next Pen drag is freehand`, async ({
       reactGrab,
       page,
@@ -1074,7 +1250,8 @@ test.describe("Rectangle and drawing shortcuts", () => {
       });
       const draft = page.locator("[data-react-grab-annotation-draft]");
       await expect(draft).toBeVisible();
-      await page.keyboard.press(interruption === "1" ? "1" : reactGrab.modifierKey);
+      if (interruption === "1") await page.keyboard.press("1");
+      else await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
       await expect(
         toolbarAction(page, interruption === "1" ? "annotate-pen" : "annotate-text"),
       ).toHaveAttribute("aria-pressed", "true");

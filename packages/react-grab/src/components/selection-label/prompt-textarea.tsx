@@ -3,6 +3,7 @@ import type { PromptTextareaProps } from "../../types.js";
 import { TEXTAREA_MAX_HEIGHT_PX } from "../../constants.js";
 import { autoResizeTextarea } from "../../utils/auto-resize-textarea.js";
 import { cn } from "../../utils/cn.js";
+import { getToolCycleDirection } from "../../utils/get-tool-cycle-direction.js";
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
 
 export const PromptTextarea: Component<PromptTextareaProps> = (props) => {
@@ -41,7 +42,9 @@ export const PromptTextarea: Component<PromptTextareaProps> = (props) => {
       }}
       value={props.value}
       onInput={handleInput}
-      onKeyDown={(event) => props.onKeyDown(event)}
+      onKeyDown={(event) => {
+        if (!getToolCycleDirection(event)) props.onKeyDown(event);
+      }}
       placeholder={props.placeholder ?? "Add context"}
       rows={1}
       readOnly={props.readOnly}
