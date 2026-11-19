@@ -4,10 +4,12 @@ import {
   ANNOTATION_TEXT_FONT_SIZE_PX,
   ANNOTATION_TEXT_FONT_WEIGHT,
   ANNOTATION_TEXT_HALO_BLURS_PX,
+  ANNOTATION_TEXT_LINE_HEIGHT_PX,
   INSPECT_ACCENT_CONTRAST_COLOR,
 } from "../constants.js";
 import type { AnnotationSnapshotForCapture, Rect } from "../types.js";
 import { filterAnnotationsInRect } from "./filter-annotations-in-rect.js";
+import { getAnnotationTextLines } from "./get-annotation-text-lines.js";
 import { createInkPath } from "./ink-path.js";
 
 export const drawAnnotations = (
@@ -19,10 +21,10 @@ export const drawAnnotations = (
 ): void => {
   context.save();
   context.font = `${ANNOTATION_TEXT_FONT_WEIGHT} ${ANNOTATION_TEXT_FONT_SIZE_PX}px ${ANNOTATION_TEXT_FONT_FAMILY}`;
-  const visibleAnnotations = filterAnnotationsInRect(
-    annotations,
-    pageRect,
-    (annotationText) => context.measureText(annotationText.text).width,
+  const visibleAnnotations = filterAnnotationsInRect(annotations, pageRect, (annotationText) =>
+    Math.max(
+      ...getAnnotationTextLines(annotationText).map((line) => context.measureText(line).width),
+    ),
   );
   context.scale(scaleX, scaleY);
   context.translate(-pageRect.left, -pageRect.top);
@@ -51,12 +53,21 @@ export const drawAnnotations = (
   context.shadowColor = INSPECT_ACCENT_CONTRAST_COLOR;
   for (const annotationText of visibleAnnotations.texts) {
     context.fillStyle = annotationText.color;
+    const lines = getAnnotationTextLines(annotationText);
+    const fillLines = () =>
+      lines.forEach((line, lineIndex) =>
+        context.fillText(
+          line,
+          annotationText.x,
+          annotationText.y + lineIndex * ANNOTATION_TEXT_LINE_HEIGHT_PX,
+        ),
+      );
     for (const haloBlurPx of ANNOTATION_TEXT_HALO_BLURS_PX) {
       context.shadowBlur = haloBlurPx * Math.min(scaleX, scaleY);
-      context.fillText(annotationText.text, annotationText.x, annotationText.y);
+      fillLines();
     }
     context.shadowBlur = 0;
-    context.fillText(annotationText.text, annotationText.x, annotationText.y);
+    fillLines();
   }
   context.restore();
 };

@@ -89,4 +89,17 @@ describe("filterAnnotationsInRect", () => {
       "touches-top",
     ]);
   });
+
+  it("counts every line of a multi-line note", () => {
+    const threeLinesAboveRect = { ...createText("three-lines", 150, 50), text: "one\ntwo\nthree" };
+    const oneLineAboveRect = createText("one-line", 150, 50);
+
+    const result = filterAnnotationsInRect(
+      { strokes: [], texts: [threeLinesAboveRect, oneLineAboveRect] },
+      CAPTURE_RECT,
+      measureTextWidth,
+    );
+
+    expect(result.texts.map((annotationText) => annotationText.id)).toEqual(["three-lines"]);
+  });
 });

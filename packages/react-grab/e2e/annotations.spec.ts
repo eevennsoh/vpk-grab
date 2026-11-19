@@ -961,6 +961,30 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(true);
   });
 
+  test("Shift+Enter starts a new line in a note and Enter commits both lines", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-text").click();
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
+    const noteInput = page.locator("[data-react-grab-annotation-input]");
+    await expect(noteInput).toBeFocused();
+    await page.keyboard.type("First line");
+    const singleLineHeight = (await noteInput.boundingBox())?.height ?? 0;
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("Second line");
+    await expect(noteInput).toHaveValue("First line\nSecond line");
+    expect((await noteInput.boundingBox())?.height ?? 0).toBeGreaterThan(singleLineHeight);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.keyboard.press("Enter");
+    await expect(noteInput).toHaveCount(0);
+    const note = page.locator(TEXT_SELECTOR).last();
+    await expect(note).toHaveText("First line\nSecond line", { useInnerText: true });
+    const noteBox = await note.boundingBox();
+    expect(noteBox?.height ?? 0).toBeGreaterThan(singleLineHeight);
+  });
+
   test("the note field keeps caret movement inside the overlay", async ({ reactGrab, page }) => {
     await toolbarAction(page, "annotate-text").click();
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);

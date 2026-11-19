@@ -148,7 +148,7 @@ example, in `<head>` before the app's own scripts, on development pages only.
   shows the distances between the two. Letting go restores the toggle.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
-  square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
+  square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
   Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
   on either toolbar orientation; the tooltips show the arrows along the toolbar.
   In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only

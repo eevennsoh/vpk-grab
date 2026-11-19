@@ -244,7 +244,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             class="fixed top-0 left-0 font-sans"
             style={{ transform: pageTransform(), "z-index": String(Z_INDEX_OVERLAY) }}
           >
-            <input
+            <textarea
               ref={(element) => {
                 // The ref fires before the input is attached, where focus()
                 // is a no-op, so focus waits a microtask: soon enough that the
@@ -261,17 +261,17 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
               }}
               data-react-grab-ignore-events
               data-react-grab-annotation-input
-              type="text"
+              rows={1}
               aria-label="Annotation text"
-              aria-keyshortcuts="Enter Escape"
+              aria-keyshortcuts="Enter Shift+Enter Escape"
               autocomplete="off"
               spellcheck={false}
-              class="absolute pointer-events-auto m-0 border-none rounded-[3px] font-sans"
+              class="absolute block pointer-events-auto m-0 border-none rounded-[3px] font-sans resize-none overflow-hidden whitespace-pre"
               style={{
                 ...textBaseStyle,
                 left: `${draftPosition.x - TEXT_DRAFT_PADDING_X_PX}px`,
                 top: textTop(draftPosition.y),
-                height: `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
+                "min-height": `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
                 padding: `0 ${TEXT_DRAFT_PADDING_X_PX}px`,
                 "min-width": "80px",
                 "field-sizing": "content",
@@ -287,7 +287,8 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 // fire for keys typed into a note.
                 event.stopPropagation();
                 if (isKeyboardEventComposing(event)) return;
-                if (event.key === "Enter") {
+                // Shift+Enter falls through to the textarea and starts a new line.
+                if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   props.onTextDraftCommit(draftPosition);
                 } else if (event.key === "Escape") {
