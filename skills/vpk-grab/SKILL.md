@@ -103,8 +103,10 @@ example, in `<head>` before the app's own scripts, on development pages only.
   context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
   press Enter to copy the same elements with that context. Its camera adds an
-  image. Its Dismiss close button or Esc dismisses the pill while leaving
-  Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
+  image. The pill holds the selection until you click elsewhere, click its
+  Dismiss close button or press Esc. While Grab is on, the first click on the
+  page dismisses the pill and the next click grabs an element. Dismissal
+  leaves Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
   menu takes Esc first; otherwise text in Optional context is cleared before
   another Esc dismisses the pill. With Grab off and Optional context focused,
   Esc clears text first, then dismisses the empty pill and returns focus to the
@@ -115,8 +117,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   Releasing the shortcut switches Grab off but preserves the field's focus only
   if it still has focus: type and submit context without reactivating Grab.
   Submitting with Grab off returns focus to the page. Explicitly switching Grab
-  off releases focus. With an empty field, arrow keys navigate while Grab is on.
-  Enter copies a different keyboard or frozen multi-selection even with the
+  off releases focus. With the pill up, arrows and Tab leave the element selection in place and
+  Enter in the empty field does nothing. After dismissal, Enter copies a
+  keyboard or frozen multi-selection even with the
   pointer over the toolbar; a hovered-element copy requires the pointer not to
   be over an interactive overlay. Page inputs keep their own
   arrow keys and Enter. Use

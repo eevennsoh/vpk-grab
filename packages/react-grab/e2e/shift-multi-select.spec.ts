@@ -824,6 +824,7 @@ test.describe("Shift Multi-Select", () => {
     await reactGrab.page.mouse.up();
 
     await expect.poll(() => getImageWrites(reactGrab.page)).toHaveLength(1);
+    await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
     await expect.poll(async () => (await reactGrab.getState()).isActive).toBe(true);
 
     await reactGrab.page.mouse.click(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2);

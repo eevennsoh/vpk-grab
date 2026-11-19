@@ -69,7 +69,7 @@ test.describe("drag targeting regressions", () => {
     await reactGrab.page.evaluate(() => {
       delete document.documentElement.dataset.dragDirectionTargets;
     });
-    await reactGrab.activate();
+    await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
     await reactGrab.page.mouse.move(200, 200);
     await reactGrab.page.mouse.down();
     await reactGrab.page.mouse.move(100, 100, { steps: 10 });

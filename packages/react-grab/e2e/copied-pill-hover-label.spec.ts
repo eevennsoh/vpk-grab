@@ -2,6 +2,7 @@
 // the live hover label would land in the same spot, half under it.
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
+import { switchOnSpecs } from "./specs-panel-fixture.js";
 
 const LIVE_LABEL_SELECTOR =
   "[data-react-grab-selection-label]:not([data-react-grab-label-instance])";
@@ -147,17 +148,17 @@ test.describe("Hover label beside a Copied pill", () => {
     await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
 
-    await moveTo(page, getCellCenter(1));
-    await expectLiveLabelFor(reactGrab, "article");
-
-    await moveTo(page, getCellCenter(0));
+    const copiedBounds = await reactGrab.getSelectionBoxBounds();
+    await reactGrab.hoverElement(`#${CELL_ID_PREFIX}1`);
     await expect(getLiveLabels(reactGrab)).toHaveCount(0);
-    expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
+    expect(await reactGrab.getSelectionBoxBounds()).toEqual(copiedBounds);
+    const getTargetId = () =>
+      page.evaluate(() => window.__REACT_GRAB__?.getState().targetElement?.id);
+    expect(await getTargetId()).toBe(`${CELL_ID_PREFIX}0`);
 
-    await reactGrab.dismissCopiedPills();
-    expect(await reactGrab.getState()).toMatchObject({ isActive: true });
-    await moveTo(page, getCellCenter(0));
+    await page.keyboard.press("Escape");
     await expectLiveLabelFor(reactGrab, "article");
+    await expect.poll(getTargetId).toBe(`${CELL_ID_PREFIX}1`);
   });
 
   test("every element of a marquee copy shows only the pill", async ({ reactGrab, page }) => {
@@ -183,6 +184,7 @@ test.describe("Hover label beside a Copied pill", () => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     }
 
+    await page.keyboard.press("Escape");
     await moveTo(page, INNER_BLOCK_POINT);
     await expectLiveLabelFor(reactGrab, "section");
   });
@@ -203,48 +205,26 @@ test.describe("Hover label beside a Copied pill", () => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     }
 
-    await moveTo(page, getCellCenter(2));
+    const otherCell = getCellCenter(2);
+    await page.mouse.click(otherCell.x, otherCell.y);
+    await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
     await expectLiveLabelFor(reactGrab, "article");
   });
 
-  test("a hover label for another element is drawn over the pill it overlaps", async ({
+  test("a parent gets its hover label only after its child's pill is dismissed", async ({
     reactGrab,
     page,
   }) => {
+    await switchOnSpecs(page);
     await clickAt(reactGrab, page, INNER_BLOCK_POINT);
+    const specsTag = page.locator("[data-react-grab-specs-header] > span").first();
+    await expect(specsTag).toHaveText("<section>");
     await moveTo(page, OUTER_BLOCK_POINT);
+    await expect(getLiveLabels(reactGrab)).toHaveCount(0);
+    await expect(specsTag).toHaveText("<section>");
+    await page.keyboard.press("Escape");
     await expectLiveLabelFor(reactGrab, "div");
-
-    const stacking = await page.evaluate(
-      ({ liveSelector, instanceSelector }) => {
-        const shadowRoot = document.querySelector("[data-react-grab]")?.shadowRoot;
-        const liveLabel = shadowRoot?.querySelector<HTMLElement>(liveSelector);
-        const instanceLabel = shadowRoot?.querySelector<HTMLElement>(instanceSelector);
-        if (!liveLabel || !instanceLabel) return null;
-        const liveRect = liveLabel.getBoundingClientRect();
-        const instanceRect = instanceLabel.getBoundingClientRect();
-        return {
-          isLiveLabelAfterPill: Boolean(
-            instanceLabel.compareDocumentPosition(liveLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
-          ),
-          doLabelsOverlap:
-            liveRect.left < instanceRect.right &&
-            instanceRect.left < liveRect.right &&
-            liveRect.top < instanceRect.bottom &&
-            instanceRect.top < liveRect.bottom,
-          liveZIndex: getComputedStyle(liveLabel).zIndex,
-          instanceZIndex: getComputedStyle(instanceLabel).zIndex,
-        };
-      },
-      { liveSelector: LIVE_LABEL_SELECTOR, instanceSelector: INSTANCE_LABEL_SELECTOR },
-    );
-
-    expect(stacking).toEqual({
-      isLiveLabelAfterPill: true,
-      doLabelsOverlap: true,
-      liveZIndex: stacking?.instanceZIndex,
-      instanceZIndex: stacking?.instanceZIndex,
-    });
+    await expect(specsTag).toHaveText("<div>");
   });
 
   test("with spacing on, the copied element keeps its size readout", async ({

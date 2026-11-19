@@ -240,6 +240,7 @@ test("a custom toolbar action stays armed across copies", async ({ reactGrab, pa
   await reactGrab.clickElement("[data-testid='todo-list'] h1");
   await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
   expect(await reactGrab.getToolbarActionPressed("repeat-copy")).toBe(true);
+  await reactGrab.pressEscape();
   await reactGrab.hoverUntilTargetSelected("[data-testid='todo-list'] li:last-child span");
   await reactGrab.clickElement("[data-testid='todo-list'] li:last-child span");
   await expect(page.locator("html")).toHaveAttribute("data-plugin-action-run-count", "2");

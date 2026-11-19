@@ -225,6 +225,7 @@ test.describe("Copied pill prompt", () => {
     ).toHaveCount(0);
     expect(promptModeWrites["text/plain"]).toContain(PROMPT_TEXT);
 
+    await page.keyboard.press("Escape");
     const clickWrites = await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     expect(clickWrites["text/plain"]).not.toContain(PROMPT_TEXT);
     expect(promptModeWrites["text/plain"]).toBe(`${PROMPT_TEXT}\n${clickWrites["text/plain"]}`);
@@ -428,14 +429,25 @@ test.describe("Copied pill prompt", () => {
       expect(await isPillPromptFocused(page)).toBe(true);
     });
 
-    test("an arrow key moves the element selection", async ({ reactGrab, page }) => {
+    test("arrows, Tab and Enter leave the selection on the copied element until Escape", async ({
+      reactGrab,
+      page,
+    }) => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
 
-      await page.keyboard.press("ArrowUp");
-
-      await expect(getLiveLabels(reactGrab)).toHaveCount(1);
-      await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("li");
+      for (const key of ["ArrowUp", "ArrowRight", "Tab", "Shift+Tab", "Enter"]) {
+        await page.keyboard.press(key);
+        await expect(page.locator("[data-react-grab-hierarchy-menu]")).toHaveCount(0);
+        expect(await getSelectionTargetText(page)).toBe("Buy groceries");
+      }
+      expect(await getCopyEventCount(page)).toBe(1);
       await expect(getPillPrompt(reactGrab)).toHaveValue("");
+
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("ArrowUp");
+      await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("li");
+      await page.keyboard.press("Enter");
+      await expect.poll(() => getCopyEventCount(page)).toBe(2);
     });
 
     test("Enter on the copied elements does nothing", async ({ reactGrab, page }) => {
@@ -568,15 +580,15 @@ test.describe("Copied pill prompt", () => {
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     await page.keyboard.type("make ");
 
-    await reactGrab.hoverUntilSelected(TODO_HEADING_SELECTOR);
-    await expect(getLiveLabels(reactGrab)).toHaveCount(1);
+    await reactGrab.hoverElement(TODO_HEADING_SELECTOR);
+    await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     await page.keyboard.type("it blue");
 
     await expect(getPillPrompt(reactGrab)).toHaveValue("make it blue");
     expect(await isPillPromptFocused(page)).toBe(true);
   });
 
-  test("a click on another element copies it and drops the unsent text", async ({
+  test("a click elsewhere drops unsent text and the next click copies", async ({
     reactGrab,
     page,
   }) => {
@@ -584,6 +596,8 @@ test.describe("Copied pill prompt", () => {
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     await page.keyboard.type(PROMPT_TEXT);
 
+    await reactGrab.clickElement(TODO_HEADING_SELECTOR);
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
     const clipboardWrites = await clickCopy(reactGrab, page, TODO_HEADING_SELECTOR);
 
     expect(clipboardWrites["text/plain"]).toContain("Todo List");
@@ -809,6 +823,17 @@ test.describe("Copied pill prompt", () => {
     expect(pillPromptWrites["text/plain"]).toContain("iframe-target");
   });
 
+  test("the spacing toggle dismisses the pill and changes spacing", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    const toggle = page.locator(SPACING_TOGGLE_SELECTOR);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    expect(await isReactGrabActive(page)).toBe(true);
+  });
+
   test("the toolbar switches Grab off and leaves the pill", async ({ reactGrab, page }) => {
     await reactGrab.activate();
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
@@ -899,8 +924,8 @@ test.describe("Copied pill prompt", () => {
 
     await page.keyboard.down("Alt");
     await page.keyboard.press("x");
-    await reactGrab.hoverUntilSelected(TODO_HEADING_SELECTOR);
-    await expect.poll(() => getSelectionTargetText(page)).toBe("Todo List");
+    await reactGrab.hoverElement(TODO_HEADING_SELECTOR);
+    await expect.poll(() => getSelectionTargetText(page)).toBe("Buy groceries");
     await expect(page.locator(MEASURE_TARGET_SELECTOR)).toHaveCount(0);
     await page.keyboard.up("Alt");
 

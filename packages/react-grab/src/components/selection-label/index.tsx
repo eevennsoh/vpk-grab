@@ -351,6 +351,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
         ref={containerRef}
         data-react-grab-ignore-events
         data-react-grab-selection-label
+        inert={props.status === "fading"}
         data-react-grab-label-instance={props.isLabelInstance ? "" : undefined}
         class="fixed font-sans text-[13px] antialiased select-none"
         style={{

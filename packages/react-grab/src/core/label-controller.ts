@@ -91,7 +91,7 @@ interface LabelController {
   cancelScreenshotCaptures: () => void;
   dismissInstance: (instanceId: string) => void;
   dismissCompleted: () => void;
-  dismissCompletedIfAnchorDetached: () => void;
+  dismissCompletedIfAnchorDetached: () => boolean;
   cancelAllFades: () => void;
   clearAll: () => void;
 }
@@ -352,6 +352,7 @@ export const createLabelController = (
         !isElementConnected(labelInstance.element),
     );
     if (hasDetachedAnchor) dismissCompleted();
+    return hasDetachedAnchor;
   };
 
   return {

@@ -348,6 +348,7 @@ test.describe("Persistent Grab sessions", () => {
     await reactGrab.clickElement("[data-testid='todo-list'] h1");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
     await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
     await reactGrab.hoverUntilSelected("[data-testid='main-title']");
     await reactGrab.clickElement("[data-testid='main-title']");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
@@ -368,6 +369,7 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
     await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.press("Escape");
     await page.evaluate(() => navigator.clipboard.writeText(""));
     await page.keyboard.down("Shift");
     await reactGrab.clickElement("[data-testid='todo-list'] li:first-child span");
@@ -376,7 +378,8 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
     await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
-    await reactGrab.hoverUntilSelected("h1");
+    await reactGrab.pressEscape();
+    await reactGrab.hoverUntilTargetSelected("h1");
   });
 
   test("click Copy keeps Grab on", async ({ reactGrab }) => {
@@ -386,6 +389,7 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
     await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
     await reactGrab.hoverUntilSelected("[data-testid='main-title']");
   });
 
@@ -412,6 +416,7 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("[<div");
     await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
     await reactGrab.hoverUntilSelected("[data-testid='main-title']");
     await reactGrab.clickElement("[data-testid='main-title']");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
@@ -425,7 +430,8 @@ test.describe("Persistent Grab sessions", () => {
     await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
     expect(await reactGrab.isPromptModeActive()).toBe(false);
-    await reactGrab.hoverUntilSelected("h1");
+    await reactGrab.pressEscape();
+    await reactGrab.hoverUntilTargetSelected("h1");
   });
 });
 
@@ -454,7 +460,8 @@ test("a successful plugin copy with feedback keeps Grab on", async ({ reactGrab,
   await expect.poll(() => reactGrab.getClipboardContent()).toBe("H1");
   await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
   expect(await reactGrab.isOverlayVisible()).toBe(true);
-  await reactGrab.hoverUntilSelected("li:first-child");
+  await reactGrab.pressEscape();
+  await reactGrab.hoverUntilTargetSelected("[data-testid='todo-list'] li:first-child span");
 });
 
 test("tapping the shortcut again after a copy switches Grab off", async ({ reactGrab, page }) => {
@@ -762,8 +769,7 @@ test.describe("Copy routes retained from the element menu", () => {
     const firstCopy = await reactGrab.getClipboardContent();
     expect(firstCopy).toContain("Todo List");
 
-    await reactGrab.activate();
-    await reactGrab.page.waitForTimeout(100);
+    await reactGrab.pressEscape();
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child");
     await reactGrab.clickElement("[data-testid='todo-list'] li:first-child");
     await reactGrab.page.waitForTimeout(500);

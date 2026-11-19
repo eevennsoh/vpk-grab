@@ -1,3 +1,4 @@
+import { NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
 import { test, expect } from "./fixtures.js";
 
 declare global {
@@ -48,7 +49,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
     });
 
-    test("should allow hovering different elements during feedback period", async ({
+    test("should resume hovering different elements after feedback is dismissed", async ({
       reactGrab,
     }) => {
       await reactGrab.activateViaKeyboard();
@@ -60,7 +61,9 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.down("c");
       await reactGrab.clickElement("li:first-child");
 
-      await reactGrab.hoverElement("h1");
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      await reactGrab.pressEscape();
+      await reactGrab.hoverUntilTargetSelected("h1");
       await expect
         .poll(() => reactGrab.isSelectionBoxVisible(), {
           timeout: FEEDBACK_DURATION_MS,
@@ -71,7 +74,9 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
     });
 
-    test("should show selection box following hover during feedback", async ({ reactGrab }) => {
+    test("should keep the selection box on the copied element throughout feedback", async ({
+      reactGrab,
+    }) => {
       await reactGrab.activateViaKeyboard();
       expect(await reactGrab.isOverlayVisible()).toBe(true);
 
@@ -80,13 +85,16 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.down(reactGrab.feedbackModifierKey);
       await reactGrab.page.keyboard.down("c");
       await reactGrab.clickElement("li:first-child");
+      await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+      const copiedBounds = await reactGrab.getSelectionBoxBounds();
+      expect(copiedBounds).not.toBeNull();
       await reactGrab.hoverElement("h1");
 
       await reactGrab.page.waitForTimeout(FEEDBACK_DURATION_MS + 500);
 
       expect(await reactGrab.isOverlayVisible()).toBe(true);
       const boundsAfter = await reactGrab.getSelectionBoxBounds();
-      expect(boundsAfter).not.toBeNull();
+      expect(boundsAfter).toEqual(copiedBounds);
 
       await reactGrab.page.keyboard.up("c");
       await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
@@ -159,11 +167,9 @@ test.describe("Copy Feedback Behavior", () => {
 
       await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(true);
 
-      await reactGrab.hoverElement("h1");
-      await reactGrab.page.waitForTimeout(100);
-
-      const isVisible = await reactGrab.isSelectionBoxVisible();
-      expect(isVisible).toBe(true);
+      await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await reactGrab.clickElement("[data-testid='todo-list'] h1");
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
     });
   });
 
@@ -260,25 +266,22 @@ test.describe("Copy Feedback Behavior", () => {
     });
 
     test("should handle multiple sequential copies while holding", async ({ reactGrab }) => {
-      await reactGrab.activateViaKeyboard();
-      expect(await reactGrab.isOverlayVisible()).toBe(true);
-
-      await reactGrab.hoverUntilSelected("li:first-child");
-
-      await reactGrab.page.keyboard.down(reactGrab.feedbackModifierKey);
-      await reactGrab.page.keyboard.down("c");
-      await reactGrab.clickElement("li:first-child");
-      await reactGrab.page.waitForTimeout(200);
-
-      await reactGrab.hoverElement("li:nth-child(2)");
-      await reactGrab.page.waitForTimeout(100);
-      await reactGrab.clickElement("li:nth-child(2)");
-      await reactGrab.page.waitForTimeout(200);
-
-      expect(await reactGrab.isOverlayVisible()).toBe(true);
-
-      await reactGrab.page.keyboard.up("c");
-      await reactGrab.page.keyboard.up(reactGrab.feedbackModifierKey);
+      await reactGrab.updateOptions({
+        activationMode: "hold",
+        activationKey: NON_NATIVE_ACTIVATION_KEY,
+      });
+      await reactGrab.page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+      try {
+        await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+        await reactGrab.clickElement("li:first-child span");
+        await expect.poll(() => reactGrab.getClipboardContent()).toContain("Buy groceries");
+        await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
+        await reactGrab.clickElement("li:nth-child(2) span");
+        await expect.poll(() => reactGrab.getClipboardContent()).toContain("Walk the dog");
+        expect(await reactGrab.isOverlayVisible()).toBe(true);
+      } finally {
+        await reactGrab.page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+      }
     });
 
     test("should dismiss feedback before Escape deactivates", async ({ reactGrab }) => {

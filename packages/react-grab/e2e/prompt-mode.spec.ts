@@ -339,13 +339,17 @@ test.describe("Enter copies first", () => {
     expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
   });
 
-  test("empty optional context copies a different arrow selection", async ({ reactGrab, page }) => {
+  test("dismissing empty optional context allows a different arrow selection", async ({
+    reactGrab,
+    page,
+  }) => {
     await installClipboardRecorder(page);
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected(targetSelector);
     await page.mouse.down();
     await page.mouse.up();
     await expect(page.locator(pillPromptSelector)).toBeFocused();
+    await page.keyboard.press("Escape");
     await page.keyboard.press("ArrowUp");
     await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("div");
     await page.keyboard.press("Enter");
@@ -355,7 +359,7 @@ test.describe("Enter copies first", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(false);
   });
 
-  test("Enter, context, Enter, ArrowDown, Enter copies the next reference", async ({
+  test("ArrowDown and Enter copy the next reference after dismissing submitted context", async ({
     reactGrab,
     page,
   }) => {
@@ -370,6 +374,7 @@ test.describe("Enter copies first", () => {
     await page.keyboard.press("Enter");
     await expect.poll(() => reactGrab.getClipboardContent()).toBe(`make this blue\n${reference}`);
     await expect(page.locator(pillPromptSelector)).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await page.keyboard.press("ArrowDown");
     const nextSelection = await page.evaluate(() =>
       window.__REACT_GRAB__?.getState().targetElement?.tagName.toLowerCase(),
@@ -504,10 +509,11 @@ test.describe("Enter copies first", () => {
         selectionStart: 1,
         selectionEnd: 1,
       });
-      if (restackHost) {
-        await page.evaluate(() => document.body.append(document.createElement("div")));
-      }
-      expect(await isHostLast()).toBe(!restackHost);
+      const wasHostLast = await host.evaluate((element, shouldRestack) => {
+        if (shouldRestack) document.body.append(document.createElement("div"));
+        return element === document.body.lastElementChild;
+      }, restackHost);
+      expect(wasHostLast).toBe(!restackHost);
       await page.clock.fastForward(MOUNT_ROOT_RECHECK_DELAY_MS);
       expect(await isHostLast()).toBe(true);
       await expect(page.locator(pillPromptSelector)).toBeFocused();
@@ -792,19 +798,19 @@ test.describe("Enter and Escape review corrections", () => {
     await expect(page.locator("[data-react-grab-label-instance]")).toHaveCount(0);
   });
 
-  test("hierarchy takes Escape before the copied pill", async ({ reactGrab, page }) => {
+  test("the copied pill keeps the hierarchy closed until Escape", async ({ reactGrab, page }) => {
     await reactGrab.activate();
     await reactGrab.hoverUntilSelected(targetSelector);
     await page.keyboard.press("Enter");
     await expect(page.locator(promptSelector)).toBeFocused();
     await page.keyboard.press("ArrowUp");
+    await expect(page.locator("[data-react-grab-hierarchy-menu]")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(completionSelector)).toHaveCount(0);
+    await page.keyboard.press("ArrowUp");
     await expect(page.locator("[data-react-grab-hierarchy-menu]")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-react-grab-hierarchy-menu]")).toHaveCount(0);
-    await expect(page.locator(completionSelector)).toBeVisible();
-    expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
-    await page.keyboard.press("Escape");
-    await expect(page.locator(completionSelector)).toHaveCount(0);
     expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
   });
 
@@ -849,7 +855,7 @@ test.describe("Enter and Escape review corrections", () => {
     await reactGrab.hoverUntilSelected(targetSelector);
     await page.keyboard.press("Enter");
     await expect(page.locator(promptSelector)).toBeFocused();
-    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+    await reactGrab.hoverElement("[data-testid='todo-list'] li:first-child span");
     await page.locator(promptSelector).hover();
     await page.keyboard.press("Enter");
     expect(await getCopyEventCount(page)).toBe(1);
