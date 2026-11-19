@@ -15,6 +15,7 @@ import {
   VIEWPORT_MARGIN_PX,
   ARROW_CENTER_PERCENT,
   ARROW_LABEL_MARGIN_PX,
+  COMPLETION_TOOLTIP_CLEARANCE_PX,
   LABEL_GAP_PX,
   SELECTION_LABEL_OFFSCREEN_PX,
   Z_INDEX_OVERLAY,
@@ -286,6 +287,19 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
   const arrowPosition = () => positionComputation().computedArrowPosition ?? "bottom";
   const hadValidBounds = () => positionComputation().hadValidBounds;
 
+  // Away from the selection when that side has room, so a pill tooltip covers
+  // neither the pill nor the element it labels.
+  const completionTooltipPosition = (): "top" | "bottom" => {
+    const labelTop = positionComputation().position.top;
+    const viewport = getLabelViewport();
+    const roomAbove = labelTop - viewport.offsetTop;
+    const roomBelow = viewport.offsetTop + viewport.height - labelTop - measuredHeight();
+    if (arrowPosition() === "bottom") {
+      return roomBelow >= COMPLETION_TOOLTIP_CLEARANCE_PX ? "bottom" : "top";
+    }
+    return roomAbove >= COMPLETION_TOOLTIP_CLEARANCE_PX ? "top" : "bottom";
+  };
+
   createEffect(
     on(
       () => props.selectionLabelShakeCount,
@@ -395,6 +409,8 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             shouldFocusPrompt={props.shouldFocusPrompt}
             isGrabActive={props.isGrabActive}
             onPromptFocusRelease={props.onPromptFocusRelease}
+            tooltipPosition={completionTooltipPosition()}
+            isDismissing={props.status === "fading"}
           />
         </Show>
 

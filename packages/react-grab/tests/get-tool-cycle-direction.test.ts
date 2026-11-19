@@ -6,7 +6,7 @@ vi.mock("../src/utils/is-mac.js", () => ({ isMac: () => platform.isMac }));
 
 describe("getToolCycleDirection", () => {
   for (const isMac of [true, false]) {
-    it(`recognizes only horizontal arrows with ${isMac ? "Meta" : "Control"} alone`, () => {
+    it(`recognizes the arrows on both axes with ${isMac ? "Meta" : "Control"} alone`, () => {
       platform.isMac = isMac;
       const chord = {
         key: "ArrowRight",
@@ -17,7 +17,9 @@ describe("getToolCycleDirection", () => {
       };
       expect(getToolCycleDirection(chord)).toBe("forward");
       expect(getToolCycleDirection({ ...chord, key: "ArrowLeft" })).toBe("backward");
-      for (const key of ["ArrowUp", "ArrowDown", "Tab", "z"]) {
+      expect(getToolCycleDirection({ ...chord, key: "ArrowDown" })).toBe("forward");
+      expect(getToolCycleDirection({ ...chord, key: "ArrowUp" })).toBe("backward");
+      for (const key of ["Tab", "z", "constructor"]) {
         expect(getToolCycleDirection({ ...chord, key })).toBeNull();
       }
       for (const modifiers of [
@@ -27,7 +29,9 @@ describe("getToolCycleDirection", () => {
         { shiftKey: true },
         { altKey: true },
       ]) {
-        expect(getToolCycleDirection({ ...chord, ...modifiers })).toBeNull();
+        for (const key of ["ArrowRight", "ArrowDown"]) {
+          expect(getToolCycleDirection({ ...chord, ...modifiers, key })).toBeNull();
+        }
       }
     });
   }

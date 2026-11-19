@@ -16,6 +16,7 @@ interface TooltipProps {
   position: "top" | "bottom" | "left" | "right";
   textContent: string;
   shortcut?: string;
+  anchorRightPx?: number;
 }
 
 export const Tooltip: Component<TooltipProps> = (props) => {
@@ -65,6 +66,9 @@ export const Tooltip: Component<TooltipProps> = (props) => {
 
   const positionStyle = (): Record<string, string> => {
     const isHorizontal = props.position === "top" || props.position === "bottom";
+    if (isHorizontal && props.anchorRightPx !== undefined) {
+      return { right: `${props.anchorRightPx}px`, "z-index": `${Z_INDEX_OVERLAY}` };
+    }
     if (isHorizontal) {
       return { left: "50%", translate: "-50%", "z-index": `${Z_INDEX_OVERLAY}` };
     }

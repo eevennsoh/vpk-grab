@@ -1,4 +1,9 @@
-import type { AnnotationColorOption, SelectionTool, SpecBoxSide } from "./types.js";
+import type {
+  AnnotationColorOption,
+  SelectionTool,
+  SpecBoxSide,
+  ToolCycleDirection,
+} from "./types.js";
 import { createSvgCursor } from "./utils/create-svg-cursor.js";
 import {
   NAVIGATION_ICON_PATHS,
@@ -508,14 +513,24 @@ export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefi
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
-export const AUTO_SCREENSHOT_TOOL_KEY = "4";
+export const AUTO_SCREENSHOT_TOOL_KEY = "3";
 export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
-export const TOOL_CYCLE_FORWARD_KEY = "ArrowRight";
-export const TOOL_CYCLE_BACKWARD_KEY = "ArrowLeft";
-export const TOOL_CYCLE_FORWARD_LABEL_MAC = "⌘→";
-export const TOOL_CYCLE_BACKWARD_LABEL_MAC = "⌘←";
-export const TOOL_CYCLE_FORWARD_LABEL = "Ctrl+→";
-export const TOOL_CYCLE_BACKWARD_LABEL = "Ctrl+←";
+export const TOOL_CYCLE_DIRECTION_BY_KEY: ReadonlyMap<string, ToolCycleDirection> = new Map([
+  ["ArrowRight", "forward"],
+  ["ArrowDown", "forward"],
+  ["ArrowLeft", "backward"],
+  ["ArrowUp", "backward"],
+]);
+export const TOOL_CYCLE_MODIFIER_LABEL_MAC = "⌘";
+export const TOOL_CYCLE_MODIFIER_LABEL = "Ctrl+";
+export const TOOL_CYCLE_HORIZONTAL_ARROW_LABELS: Readonly<Record<ToolCycleDirection, string>> = {
+  forward: "→",
+  backward: "←",
+};
+export const TOOL_CYCLE_VERTICAL_ARROW_LABELS: Readonly<Record<ToolCycleDirection, string>> = {
+  forward: "↓",
+  backward: "↑",
+};
 // Leaned a quarter-turn left of upright so the arrow reads as a pointer; its
 // tip then lands at (7, 7) on the cursor's 24px grid.
 export const GRAB_TOOL_CURSOR = createSvgCursor(
@@ -599,6 +614,9 @@ export const SPECS_BOX_SIDES: Record<string, SpecBoxSide[]> = {
 };
 
 export const COMPLETION_DISMISS_ICON_SIZE_PX = 14;
+export const COMPLETION_DISMISS_TOOLTIP_SHORTCUT = "Esc";
+export const COMPLETION_STATUS_ROW_HEIGHT_PX = 28;
+export const COMPLETION_TOOLTIP_CLEARANCE_PX = 30;
 export const TOOLBAR_ACTION_ICON_SIZE_PX = 14;
 
 export const CLIPBOARD_WRITE_PERMISSION_NAME = "clipboard-write" as PermissionName;

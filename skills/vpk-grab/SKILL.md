@@ -102,8 +102,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
   context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
-  press Enter to copy the same elements with that context. Its camera adds an
-  image. The pill holds the selection until you click elsewhere, click its
+  press Enter to copy the same elements with that context. Its camera (Copy
+  image) adds an image. The pill holds the selection until you click elsewhere, click its
   Dismiss close button or press Esc. While Grab is on, the first click on the
   page dismisses the pill and the next click grabs an element. Dismissal
   leaves Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
@@ -129,7 +129,7 @@ example, in `<head>` before the app's own scripts, on development pages only.
   with the design token under each value that came from one.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
-- **Screenshot** (toolbar toggle, key 4 with Grab in hand, off by default and
+- **Screenshot** (toolbar toggle, key 3 with Grab in hand, off by default and
   remembered): every grab copies its references at once, then the pill's camera
   runs by itself so the clipboard ends with the references and a PNG. Chromium sites
   with an existing unsanitized clipboard write grant also keep the metadata
@@ -147,8 +147,10 @@ example, in `<head>` before the app's own scripts, on development pages only.
   another element shows the distances between the two.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
-  square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right to
-  step through Grab, Pen, Rectangle and Text, or Left to step back. With a drawing
+  square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
+  Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
+  on either toolbar orientation; the tooltips show the arrows along the toolbar.
+  In a hold session the modifier with an arrow still navigates. With a drawing
   tool or Move in hand, 1 picks Pen, 2 picks Rectangle and 3 picks Text. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
   annotations together, and v picks it up or puts it down.

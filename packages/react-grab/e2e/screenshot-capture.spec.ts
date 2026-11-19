@@ -449,7 +449,10 @@ test.describe("Screenshot capture", () => {
 
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
     await expect(completion).toContainText("Image copied");
-    const bodyCenter = await getCenter(page, `${COMPLETION_SELECTOR} > div > span`);
+    const bodyCenter = await getCenter(
+      page,
+      `${COMPLETION_SELECTOR} > div > span:not([data-react-grab-completion-separator])`,
+    );
     await page.mouse.move(bodyCenter.x, bodyCenter.y);
     await page.mouse.down();
     await expect(completion).toHaveCount(0);
@@ -1535,7 +1538,7 @@ test.describe("Copied pill", () => {
       reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
     ).toHaveCount(0);
     const cameraButton = completion.locator(CAMERA_BUTTON_SELECTOR);
-    await expect(cameraButton).toHaveAttribute("aria-label", "Copy with screenshot");
+    await expect(cameraButton).toHaveAttribute("aria-label", "Copy image");
     await expect(cameraButton).toHaveAttribute("type", "button");
     await expect(completion.locator(MORE_OPTIONS_SELECTOR)).toHaveCount(0);
 
