@@ -32,6 +32,7 @@ import { getAllStyleOverrides, restoreStyleOverrides } from "../utils/style-over
 
 interface InspectControllerOptions {
   isShiftKeyHeld: Accessor<boolean>;
+  isAltKeyHeld: Accessor<boolean>;
   getElementAtPosition: (clientX: number, clientY: number) => Element | null;
   getAnnotationElements: () => Iterable<Element>;
 }
@@ -121,7 +122,10 @@ const createStraightPoints = (points: AnnotationPoint[]): AnnotationPoint[] => {
 export const createInspectController = (options: InspectControllerOptions) => {
   const initialSettings = loadInspectSettings();
   const [isSpecsEnabled, setIsSpecsEnabled] = createSignal(initialSettings.isSpecsEnabled);
-  const [isRedlinesEnabled, setIsRedlinesEnabled] = createSignal(initialSettings.isRedlinesEnabled);
+  const [isRedlinesToggled, setIsRedlinesToggled] = createSignal(initialSettings.isRedlinesEnabled);
+  // Holding Alt shows Spacing for as long as it is held, so a reading never
+  // needs a trip to the toolbar and back.
+  const isRedlinesEnabled = () => isRedlinesToggled() || options.isAltKeyHeld();
   const [isAutoScreenshotEnabled, setIsAutoScreenshotEnabled] = createSignal(
     initialSettings.isAutoScreenshotEnabled,
   );
@@ -206,7 +210,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   const persistSettings = () =>
     saveInspectSettings({
       isSpecsEnabled: isSpecsEnabled(),
-      isRedlinesEnabled: isRedlinesEnabled(),
+      isRedlinesEnabled: isRedlinesToggled(),
       isAutoScreenshotEnabled: isAutoScreenshotEnabled(),
       annotationColor: annotationColor(),
     });
@@ -283,8 +287,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
   };
 
   const toggleRedlines = () => {
-    if (isRedlinesEnabled()) stopMeasuring();
-    setIsRedlinesEnabled((isEnabled) => !isEnabled);
+    if (isRedlinesToggled() && !options.isAltKeyHeld()) stopMeasuring();
+    setIsRedlinesToggled((isEnabled) => !isEnabled);
     persistSettings();
   };
 

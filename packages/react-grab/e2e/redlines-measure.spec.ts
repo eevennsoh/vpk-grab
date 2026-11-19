@@ -1,5 +1,6 @@
 // Alt-measuring: holding Alt anchors the redlines to the hovered element, and
-// the next element the pointer reaches is measured against it.
+// the next element the pointer reaches is measured against it. With Spacing
+// off, holding Alt turns it on until Alt is let go.
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
 
@@ -149,19 +150,64 @@ test.describe("redlines measuring", () => {
     expect(await reactGrab.getSelectionBoxBounds()).toEqual(await getBox(page, ANCHOR_TEST_ID));
   });
 
-  test("Alt leaves the selection alone while redlines are off", async ({ reactGrab, page }) => {
+  test("holding Alt turns Spacing on while it is off, and letting go turns it off", async ({
+    reactGrab,
+    page,
+  }) => {
+    const redlinesToggle = page.locator(REDLINES_TOGGLE_SELECTOR);
+    await redlinesToggle.click();
+    await hover(page, ANCHOR_TEST_ID);
+    await expect
+      .poll(() => reactGrab.getSelectionBoxBounds())
+      .toEqual(await getBox(page, ANCHOR_TEST_ID));
+    await expect(page.locator("[data-react-grab-redline]")).toHaveCount(0);
+    await expect(redlinesToggle).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.down("Alt");
+
+    await expect(page.locator("[data-react-grab-redline]").first()).toBeVisible();
+    await expect(redlinesToggle).toHaveAttribute("aria-pressed", "true");
+
+    await hover(page, BESIDE_TEST_ID);
+    await expect
+      .poll(() => page.locator(MEASURE_TARGET_SELECTOR).boundingBox())
+      .toEqual(await getBox(page, BESIDE_TEST_ID));
+    await expect(redlineLabel(page, "right")).toHaveText(String(BESIDE_GAP_PX));
+    expect(await reactGrab.getSelectionBoxBounds()).toEqual(await getBox(page, ANCHOR_TEST_ID));
+
+    await page.keyboard.up("Alt");
+
+    await expect(page.locator("[data-react-grab-redline]")).toHaveCount(0);
+    await expect(page.locator(MEASURE_TARGET_SELECTOR)).toHaveCount(0);
+    await expect(redlinesToggle).toHaveAttribute("aria-pressed", "false");
+    await expect
+      .poll(() => reactGrab.getSelectionBoxBounds())
+      .toEqual(await getBox(page, BESIDE_TEST_ID));
+  });
+
+  test("holding Alt while Spacing is off leaves the saved setting off", async ({
+    reactGrab,
+    page,
+  }) => {
     await page.locator(REDLINES_TOGGLE_SELECTOR).click();
     await hover(page, ANCHOR_TEST_ID);
     await expect
       .poll(() => reactGrab.getSelectionBoxBounds())
       .toEqual(await getBox(page, ANCHOR_TEST_ID));
-
     await page.keyboard.down("Alt");
-    await hover(page, BESIDE_TEST_ID);
+    await expect(page.locator("[data-react-grab-redline]").first()).toBeVisible();
+    await page.keyboard.up("Alt");
 
+    await page.reload();
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 3000 }).toBe(true);
+    await installMeasureFixture(page);
+    await reactGrab.activate();
+    await hover(page, ANCHOR_TEST_ID);
     await expect
       .poll(() => reactGrab.getSelectionBoxBounds())
-      .toEqual(await getBox(page, BESIDE_TEST_ID));
-    await expect(page.locator(MEASURE_TARGET_SELECTOR)).toHaveCount(0);
+      .toEqual(await getBox(page, ANCHOR_TEST_ID));
+
+    await expect(page.locator(REDLINES_TOGGLE_SELECTOR)).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("[data-react-grab-redline]")).toHaveCount(0);
   });
 });

@@ -436,6 +436,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isAltKeyHeld = createModifierTracker(readAltKey, createTypedModifierFilter(readAltKey));
     const inspect = createInspectController({
       isShiftKeyHeld,
+      isAltKeyHeld,
       getElementAtPosition,
       getAnnotationElements: () => rendererRoot.querySelectorAll(`[${ANNOTATION_ID_ATTRIBUTE}]`),
     });
@@ -4084,8 +4085,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
 
     // Redlines show the spacing around the hovered element. Holding Alt
-    // anchors them to it instead, so the pointer can go to another element
-    // and read the distances between the two.
+    // turns them on if they are off and anchors them to that element, so the
+    // pointer can go to another element and read the distances between the two.
     createEffect(
       on(
         isAltKeyHeld,

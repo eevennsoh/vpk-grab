@@ -143,8 +143,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   property off and on, pick another token or keyword, or type a value.
 - **Changes** (toolbar, once something is edited): every style change on the
   page, by element, with remove, reopen and reset all.
-- **Hold Alt** with Spacing on: anchors on the hovered element; moving to
-  another element shows the distances between the two.
+- **Hold Alt** with Grab in hand: shows Spacing while held, even when it is
+  toggled off, anchored on the hovered element; moving to another element
+  shows the distances between the two. Letting go restores the toggle.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
   square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
