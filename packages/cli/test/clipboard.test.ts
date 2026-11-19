@@ -35,6 +35,7 @@ const CLI_BIN = path.join(HERE, "..", "bin", "cli.js");
 const BUILT_READERS_DIR = path.join(HERE, "..", "dist");
 // A cold Swift module cache makes each first compile take tens of seconds.
 const SWIFT_WARM_UP_TIMEOUT_MS = 240_000;
+const GRAB_TEXT_SCAN_BUDGET_MS = 1_000;
 
 // Real bytes captured from Chromium copying application/x-react-grab on macOS
 // (see fixtures/golden-pickle.bin). Proves the parser matches actual browser
@@ -482,7 +483,7 @@ describe("isGrabText", () => {
     for (const text of [bracketedLines, unterminatedText]) {
       const startedAt = performance.now();
       expect(isGrabText(text)).toBe(false);
-      expect(performance.now() - startedAt).toBeLessThan(1_000);
+      expect(performance.now() - startedAt).toBeLessThan(GRAB_TEXT_SCAN_BUDGET_MS);
     }
   });
 

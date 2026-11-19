@@ -9,6 +9,7 @@ import {
   LINUX_WEB_FORMAT_MAP,
   LINUX_WEB_FORMAT_ENTRY,
 } from "./constants.js";
+import { normalizeClipboardText } from "./normalize-clipboard-text.js";
 import { sleep } from "./sleep.js";
 
 export const HISTORY_FILE_NAME = "history.jsonl";
@@ -100,8 +101,6 @@ interface CreateReaderOptions {
 
 const shortHash = (text: string): string =>
   createHash("sha1").update(text).digest("hex").slice(0, HASH_LENGTH);
-
-const normalizeClipboardText = (text?: string): string => text?.replaceAll("\r\n", "\n") ?? "";
 
 // Chromium serializes web custom data as a base::Pickle on every platform, only
 // the clipboard format name differs. Layout (little-endian):
