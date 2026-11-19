@@ -191,6 +191,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       props.annotationTool ?? "grab",
       Boolean(props.isActive),
       props.grabShortcut,
+      isVertical(),
     );
   const tooltipPosition = (): "top" | "bottom" | "left" | "right" => {
     switch (snapEdge()) {

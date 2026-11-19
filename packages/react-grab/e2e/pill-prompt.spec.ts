@@ -1,7 +1,7 @@
 // A text copy's Copied pill carries a prompt input: Enter with text copies the
 // same elements again with the prompt, as prompt mode would.
-import type { Page } from "@playwright/test";
-import { VIEWPORT_MARGIN_PX } from "../src/constants.js";
+import type { Locator, Page } from "@playwright/test";
+import { COMPLETION_STATUS_ROW_HEIGHT_PX, VIEWPORT_MARGIN_PX } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
@@ -225,6 +225,7 @@ test.describe("Copied pill prompt", () => {
     ).toHaveCount(0);
     expect(promptModeWrites["text/plain"]).toContain(PROMPT_TEXT);
 
+    await page.keyboard.press("Escape");
     const clickWrites = await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     expect(clickWrites["text/plain"]).not.toContain(PROMPT_TEXT);
     expect(promptModeWrites["text/plain"]).toBe(`${PROMPT_TEXT}\n${clickWrites["text/plain"]}`);
@@ -428,14 +429,26 @@ test.describe("Copied pill prompt", () => {
       expect(await isPillPromptFocused(page)).toBe(true);
     });
 
-    test("an arrow key moves the element selection", async ({ reactGrab, page }) => {
+    test("arrows, Tab and Enter leave the selection on the copied element until Escape", async ({
+      reactGrab,
+      page,
+    }) => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
 
-      await page.keyboard.press("ArrowUp");
+      for (const key of ["ArrowUp", "ArrowRight", "Tab", "Shift+Tab", "Enter"]) {
+        await page.keyboard.press(key);
+        await expect(page.locator("[data-react-grab-hierarchy-menu]")).toHaveCount(0);
+        expect(await getSelectionTargetText(page)).toBe("Buy groceries");
+      }
+      expect(await getCopyEventCount(page)).toBe(1);
+      await expect(getPillPrompt(reactGrab)).toHaveValue("");
 
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("ArrowUp");
       await expect(getLiveLabels(reactGrab)).toHaveCount(1);
       await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("li");
-      await expect(getPillPrompt(reactGrab)).toHaveValue("");
+      await page.keyboard.press("Enter");
+      await expect.poll(() => getCopyEventCount(page)).toBe(2);
     });
 
     test("Enter on the copied elements does nothing", async ({ reactGrab, page }) => {
@@ -568,15 +581,15 @@ test.describe("Copied pill prompt", () => {
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     await page.keyboard.type("make ");
 
-    await reactGrab.hoverUntilSelected(TODO_HEADING_SELECTOR);
-    await expect(getLiveLabels(reactGrab)).toHaveCount(1);
+    await reactGrab.hoverElement(TODO_HEADING_SELECTOR);
+    await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     await page.keyboard.type("it blue");
 
     await expect(getPillPrompt(reactGrab)).toHaveValue("make it blue");
     expect(await isPillPromptFocused(page)).toBe(true);
   });
 
-  test("a click on another element copies it and drops the unsent text", async ({
+  test("a click elsewhere drops unsent text and the next click copies", async ({
     reactGrab,
     page,
   }) => {
@@ -584,6 +597,8 @@ test.describe("Copied pill prompt", () => {
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     await page.keyboard.type(PROMPT_TEXT);
 
+    await reactGrab.clickElement(TODO_HEADING_SELECTOR);
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
     const clipboardWrites = await clickCopy(reactGrab, page, TODO_HEADING_SELECTOR);
 
     expect(clipboardWrites["text/plain"]).toContain("Todo List");
@@ -809,6 +824,17 @@ test.describe("Copied pill prompt", () => {
     expect(pillPromptWrites["text/plain"]).toContain("iframe-target");
   });
 
+  test("the spacing toggle dismisses the pill and changes spacing", async ({ reactGrab, page }) => {
+    await reactGrab.activate();
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    const toggle = page.locator(SPACING_TOGGLE_SELECTOR);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    expect(await isReactGrabActive(page)).toBe(true);
+  });
+
   test("the toolbar switches Grab off and leaves the pill", async ({ reactGrab, page }) => {
     await reactGrab.activate();
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
@@ -899,8 +925,8 @@ test.describe("Copied pill prompt", () => {
 
     await page.keyboard.down("Alt");
     await page.keyboard.press("x");
-    await reactGrab.hoverUntilSelected(TODO_HEADING_SELECTOR);
-    await expect.poll(() => getSelectionTargetText(page)).toBe("Todo List");
+    await reactGrab.hoverElement(TODO_HEADING_SELECTOR);
+    await expect.poll(() => getSelectionTargetText(page)).toBe("Buy groceries");
     await expect(page.locator(MEASURE_TARGET_SELECTOR)).toHaveCount(0);
     await page.keyboard.up("Alt");
 
@@ -1104,5 +1130,349 @@ test.describe("Copied pill prompt on touch", () => {
 
     await getPillPrompt(reactGrab).tap();
     expect(await isPillPromptFocused(page)).toBe(true);
+  });
+});
+
+const PILL_TOOLTIP_SELECTOR = "[data-react-grab-selection-label] [data-react-grab-tooltip]";
+const PILL_TOOLTIP_SHORTCUT_SELECTOR = "[data-react-grab-tooltip-shortcut]";
+const SEPARATOR_SELECTOR = "[data-react-grab-completion-separator]";
+const SCREENSHOT_ERROR_SELECTOR = "[data-react-grab-screenshot-error]";
+const PLACEMENT_TARGET_ID = "pill-tooltip-placement-target";
+const SHORT_TOOLTIP_VIEWPORT_PX = { width: 1280, height: 320 };
+const CRAMPED_TOOLTIP_VIEWPORT_PX = { width: 1280, height: 100 };
+
+interface PillBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  height: number;
+}
+
+const measurePill = (reactGrab: ReactGrabPageObject) =>
+  getCompletion(reactGrab).evaluate((completion): PillBox => {
+    const { left, right, top, bottom, height } = completion.getBoundingClientRect();
+    return { left, right, top, bottom, height };
+  });
+
+const getPillTooltip = (reactGrab: ReactGrabPageObject) =>
+  reactGrab.getOverlayHost().locator(PILL_TOOLTIP_SELECTOR);
+
+const expectSingleSeparatorBeforeActions = async (reactGrab: ReactGrabPageObject) => {
+  const completion = getCompletion(reactGrab);
+  await expect(completion.locator(SEPARATOR_SELECTOR)).toHaveCount(1);
+  const nextSibling = await completion.locator(SEPARATOR_SELECTOR).evaluate((separator) => {
+    const sibling = separator.nextElementSibling;
+    if (sibling?.hasAttribute("data-react-grab-screenshot-capturing")) return "capturing";
+    return sibling?.getAttribute("aria-label");
+  });
+  const hasCamera = (await completion.locator(CAMERA_BUTTON_SELECTOR).count()) > 0;
+  const isCapturing = (await completion.locator(CAPTURING_SELECTOR).count()) > 0;
+  if (hasCamera) expect(nextSibling).toBe("Copy image");
+  else if (isCapturing) expect(nextSibling).toBe("capturing");
+  else expect(nextSibling).toBe("Dismiss");
+};
+
+interface TooltipPlacementCase {
+  name: string;
+  targetStyle: Record<string, string>;
+  viewport?: { width: number; height: number };
+  isWrapped?: boolean;
+  hasScreenshotError?: boolean;
+}
+
+const TOOLTIP_PLACEMENT_CASES: TooltipPlacementCase[] = [
+  { name: "near the top edge", targetStyle: { top: "2px", left: "200px" } },
+  { name: "near the bottom edge", targetStyle: { bottom: "2px", left: "200px" } },
+  { name: "near the left edge", targetStyle: { top: "300px", left: "2px" } },
+  { name: "near the right edge", targetStyle: { top: "300px", right: "2px" } },
+  {
+    name: "in a short viewport",
+    targetStyle: { top: "140px", left: "200px" },
+    viewport: SHORT_TOOLTIP_VIEWPORT_PX,
+  },
+  {
+    name: "with a wrapped context field",
+    targetStyle: { top: "300px", left: "200px" },
+    isWrapped: true,
+  },
+  {
+    name: "with a wrapped context field filling a very short viewport",
+    targetStyle: { top: "0px", left: "200px", height: "8px" },
+    viewport: CRAMPED_TOOLTIP_VIEWPORT_PX,
+    isWrapped: true,
+  },
+  {
+    name: "on a pill with an image error",
+    targetStyle: { top: "300px", left: "200px" },
+    hasScreenshotError: true,
+  },
+];
+
+const addPlacementTarget = (page: Page, targetStyle: Record<string, string>) =>
+  page.evaluate(
+    ({ targetId, style }) => {
+      const target = document.createElement("button");
+      target.id = targetId;
+      target.textContent = "Target";
+      Object.assign(target.style, {
+        position: "fixed",
+        width: "60px",
+        height: "30px",
+        zIndex: "2147483000",
+        ...style,
+      });
+      document.body.append(target);
+    },
+    { targetId: PLACEMENT_TARGET_ID, style: targetStyle },
+  );
+
+const expectTooltipContained = async (page: Page, tooltip: Locator, button: Locator) => {
+  const tooltipBox = await tooltip.boundingBox();
+  const buttonBox = await button.boundingBox();
+  const viewport = page.viewportSize();
+  if (!tooltipBox || !buttonBox || !viewport) throw new Error("No tooltip, button or viewport");
+  expect(tooltipBox.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox.y).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox.x + tooltipBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(viewport.height);
+  const doesOverlapButton =
+    tooltipBox.x < buttonBox.x + buttonBox.width &&
+    tooltipBox.x + tooltipBox.width > buttonBox.x &&
+    tooltipBox.y < buttonBox.y + buttonBox.height &&
+    tooltipBox.y + tooltipBox.height > buttonBox.y;
+  expect(doesOverlapButton).toBe(false);
+  return tooltipBox;
+};
+
+const shiftDragScreenshot = async (page: Page) => {
+  await page.keyboard.down("Shift");
+  await page.mouse.move(CAPTURE_START.x, CAPTURE_START.y);
+  await page.mouse.down();
+  await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+};
+
+test.describe("Copied pill chrome", () => {
+  test.beforeEach(async ({ reactGrab, page }) => {
+    await expect
+      .poll(() => reactGrab.isToolbarVisible(), { timeout: SCREENSHOT_TOOLBAR_VISIBLE_TIMEOUT_MS })
+      .toBe(true);
+    await installClipboardRecorder(page);
+    await reactGrab.activate();
+  });
+
+  test("one separator sits before the action buttons in every state and keeps one height", async ({
+    reactGrab,
+    page,
+  }) => {
+    const heights: Record<string, number> = {};
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    heights.copied = (await measurePill(reactGrab)).height;
+
+    await page.keyboard.type(PROMPT_TEXT);
+    heights.copiedWithText = (await measurePill(reactGrab)).height;
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await expect(getPillPrompt(reactGrab)).toHaveValue("");
+
+    await controlImageEncoding(page, { isGated: true });
+    await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
+    await expect(getCompletion(reactGrab).locator(CAPTURING_SELECTOR)).toHaveCount(1);
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    heights.capturing = (await measurePill(reactGrab)).height;
+
+    await openImageEncodingGate(page);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    heights.copiedWithImage = (await measurePill(reactGrab)).height;
+
+    await getCompletion(reactGrab).locator(DISMISS_BUTTON_SELECTOR).click();
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await submitPillPrompt(reactGrab, page, PROMPT_TEXT);
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    heights.copiedWithPrompt = (await measurePill(reactGrab)).height;
+
+    await getCompletion(reactGrab).locator(DISMISS_BUTTON_SELECTOR).click();
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await shiftDragScreenshot(page);
+    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    heights.imageCopied = (await measurePill(reactGrab)).height;
+
+    for (const height of Object.values(heights)) {
+      expect(height).toBe(COMPLETION_STATUS_ROW_HEIGHT_PX);
+    }
+  });
+
+  test("the pill keeps its height when the automatic image lands", async ({ reactGrab, page }) => {
+    await controlImageEncoding(page, { isGated: true });
+    await switchOnScreenshotToggle(page);
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await expect.poll(() => getPendingImageEncodingCount(page)).toBeGreaterThan(0);
+    await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(0);
+    const beforeImage = await measurePill(reactGrab);
+
+    await openImageEncodingGate(page);
+    await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    const withImage = await measurePill(reactGrab);
+    expect(withImage.height).toBe(beforeImage.height);
+    expect(withImage.top).toBe(beforeImage.top);
+
+    await page.keyboard.type(PROMPT_TEXT);
+    expect((await measurePill(reactGrab)).height).toBe(beforeImage.height);
+  });
+
+  test("a Copied, image saved pill has the same height", async ({ reactGrab, page }) => {
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, "write", { value: undefined });
+    });
+    await switchOnScreenshotToggle(page);
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await expect(getCompletion(reactGrab)).toContainText("Copied, image saved");
+    await expectSingleSeparatorBeforeActions(reactGrab);
+    expect((await measurePill(reactGrab)).height).toBe(COMPLETION_STATUS_ROW_HEIGHT_PX);
+  });
+
+  for (const { name, selector, shortcut } of [
+    { name: "Copy image", selector: CAMERA_BUTTON_SELECTOR, shortcut: null },
+    { name: "Dismiss", selector: DISMISS_BUTTON_SELECTOR, shortcut: "Esc" },
+  ]) {
+    test(`hovering ${name} shows its tooltip outside the pill without moving it`, async ({
+      reactGrab,
+      page,
+    }) => {
+      await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+      const button = getCompletion(reactGrab).locator(selector);
+      await expect(button).toHaveAccessibleName(name);
+      const pillBefore = await measurePill(reactGrab);
+
+      await button.hover();
+      const tooltip = getPillTooltip(reactGrab);
+      await expect(tooltip).toBeVisible();
+      await expect(tooltip).toContainText(name);
+      if (shortcut) {
+        await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+          "data-react-grab-tooltip-shortcut",
+          shortcut,
+        );
+      } else {
+        await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveCount(0);
+      }
+      await expect(tooltip).toHaveCSS("pointer-events", "none");
+      expect(await measurePill(reactGrab)).toEqual(pillBefore);
+      const tooltipBox = await expectTooltipContained(page, tooltip, button);
+      const isOutsidePill =
+        tooltipBox.y + tooltipBox.height <= pillBefore.top || tooltipBox.y >= pillBefore.bottom;
+      expect(isOutsidePill).toBe(true);
+
+      await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+      await expect(tooltip).toHaveCount(0);
+      await expect(getCompletion(reactGrab)).toHaveCount(1);
+
+      await button.hover();
+      await expect(tooltip).toBeVisible();
+      await page.mouse.down();
+      await expect(tooltip).toHaveCount(0);
+      await page.mouse.up();
+    });
+  }
+
+  for (const placement of TOOLTIP_PLACEMENT_CASES) {
+    test(`pill tooltips stay inside the viewport and off their button: ${placement.name}`, async ({
+      reactGrab,
+      page,
+    }) => {
+      if (placement.viewport) await page.setViewportSize(placement.viewport);
+      await addPlacementTarget(page, placement.targetStyle);
+      await clickCopy(reactGrab, page, `#${PLACEMENT_TARGET_ID}`);
+      const completion = getCompletion(reactGrab);
+      if (placement.isWrapped) {
+        await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
+        expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
+          SINGLE_LINE_HEIGHT_PX,
+        );
+      }
+      if (placement.hasScreenshotError) {
+        await installClipboardRecorder(page, { shouldReject: true });
+        await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+        await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText(
+          "Couldn't copy image",
+        );
+      }
+      const tooltip = getPillTooltip(reactGrab);
+
+      for (const { name, selector } of [
+        { name: "Copy image", selector: CAMERA_BUTTON_SELECTOR },
+        { name: "Dismiss", selector: DISMISS_BUTTON_SELECTOR },
+      ]) {
+        const button = completion.locator(selector);
+        await button.hover();
+        await expect(tooltip).toContainText(name);
+        await expect(tooltip).toHaveAttribute("role", "tooltip");
+        const tooltipId = await tooltip.getAttribute("id");
+        expect(tooltipId).toBeTruthy();
+        await expect(button).toHaveAttribute("aria-describedby", tooltipId ?? "");
+        await expectTooltipContained(page, tooltip, button);
+        await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+        await expect(tooltip).toHaveCount(0);
+        await expect(button).not.toHaveAttribute("aria-describedby");
+      }
+    });
+  }
+
+  test("keyboard focus shows each tooltip, and a press on the tooltip counts as elsewhere", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+    await page.keyboard.press("Enter");
+    await expect(getPillPrompt(reactGrab)).toBeFocused();
+    const tooltip = getPillTooltip(reactGrab);
+    const pillBefore = await measurePill(reactGrab);
+
+    await page.keyboard.press("Tab");
+    await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toBeFocused();
+    await expect(tooltip).toContainText("Copy image");
+    await page.keyboard.press("Tab");
+    await expect(getCompletion(reactGrab).locator(DISMISS_BUTTON_SELECTOR)).toBeFocused();
+    await expect(tooltip).toContainText("Dismiss");
+    await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      "Esc",
+    );
+    expect(await measurePill(reactGrab)).toEqual(pillBefore);
+
+    const tooltipBox = await tooltip.boundingBox();
+    if (!tooltipBox) throw new Error("No tooltip box");
+    await page.mouse.click(
+      tooltipBox.x + tooltipBox.width / 2,
+      tooltipBox.y + tooltipBox.height / 2,
+    );
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
+    await expect(tooltip).toHaveCount(0);
+  });
+
+  test("Escape on the focused Dismiss takes its tooltip away with the pill", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
+    await page.keyboard.press("Enter");
+    await expect(getPillPrompt(reactGrab)).toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    const tooltip = getPillTooltip(reactGrab);
+    await expect(tooltip).toContainText("Dismiss");
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toHaveCount(0);
+    await expect(getCompletion(reactGrab)).toHaveCount(0);
   });
 });

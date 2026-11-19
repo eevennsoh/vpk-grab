@@ -73,18 +73,24 @@ test.describe("Touch Mode", () => {
         .toContain("Todo List");
     });
 
-    test("touch on different elements should work", async ({ reactGrab }) => {
+    test("a tap elsewhere dismisses the copied pill and a second tap copies", async ({
+      reactGrab,
+    }) => {
       await reactGrab.activate();
+      await reactGrab.touchTap("[data-testid='todo-list'] h1");
+      const completion = reactGrab.getOverlayHost().locator("[data-react-grab-completion]");
+      await expect(completion).toContainText("Copied");
+      const firstCopy = await reactGrab.getClipboardContent();
+      expect(firstCopy).toContain("Todo List");
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
 
-      await reactGrab.touchTap("li:nth-child(2)");
+      await reactGrab.touchTap("[data-testid='main-title']");
+      await expect.poll(() => reactGrab.getLabelInstancesInfo()).toEqual([]);
+      expect(await reactGrab.getClipboardContent()).toBe(firstCopy);
 
-      await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
-
-      await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 5000 }).toBe(true);
-
-      await reactGrab.touchTap("li:nth-child(4)");
-
-      await expect.poll(() => reactGrab.getClipboardContent(), { timeout: 5000 }).toBeTruthy();
+      await reactGrab.touchTap("[data-testid='main-title']");
+      await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");
+      expect(await reactGrab.getClipboardContent()).not.toBe(firstCopy);
     });
 
     test("re-activating after touch copy should not show stale selection", async ({

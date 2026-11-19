@@ -620,6 +620,8 @@ export interface CompletionViewProps {
   shouldFocusPrompt?: boolean;
   isGrabActive?: boolean;
   onPromptFocusRelease?: () => void;
+  tooltipPosition: "top" | "bottom";
+  isDismissing: boolean;
 }
 
 export interface PromptTextareaProps {

@@ -57,7 +57,10 @@ interface PluginStoreState {
 
 type HookName = keyof PluginHooks;
 
-const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
+const createPluginRegistry = (
+  initialOptions: SettableOptions = {},
+  onLabelsHidden?: () => void,
+) => {
   const plugins = new Map<string, RegisteredPlugin>();
   let registeredPluginSnapshot: readonly RegisteredPlugin[] = [];
   const directOptionOverrides: Partial<OptionsState> = {};
@@ -99,10 +102,15 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
     };
   };
 
+  const areLabelInstancesShown = () =>
+    Boolean(store.theme.enabled && store.theme.grabbedBoxes.enabled);
+
   const applyPluginStoreState = (nextStore: PluginStoreState): void => {
+    const wereLabelsShown = areLabelInstancesShown();
     setStore("theme", nextStore.theme);
     setStore("options", { ...nextStore.options, ...directOptionOverrides });
     setStore("actions", nextStore.actions);
+    if (wereLabelsShown && !areLabelInstancesShown()) onLabelsHidden?.();
   };
 
   const recomputeStore = () => {
@@ -412,6 +420,7 @@ const createPluginRegistry = (initialOptions: SettableOptions = {}) => {
     unregister,
     getPluginNames,
     setOptions,
+    areLabelInstancesShown,
     dispose,
     store,
     hooks,

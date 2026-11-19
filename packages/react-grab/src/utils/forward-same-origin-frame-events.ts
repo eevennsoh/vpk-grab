@@ -5,10 +5,10 @@ import { observeSameOriginFrameDocuments } from "./observe-same-origin-frame-doc
 import { throwCollectedErrors } from "./throw-collected-errors.js";
 
 interface FrameEventForwardingOptions {
-  shouldForwardInteraction: () => boolean;
+  shouldForwardInteraction: (event: Event) => boolean;
   shouldForwardKeyboardEvent: (event: KeyboardEvent) => boolean;
   shouldForwardViewportEvent: (frameDocument: Document) => boolean;
-  onFramePointerDown: (event: PointerEvent) => void;
+  onInactiveFramePointerDown: (event: PointerEvent) => void;
   onFrameKeyDown: (event: KeyboardEvent) => boolean;
 }
 
@@ -32,6 +32,7 @@ const createMouseEventInit = (
   clientY,
   screenX: event.screenX,
   screenY: event.screenY,
+  detail: event.detail,
   button: event.button,
   buttons: event.buttons,
   altKey: event.altKey,
@@ -96,13 +97,13 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
     const eventOptions = { capture: true, signal: abortController.signal };
 
     const forwardPointerEventWhenActive = (event: PointerEvent): void => {
-      if (options.shouldForwardInteraction()) forwardPointerEvent(event);
+      if (options.shouldForwardInteraction(event)) forwardPointerEvent(event);
     };
     const forwardMouseEventWhenActive = (event: MouseEvent): void => {
-      if (options.shouldForwardInteraction()) forwardMouseEvent(event);
+      if (options.shouldForwardInteraction(event)) forwardMouseEvent(event);
     };
     const forwardKeyboardEventWhenActive = (event: KeyboardEvent): void => {
-      if (options.shouldForwardInteraction() || options.shouldForwardKeyboardEvent(event)) {
+      if (options.shouldForwardInteraction(event) || options.shouldForwardKeyboardEvent(event)) {
         forwardKeyboardEvent(event);
       }
     };
@@ -111,14 +112,20 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
       forwardKeyboardEventWhenActive(event);
     };
     const forwardViewportEventWhenActive = (event: Event): void => {
-      if (options.shouldForwardInteraction() && options.shouldForwardViewportEvent(frameDocument)) {
+      if (
+        options.shouldForwardInteraction(event) &&
+        options.shouldForwardViewportEvent(frameDocument)
+      ) {
         window.dispatchEvent(new Event(event.type));
       }
     };
 
-    frameWindow.addEventListener("pointerdown", options.onFramePointerDown, eventOptions);
+    const handleFramePointerDown = (event: PointerEvent): void => {
+      if (options.shouldForwardInteraction(event)) forwardPointerEvent(event);
+      else options.onInactiveFramePointerDown(event);
+    };
     frameWindow.addEventListener("pointermove", forwardPointerEventWhenActive, eventOptions);
-    frameWindow.addEventListener("pointerdown", forwardPointerEventWhenActive, eventOptions);
+    frameWindow.addEventListener("pointerdown", handleFramePointerDown, eventOptions);
     frameWindow.addEventListener("pointerup", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("pointercancel", forwardPointerEventWhenActive, eventOptions);
     frameWindow.addEventListener("contextmenu", forwardMouseEventWhenActive, eventOptions);

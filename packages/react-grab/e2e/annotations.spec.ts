@@ -48,6 +48,8 @@ const MARQUEE_SELECTOR = "[data-react-grab-annotation-marquee]";
 const INSPECT_TOOLS_SELECTOR = "[data-react-grab-toolbar-inspect-tools]";
 const TOOLTIP_SELECTOR = "[data-react-grab-tooltip]";
 const TOOLTIP_SHORTCUT_SELECTOR = "[data-react-grab-tooltip-shortcut]";
+// From the bottom centre to the right edge's middle, ending inside the viewport.
+const TOOLBAR_SIDE_EDGE_DRAG_PX = { x: 640, y: -300 };
 // Longer than the toolbar's reveal animation, so its position has settled.
 const TOOLBAR_SETTLE_MS = 400;
 
@@ -513,7 +515,7 @@ test.describe("Annotations", () => {
   });
 });
 
-test.describe("Tool cycling with the platform modifier and horizontal arrows", () => {
+test.describe("Tool cycling with the platform modifier and an arrow", () => {
   test.beforeEach(async ({ reactGrab }) => {
     await reactGrab.activate();
   });
@@ -534,11 +536,37 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await page.keyboard.up(reactGrab.modifierKey);
   });
 
-  test("from Move, Right lands on Grab and Left on Text", async ({ reactGrab, page }) => {
+  test("Down and Up step like Right and Left, mixed with the modifier held", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.keyboard.down(reactGrab.modifierKey);
+    for (const [arrow, action] of [
+      ["ArrowDown", "annotate-pen"],
+      ["ArrowRight", "annotate-rectangle"],
+      ["ArrowDown", "annotate-text"],
+      ["ArrowDown", "copy"],
+      ["ArrowUp", "annotate-text"],
+      ["ArrowLeft", "annotate-rectangle"],
+      ["ArrowUp", "annotate-pen"],
+      ["ArrowUp", "copy"],
+    ]) {
+      await page.keyboard.press(arrow);
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+    }
+    await page.keyboard.up(reactGrab.modifierKey);
+  });
+
+  test("from Move, Right and Down land on Grab and Left and Up on Text", async ({
+    reactGrab,
+    page,
+  }) => {
     await drawStraightLine(page);
     for (const [arrow, action] of [
       ["ArrowRight", "copy"],
       ["ArrowLeft", "annotate-text"],
+      ["ArrowDown", "copy"],
+      ["ArrowUp", "annotate-text"],
     ]) {
       await toolbarAction(page, "annotate-edit").click();
       await page.mouse.click(LINE_START.x, LINE_START.y);
@@ -598,6 +626,28 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
   });
 
+  test("plain Up and Down still navigate, and the chord on them leaves the selection", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+    await page.keyboard.press("ArrowUp");
+    const selected = page.getByRole("menuitemradio", { checked: true });
+    const first = await selected.textContent();
+    if (!first) throw new Error("Missing selected hierarchy row");
+    await page.keyboard.press("ArrowUp");
+    await expect(selected).not.toHaveText(first);
+    await page.keyboard.press("ArrowDown");
+    await expect(selected).toHaveText(first);
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.press("ArrowDown");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await expect(selected).toHaveText(first);
+  });
+
   test("a kept-on session steps on the first arrow with the activation shortcut still down", async ({
     reactGrab,
     page,
@@ -616,7 +666,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
   });
 
-  test("a hold session keeps sibling navigation with the modifier down", async ({
+  test("a hold session keeps sibling and parent navigation with the modifier down", async ({
     reactGrab,
     page,
   }) => {
@@ -637,6 +687,12 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(selected).not.toHaveAttribute("data-react-grab-menu-item", first);
     await page.keyboard.press("ArrowLeft");
     await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
+    const parentStart = await selected.textContent();
+    if (!parentStart) throw new Error("Missing selected hierarchy row");
+    await page.keyboard.press("ArrowUp");
+    await expect(selected).not.toHaveText(parentStart);
+    await page.keyboard.press("ArrowDown");
+    await expect(selected).toHaveText(parentStart);
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.up(reactGrab.modifierKey);
     await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
@@ -671,6 +727,43 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await reactGrab.page.keyboard.up(reactGrab.modifierKey);
   };
 
+  // Headless Chromium binds no caret command to the modifier with Up and Down,
+  // so this checks that the key reaches the field with its default action intact.
+  const expectNativeVerticalChord = async (
+    reactGrab: ReactGrabPageObject,
+    field: Locator,
+    scope: "page" | "overlay",
+  ) => {
+    await field.evaluate((element) => {
+      element.addEventListener(
+        "keydown",
+        (event) => {
+          if (!(event instanceof KeyboardEvent)) return;
+          const { key } = event;
+          if (key !== "ArrowUp" && key !== "ArrowDown") return;
+          setTimeout(() => {
+            element.setAttribute("data-field-key", event.defaultPrevented ? "prevented" : key);
+          });
+        },
+        true,
+      );
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          element.setAttribute("data-page-key", event.key);
+        }
+      });
+    });
+    await field.fill("example");
+    await expect(field).toBeFocused();
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      await reactGrab.pressKeyCombo([reactGrab.modifierKey], key);
+      await expect(field).toHaveAttribute("data-field-key", key);
+      if (scope === "page") await expect(field).toHaveAttribute("data-page-key", key);
+      else await expect(field).not.toHaveAttribute("data-page-key");
+    }
+    await expect(field).toBeFocused();
+  };
+
   for (const scope of ["page", "same-origin frame"]) {
     test(`the ${scope} field keeps native caret movement and propagation`, async ({
       reactGrab,
@@ -688,11 +781,21 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     });
   }
 
+  test("a page field keeps the modifier with Up and Down", async ({ reactGrab, page }) => {
+    await page.locator("body").evaluate((body) => {
+      const field = document.createElement("input");
+      field.dataset.testid = "cycle-page-field";
+      body.prepend(field);
+    });
+    await expectNativeVerticalChord(reactGrab, page.getByTestId("cycle-page-field"), "page");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+  });
+
   const observePageArrowRight = () => {
     window.addEventListener(
       "keydown",
       (event) => {
-        if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
+        if (event.key.startsWith("Arrow")) document.body.dataset.pageArrow = event.key;
       },
       true,
     );
@@ -704,7 +807,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
       window.addEventListener(
         "keydown",
         (event) => {
-          if (event.key === "ArrowRight") {
+          if (event.key.startsWith("Arrow")) {
             setTimeout(() => {
               document.body.dataset.arrowPrevented = String(event.defaultPrevented);
             });
@@ -744,12 +847,35 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(field).toHaveValue("note");
   });
 
+  test("cycles tools with Down and Up from the focused empty pill field", async ({
+    reactGrab,
+    page,
+  }) => {
+    await observeArrowRight(reactGrab);
+    const field = await grabWithEmptyPillField(reactGrab);
+    const body = page.locator("body");
+    await page.keyboard.down(reactGrab.modifierKey);
+    for (const [arrow, action] of [
+      ["ArrowDown", "annotate-pen"],
+      ["ArrowUp", "copy"],
+      ["ArrowUp", "annotate-text"],
+    ]) {
+      await page.keyboard.press(arrow);
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+      await expect(field).toBeFocused();
+      await expect(body).toHaveAttribute("data-arrow-prevented", "true");
+      await expect(body).not.toHaveAttribute("data-page-arrow");
+    }
+    await page.keyboard.up(reactGrab.modifierKey);
+  });
+
   test("the pill field keeps caret movement until its context is cleared", async ({
     reactGrab,
     page,
   }) => {
     const field = await grabWithEmptyPillField(reactGrab);
     await expectCaretMovement(reactGrab, field, "overlay");
+    await expectNativeVerticalChord(reactGrab, field, "overlay");
     const grab = toolbarAction(page, "copy");
     await expect(grab).toHaveAttribute("aria-pressed", "true");
 
@@ -891,6 +1017,27 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(body).toHaveAttribute("data-page-arrow", "ArrowRight");
   });
 
+  test("claims the chord on Down and Up before page listeners only while active", async ({
+    reactGrab,
+    page,
+  }) => {
+    await observeArrowRight(reactGrab);
+    const body = page.locator("body");
+    for (const [arrow, action] of [
+      ["ArrowDown", "annotate-pen"],
+      ["ArrowUp", "copy"],
+    ]) {
+      await reactGrab.pressKeyCombo([reactGrab.modifierKey], arrow);
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+      await expect(body).toHaveAttribute("data-arrow-prevented", "true");
+      await expect(body).not.toHaveAttribute("data-page-arrow");
+    }
+    await reactGrab.deactivate();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowDown");
+    await expect(body).toHaveAttribute("data-arrow-prevented", "false");
+    await expect(body).toHaveAttribute("data-page-arrow", "ArrowDown");
+  });
+
   test("using the modifier for undo leaves the tool in hand", async ({ reactGrab, page }) => {
     await drawStraightLine(page);
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "z");
@@ -924,6 +1071,40 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     expect(await readShortcut("annotate-rectangle", "Rectangle")).toBe("2");
     expect(await readShortcut("copy", "Grab")).toBe(`${modifier}←`);
     expect(await readShortcut("annotate-pen", "Pen")).toBe("1");
+  });
+
+  test("tooltips show the arrows along the toolbar's edge", async ({ reactGrab, page }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible()).toBe(true);
+    await page.waitForTimeout(TOOLBAR_SETTLE_MS);
+    const modifier = reactGrab.modifierKey === "Meta" ? "⌘" : "Ctrl+";
+    const readShortcut = async (actionId: string, name: string) => {
+      await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+      await toolbarAction(page, actionId).hover();
+      const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: name });
+      await expect(tooltip).toBeVisible();
+      return tooltip
+        .locator(TOOLTIP_SHORTCUT_SELECTOR)
+        .getAttribute("data-react-grab-tooltip-shortcut");
+    };
+
+    expect((await reactGrab.getToolbarInfo()).snapEdge).toBe("bottom");
+    expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}→`);
+    expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}←`);
+
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.waitForTimeout(TOOLBAR_SETTLE_MS);
+    await reactGrab.dragToolbar(TOOLBAR_SIDE_EDGE_DRAG_PX.x, TOOLBAR_SIDE_EDGE_DRAG_PX.y);
+    await expect.poll(async () => (await reactGrab.getToolbarInfo()).isVertical).toBe(true);
+    expect(
+      await page.evaluate(
+        () => JSON.parse(localStorage.getItem("react-grab-toolbar-state") ?? "{}").edge,
+      ),
+    ).toBe("right");
+    expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}↓`);
+    expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}↑`);
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowDown");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    expect(await readShortcut("copy", "Grab")).toBe(`${modifier}↑`);
   });
 
   test("before activating, only Grab shows a key: the one that activates", async ({
@@ -1137,14 +1318,14 @@ test.describe("The screenshot toggle", () => {
     await expect(inspectTools).toHaveAttribute("data-revealed", "");
   });
 
-  test("a click and 4 switch it, with the outline camera off and the filled one on", async ({
+  test("a click and 3 switch it, with the outline camera off and the filled one on", async ({
     page,
   }) => {
     const toggle = toolbarAction(page, "auto-screenshot");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(await readIconPath(page)).toBe(PHOTO_CAMERA_ICON_PATHS.outline);
 
-    await page.keyboard.press("4");
+    await page.keyboard.press("3");
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(await readIconPath(page)).toBe(PHOTO_CAMERA_ICON_PATHS.filled);
 
@@ -1155,32 +1336,37 @@ test.describe("The screenshot toggle", () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
-    await page.keyboard.press("4");
+    await page.keyboard.press("3");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("its tooltip shows Screenshot and 4", async ({ page }) => {
+  test("its tooltip shows Screenshot and 3", async ({ page }) => {
     await toolbarAction(page, "auto-screenshot").hover();
     const tooltip = page.locator(TOOLTIP_SELECTOR).filter({ hasText: "Screenshot" });
     await expect(tooltip).toBeVisible();
     await expect(tooltip.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
       "data-react-grab-tooltip-shortcut",
-      "4",
+      "3",
     );
   });
 
-  test("3 leaves it alone with Grab in hand, and with Pen in hand 4 does nothing", async ({
+  test("4 does nothing with Grab in hand, and with Pen in hand 3 picks Text and leaves it alone", async ({
     page,
   }) => {
     const toggle = toolbarAction(page, "auto-screenshot");
-    await page.keyboard.press("3");
+    await page.keyboard.press("4");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    for (const actionId of ["inspect-specs", "inspect-redlines"]) {
+      await expect(toolbarAction(page, actionId)).toHaveAttribute("aria-pressed", "false");
+    }
 
     await toolbarAction(page, "annotate-pen").click();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await page.keyboard.press("4");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("3");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("3");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
 
@@ -1190,7 +1376,7 @@ test.describe("The screenshot toggle", () => {
 
   test("starts off and is remembered after a reload", async ({ reactGrab, page }) => {
     const toggle = toolbarAction(page, "auto-screenshot");
-    await page.keyboard.press("4");
+    await page.keyboard.press("3");
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect
       .poll(() =>
@@ -1540,15 +1726,22 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("Grab leaves 3 to the page and numbers typed into a note stay text", async ({ page }) => {
+  test("Grab keeps 3 for Screenshot, leaves 4 to the page, and numbers typed into a note stay text", async ({
+    page,
+  }) => {
     await page.evaluate(() => {
       document.addEventListener("keydown", (event) => {
-        if (event.key !== "3") return;
+        if (event.key !== "3" && event.key !== "4") return;
         document.body.setAttribute("data-page-key", event.key);
       });
     });
     await page.keyboard.press("3");
-    await expect(page.locator("body")).toHaveAttribute("data-page-key", "3");
+    await expect(toolbarAction(page, "auto-screenshot")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("body")).not.toHaveAttribute("data-page-key");
+    await page.keyboard.press("3");
+    await expect(toolbarAction(page, "auto-screenshot")).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("4");
+    await expect(page.locator("body")).toHaveAttribute("data-page-key", "4");
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
     for (const actionId of ["inspect-specs", "inspect-redlines", "auto-screenshot"]) {
       await expect(toolbarAction(page, actionId)).toHaveAttribute("aria-pressed", "false");

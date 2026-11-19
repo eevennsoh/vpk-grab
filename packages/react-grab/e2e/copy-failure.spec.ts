@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.js";
-import { ATTRIBUTE_NAME } from "./constants.js";
+import { ATTRIBUTE_NAME, NON_NATIVE_ACTIVATION_KEY } from "./constants.js";
 
 interface ErrorViewSnapshot {
   role: string | null;
@@ -82,16 +82,20 @@ test.describe("Copy failure feedback", () => {
     reactGrab,
   }) => {
     const { page } = reactGrab;
-    expect(await reactGrab.reinitialize({ activationKey: "F8", activationMode: "hold" })).toBe(
-      true,
-    );
+    expect(
+      await reactGrab.reinitialize({
+        activationKey: NON_NATIVE_ACTIVATION_KEY,
+        activationMode: "hold",
+      }),
+    ).toBe(true);
     await page.click("body");
-    await page.keyboard.down("F8");
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
 
     await reactGrab.hoverUntilSelected("li:first-child span");
     await reactGrab.clickElement("li:first-child span");
     await expect.poll(() => reactGrab.getLabelStatusText()).toBe("Copied");
+    await reactGrab.pressEscape();
     await reactGrab.pressArrowUp();
     await forceCopyResult(reactGrab, false);
     await reactGrab.clickElement("li:first-child");
@@ -102,6 +106,7 @@ test.describe("Copy failure feedback", () => {
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
     await reactGrab.clickElement("[data-testid='todo-list'] h1");
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
+    await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
   });
 
   test("renders the error view with the failure message and action buttons", async ({

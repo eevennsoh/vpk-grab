@@ -851,6 +851,7 @@ test("toolbar activation keeps Grab on and pressed across consecutive copies", a
   await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
   await expect.poll(() => reactGrab.getToolbarActionPressed("copy")).toBe(true);
   expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await reactGrab.hoverUntilSelected("[data-testid='main-title']");
   await reactGrab.clickElement("[data-testid='main-title']");
   await expect.poll(() => reactGrab.getClipboardContent()).toContain("React Grab");

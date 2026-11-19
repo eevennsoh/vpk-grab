@@ -206,7 +206,6 @@ import { isDocumentAncestorOfElement } from "../utils/is-document-ancestor-of-el
 import { clearGlobalApi } from "../global-api.js";
 import { collectCleanupError } from "../utils/collect-cleanup-error.js";
 import { throwCollectedErrors } from "../utils/throw-collected-errors.js";
-import { doesLabelInstanceCoverElement } from "../utils/does-label-instance-cover-element.js";
 import { isKeyOwnedByPillPrompt } from "../utils/is-key-owned-by-pill-prompt.js";
 import { blurFocusedPillPrompt } from "../utils/blur-focused-pill-prompt.js";
 import { getConnectedPromptTarget } from "../utils/get-connected-prompt-target.js";
@@ -311,7 +310,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let disposeRenderer: (() => void) | undefined;
     const toolbarStateChangeCallbacks = new Set<(state: ToolbarState) => void>();
 
-    const pluginRegistry = createPluginRegistry(settableOptions);
+    const pluginRegistry = createPluginRegistry(settableOptions, () => {
+      labelController.dismissCompleted();
+      resumeHoverAtPointer();
+    });
+    const { areLabelInstancesShown } = pluginRegistry;
 
     const { store, actions, pointer, viewportVersion, current } = createGrabStore({
       keyHoldDuration: pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS,
@@ -433,6 +436,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isAltKeyHeld = createModifierTracker(readAltKey, createTypedModifierFilter(readAltKey));
     const inspect = createInspectController({
       isShiftKeyHeld,
+      isAltKeyHeld,
       getElementAtPosition,
       getAnnotationElements: () => rendererRoot.querySelectorAll(`[${ANNOTATION_ID_ATTRIBUTE}]`),
     });
@@ -472,8 +476,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let shiftSelectionLabelAnchorRatioByElement = new WeakMap<Element, number>();
     const keyboardSelection = createKeyboardSelectionController();
 
+    const copiedPill = createMemo(() =>
+      areLabelInstancesShown()
+        ? store.labelInstances.find((instance) => instance.status === "copied")
+        : undefined,
+    );
+    const isSelectionHeldByPill = () => isActivated() && Boolean(copiedPill());
+
     const isElementDetectionBlocked = () =>
       !isEnabled() ||
+      isSelectionHeldByPill() ||
       isPromptMode() ||
       isSelectionInteractionLocked() ||
       inspect.pinnedSpecsElement() !== null ||
@@ -697,7 +709,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !store.pendingCommentMode;
     const isScreenshotMode = createMemo(
       () =>
-        isShiftKeyHeld() && canTakeScreenshot() && (isDragging() || !inspect.isSpecsPanelHovered()),
+        isShiftKeyHeld() &&
+        canTakeScreenshot() &&
+        (isDragging() || (!copiedPill() && !inspect.isSpecsPanelHovered())),
     );
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
@@ -805,11 +819,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // later Retry never resurrects a dismissed label.
     const retryCopyByInstanceId = new Map<string, CopyRetryEntry>();
 
-    const areLabelInstancesShown = () =>
-      Boolean(
-        pluginRegistry.store.theme.enabled && pluginRegistry.store.theme.grabbedBoxes.enabled,
-      );
-
     const labelController = createLabelController(
       actions,
       () => store.labelInstances,
@@ -817,14 +826,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       areLabelInstancesShown,
     );
 
-    createEffect(
-      on(areLabelInstancesShown, (areLabelsShown) => {
-        if (!areLabelsShown) labelController.dismissCompleted();
-      }),
-    );
+    const resumeHoverAtPointer = () => {
+      const position = getPointerPosition();
+      if (position && isActivated() && !isAnnotating()) {
+        handlePointerMove(position.x, position.y, isShiftKeyHeld());
+      }
+    };
 
+    let pillDismissPointerId: number | null = null;
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
-      if (isEventFromOverlay(event, "data-react-grab-completion")) return;
+      if (event.isPrimary && event.button === 0) pillDismissPointerId = null;
+      if (!copiedPill() || isEventFromOverlay(event, "data-react-grab-completion")) return false;
       const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
         isActivated() &&
@@ -838,8 +850,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
               target.getAttribute("data-react-grab-toolbar-action") === defaultActionId,
           )
       )
-        return;
+        return false;
       labelController.dismissCompleted();
+      if (
+        !isActivated() ||
+        isAnnotating() ||
+        isEventFromOverlay(event, "data-react-grab-ignore-events")
+      )
+        return false;
+      const isSelectionPress = event.button === 0 && event.isPrimary;
+      if (isSelectionPress) {
+        actions.setTouchMode(event.pointerType === "touch");
+        if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
+      }
+      resumeHoverAtPointer();
+      return isSelectionPress;
     };
 
     const dismissCompletedPills = () => {
@@ -860,18 +885,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const dismissCompletedLabelsOnEscape = (event: KeyboardEvent): boolean => {
-      if (
-        event.code !== "Escape" ||
-        isKeyboardEventComposing(event) ||
-        !store.labelInstances.some((instance) => instance.status === "copied")
-      )
-        return false;
+      if (event.code !== "Escape" || isKeyboardEventComposing(event) || !copiedPill()) return false;
       if (!isActivated() && !isHoldingKeys() && !isCopying() && !isPillPromptEvent(event)) {
         labelController.dismissCompleted();
         return false;
       }
       dismissCompletedPills();
       if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
+      resumeHoverAtPointer();
       return !isDragging();
     };
 
@@ -1341,7 +1362,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isSelectionInteractionLocked()
       )
         return null;
-      const element = store.detectedElement;
+      const pill = copiedPill();
+      const element = pill ? pill.element : store.detectedElement;
       if (!isElementConnected(element)) return null;
       return element;
     });
@@ -2711,12 +2733,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const eventListenerManager = createEventListenerManager();
 
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
-      shouldForwardInteraction: () =>
-        isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
+      shouldForwardInteraction: (event) =>
+        isActivated() ||
+        isHoldingKeys() ||
+        isDragging() ||
+        isSelectionInteractionLocked() ||
+        (pillDismissPointerId !== null &&
+          (event.type === "pointerup" || event.type === "pointercancel" || event.type === "click")),
       shouldForwardKeyboardEvent: (event) =>
         isTargetKeyCombination(event, pluginRegistry.store.options) ||
         (isCopying() && event.type === "keydown" && Boolean(getToolCycleDirection(event))),
-      onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
+      onInactiveFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
         if (getToolCycleDirection(event) && isKeyboardEventTriggeredByInput(event)) return true;
@@ -2835,7 +2862,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const tryHandleEnterCopy = (event: KeyboardEvent): boolean => {
-      if (!isEnterCode(event.code)) return false;
+      if (!isEnterCode(event.code) || isSelectionHeldByPill()) return false;
       const activationModifiers = store.wasActivatedByToggle
         ? null
         : getModifiersFromActivationKey(pluginRegistry.store.options.activationKey);
@@ -2889,18 +2916,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         clearKeyboardNavigation();
         return true;
       }
-      if (isPillPromptEvent(event)) {
-        const promptTarget = store.labelInstances.find(
-          (instance) => instance.promptTarget,
-        )?.promptTarget;
-        const connectedTarget = promptTarget ? getConnectedPromptTarget(promptTarget) : null;
-        if (
-          connectedTarget &&
-          connectedTarget.elements.length === elements.length &&
-          elements.every((candidateElement) => connectedTarget.elements.includes(candidateElement))
-        )
-          return true;
-      }
       if (isShiftMultiSelecting()) {
         commitShiftMultiSelection(true);
       } else if (selectedElement) {
@@ -2934,6 +2949,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const navigationKey = resolveNavigationKey(event);
       if (!navigationKey) return false;
       if (isAnyPopoverOpen()) return false;
+
+      if (isSelectionHeldByPill()) {
+        if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return true;
+      }
 
       let currentElement = effectiveElement();
       const isInitialSelection = !currentElement;
@@ -2976,7 +2998,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (event.metaKey || event.ctrlKey || event.altKey) return null;
       if (event.repeat) return null;
       if (isKeyboardEventTriggeredByInput(event)) return null;
-      if (!isActivated()) return null;
+      if (!isActivated() || isSelectionHeldByPill()) return null;
       if (isCopying()) return null;
       if (isSelectionInteractionLocked()) return null;
       if (isAnyPopoverOpen()) return null;
@@ -3510,14 +3532,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "pointermove",
       ignoreRealInput((event: PointerEvent) => {
         if (!event.isPrimary) return;
-        const isFromOverlay = isEventFromOverlay(event, "data-react-grab-ignore-events");
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
         if (isAnnotating()) {
           inspect.handlePointerMove(event);
           return;
         }
-        if (isFromOverlay) return;
+        if (isSelectionHeldByPill() || isEventFromOverlay(event, "data-react-grab-ignore-events"))
+          return;
         // The selection stays on the anchor while Alt is held; the pointer
         // only picks what the anchor is measured against.
         if (inspect.measureAnchorElement() !== null) {
@@ -3566,7 +3588,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "pointerdown",
       ignoreRealInput((event: PointerEvent) => {
-        dismissCompletedLabelsOnPress(event);
+        if (dismissCompletedLabelsOnPress(event)) {
+          pillDismissPointerId = event.pointerId;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (event.button !== 0) return;
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
@@ -3648,6 +3675,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       ignoreRealInput((event: PointerEvent) => {
         if (event.button !== 0) return;
         if (!event.isPrimary) return;
+        if (event.pointerId === pillDismissPointerId) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (isAnnotating()) {
           // A stroke can end over the toolbar, so the release always finishes
           // it; a release that belongs to the toolbar is then left for the
@@ -3708,6 +3740,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "pointercancel",
       ignoreRealInput((event: PointerEvent) => {
         if (!event.isPrimary) return;
+        if (event.pointerId === pillDismissPointerId) pillDismissPointerId = null;
         inspect.cancelPointerGesture();
         cancelActiveDrag();
       }),
@@ -3717,6 +3750,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "click",
       ignoreRealInput((event: MouseEvent) => {
+        if (pillDismissPointerId !== null && event.detail > 0) {
+          pillDismissPointerId = null;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
 
         if (isRendererActive() || didJustDrag()) {
@@ -3897,7 +3936,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         boundsRecalcIntervalId = window.setInterval(() => {
           actions.relinkLiveElements();
-          labelController.dismissCompletedIfAnchorDetached();
+          if (labelController.dismissCompletedIfAnchorDetached()) resumeHoverAtPointer();
           scheduleBoundsSync();
         }, BOUNDS_RECALC_INTERVAL_MS);
         return;
@@ -4046,8 +4085,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
 
     // Redlines show the spacing around the hovered element. Holding Alt
-    // anchors them to it instead, so the pointer can go to another element
-    // and read the distances between the two.
+    // turns them on if they are off and anchors them to that element, so the
+    // pointer can go to another element and read the distances between the two.
     createEffect(
       on(
         isAltKeyHeld,
@@ -4289,15 +4328,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
       }
       return store.labelInstances.map(recomputeLabelInstance);
-    });
-
-    const isSelectionLabelCoveredByCopiedLabel = createMemo(() => {
-      const element = selectionElement();
-      if (!element) return false;
-      return computedLabelInstances().some(
-        (instance) =>
-          instance.status === "copied" && doesLabelInstanceCoverElement(instance, element),
-      );
     });
 
     const computedLabelInstanceById = createMemo(
@@ -4750,7 +4780,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 selectionTagName={selectionTagName()}
                 selectionComponentName={resolvedComponentName()}
                 selectionLabelVisible={selectionLabelVisible()}
-                isSelectionLabelCovered={isSelectionLabelCoveredByCopiedLabel()}
+                isSelectionLabelCovered={Boolean(copiedPill())}
                 selectionLabelStatus="idle"
                 hierarchyState={hierarchyState()}
                 hierarchyMenuPosition={hierarchyMenuPosition()}
@@ -4776,11 +4806,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                   !store.isTouchMode && (shouldFocusPromptAfterEnter() || isToggleSession())
                 }
                 onInstancePromptFocusRelease={() => returnFocusToPage()}
-                onDismissPill={(event) => {
+                onDismissPill={() => {
                   dismissCompletedPills();
-                  if (isActivated() && !isAnnotating() && event.detail > 0) {
-                    handlePointerMove(event.clientX, event.clientY, event.shiftKey);
-                  }
+                  resumeHoverAtPointer();
                 }}
                 onRetryInstance={handleRetryInstance}
                 onAcknowledgeErrorInstance={handleAcknowledgeErrorInstance}

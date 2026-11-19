@@ -15,6 +15,7 @@ import {
   VIEWPORT_MARGIN_PX,
   ARROW_CENTER_PERCENT,
   ARROW_LABEL_MARGIN_PX,
+  COMPLETION_TOOLTIP_CLEARANCE_PX,
   LABEL_GAP_PX,
   SELECTION_LABEL_OFFSCREEN_PX,
   Z_INDEX_OVERLAY,
@@ -286,6 +287,22 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
   const arrowPosition = () => positionComputation().computedArrowPosition ?? "bottom";
   const hadValidBounds = () => positionComputation().hadValidBounds;
 
+  // Away from the selection when that side has room, so a pill tooltip covers
+  // neither the pill nor the element it labels; otherwise the roomier side, so
+  // the Tooltip's viewport containment overlaps as little of the pill as it can.
+  const completionTooltipPosition = (): "top" | "bottom" => {
+    const labelTop = positionComputation().position.top;
+    const viewport = getLabelViewport();
+    const roomAbove = labelTop - viewport.offsetTop;
+    const roomBelow = viewport.offsetTop + viewport.height - labelTop - measuredHeight();
+    const isAwaySideBelow = arrowPosition() === "bottom";
+    const roomOnAwaySide = isAwaySideBelow ? roomBelow : roomAbove;
+    if (roomOnAwaySide >= COMPLETION_TOOLTIP_CLEARANCE_PX) {
+      return isAwaySideBelow ? "bottom" : "top";
+    }
+    return roomBelow > roomAbove ? "bottom" : "top";
+  };
+
   createEffect(
     on(
       () => props.selectionLabelShakeCount,
@@ -351,6 +368,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
         ref={containerRef}
         data-react-grab-ignore-events
         data-react-grab-selection-label
+        inert={props.status === "fading"}
         data-react-grab-label-instance={props.isLabelInstance ? "" : undefined}
         class="fixed font-sans text-[13px] antialiased select-none"
         style={{
@@ -394,6 +412,8 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             shouldFocusPrompt={props.shouldFocusPrompt}
             isGrabActive={props.isGrabActive}
             onPromptFocusRelease={props.onPromptFocusRelease}
+            tooltipPosition={completionTooltipPosition()}
+            isDismissing={props.status === "fading"}
           />
         </Show>
 
