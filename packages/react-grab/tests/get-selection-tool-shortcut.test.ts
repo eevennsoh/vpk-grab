@@ -14,17 +14,17 @@ describe("getSelectionToolShortcut", () => {
     expect(getSelectionToolShortcut("rectangle", "grab", false, "⌘C")).toBeUndefined();
   });
 
-  it("shows adjacent modifier taps from Grab and no key for Rectangle", () => {
-    expect(getSelectionToolShortcut("pen", "grab", true, "⌘C")).toBe("⌘");
+  it("shows adjacent modifier-arrow shortcuts from Grab and no key for Rectangle", () => {
+    expect(getSelectionToolShortcut("pen", "grab", true, "⌘C")).toBe("⌘→");
     expect(getSelectionToolShortcut("rectangle", "grab", true, "⌘C")).toBeUndefined();
-    expect(getSelectionToolShortcut("text", "grab", true, "⌘C")).toBe("⇧⌘");
+    expect(getSelectionToolShortcut("text", "grab", true, "⌘C")).toBe("⌘←");
     expect(getSelectionToolShortcut("grab", "grab", true, "⌘C")).toBeUndefined();
   });
 
-  it("shows Ctrl and Shift+Ctrl on other platforms", () => {
+  it("shows Ctrl with Right and Left on other platforms", () => {
     platform.isMac = false;
-    expect(getSelectionToolShortcut("pen", "grab", true, "Ctrl+C")).toBe("Ctrl");
-    expect(getSelectionToolShortcut("text", "grab", true, "Ctrl+C")).toBe("Shift+Ctrl");
+    expect(getSelectionToolShortcut("pen", "grab", true, "Ctrl+C")).toBe("Ctrl+→");
+    expect(getSelectionToolShortcut("text", "grab", true, "Ctrl+C")).toBe("Ctrl+←");
   });
 
   it("shows drawing numbers from every drawing tool and Move, including the current tool", () => {

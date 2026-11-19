@@ -1,4 +1,5 @@
 import { getTagName } from "./get-tag-name.js";
+import { isHtmlElement } from "./is-html-element.js";
 
 const EDITABLE_TAGS_AND_ROLES: readonly string[] = [
   "input",
@@ -16,25 +17,19 @@ const EDITABLE_TAGS_AND_ROLES: readonly string[] = [
   "combobox",
 ];
 
-const getTargetElement = (event: KeyboardEvent): HTMLElement | undefined => {
-  if (event.composed) {
-    const firstElement = event.composedPath()[0];
-    if (firstElement instanceof HTMLElement) {
-      return firstElement;
-    }
-  } else if (event.target instanceof HTMLElement) {
-    return event.target;
-  }
-  return undefined;
+const getTargetElement = (event: Event): HTMLElement | undefined => {
+  const target = event.composed ? event.composedPath()[0] : event.target;
+  return isHtmlElement(target) ? target : undefined;
 };
 
-export const isKeyboardEventTriggeredByInput = (event: KeyboardEvent): boolean => {
+export const isKeyboardEventTriggeredByInput = (event: Event): boolean => {
   if (document.designMode === "on") return true;
 
   const targetElement = getTargetElement(event);
   if (!targetElement) return false;
 
-  if (targetElement.isContentEditable) return true;
+  if (targetElement.isContentEditable || targetElement.ownerDocument.designMode === "on")
+    return true;
 
   const tagName = getTagName(targetElement);
   return EDITABLE_TAGS_AND_ROLES.some(

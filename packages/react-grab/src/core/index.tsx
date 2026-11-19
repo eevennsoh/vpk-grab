@@ -87,7 +87,6 @@ import {
   SPECS_TOOL_KEY,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
-  TOOL_CYCLE_TAP_MAX_MS,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -175,7 +174,7 @@ import { createAutoScroller, getAutoScrollDirection } from "./auto-scroll.js";
 import { logIntro } from "./log-intro.js";
 import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
-import { isMac } from "../utils/is-mac.js";
+import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
@@ -321,6 +320,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const isHoldingKeys = createMemo(() => current().state === "holding");
     const isActivated = createMemo(() => current().state === "active");
+    const isToggleSession = () =>
+      store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold";
     const isFrozenPhase = createMemo(() => {
       const currentState = current();
       return currentState.state === "active" && currentState.phase === "frozen";
@@ -2120,9 +2121,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       didAnnotationToolActivate = false;
     };
 
-    // Grab, pen and text are one choice, so a tap of the platform modifier
-    // steps through them in the toolbar's order, and Shift steps back; Move
-    // sits just after Text.
     const cycleSelectionTool = (direction: ToolCycleDirection) => {
       const nextTool = getCycledSelectionTool(inspect.annotationTool(), direction);
       if (nextTool === "grab") {
@@ -2712,69 +2710,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const eventListenerManager = createEventListenerManager();
 
-    // The platform modifier (Cmd on the Mac, Ctrl elsewhere) tapped on its own
-    // steps through Grab, Pen and Text, and with Shift steps back. It is the
-    // key that starts every chord (Cmd+C, Cmd+Z, Cmd-click), so a press counts
-    // only if it is let go soon with nothing else in between. These listeners
-    // come first so they still see a chord's key when a later handler stops it.
-    let toolCycleTap: { startedAtMs: number; isBackward: boolean } | null = null;
-    const getToolCycleModifierKey = () => (isMac() ? "Meta" : "Control");
-    const canCycleTools = () =>
-      isActivated() &&
-      !isPromptMode() &&
-      !isCopying() &&
-      pluginRegistry.store.options.activationMode !== "hold";
-    const cancelToolCycleTap = () => {
-      toolCycleTap = null;
-    };
-
-    eventListenerManager.addWindowListener(
-      "keydown",
-      ignoreRealInput((event: KeyboardEvent) => {
-        if (event.key === getToolCycleModifierKey()) {
-          if (event.repeat) return;
-          const isTypingIntoField =
-            isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE) ||
-            isSpecsFieldEvent(event) ||
-            isTextFieldKeyEvent(event);
-          toolCycleTap =
-            canCycleTools() && !isTypingIntoField
-              ? { startedAtMs: Date.now(), isBackward: event.shiftKey }
-              : null;
-          return;
-        }
-        if (!toolCycleTap) return;
-        if (event.key === "Shift") {
-          toolCycleTap.isBackward = true;
-          return;
-        }
-        cancelToolCycleTap();
-      }),
-      { capture: true },
-    );
-
-    eventListenerManager.addWindowListener(
-      "keyup",
-      ignoreRealInput((event: KeyboardEvent) => {
-        if (event.key !== getToolCycleModifierKey() || !toolCycleTap) return;
-        const tap = toolCycleTap;
-        cancelToolCycleTap();
-        if (Date.now() - tap.startedAtMs > TOOL_CYCLE_TAP_MAX_MS || !canCycleTools()) return;
-        cycleSelectionTool(tap.isBackward || event.shiftKey ? "backward" : "forward");
-      }),
-      { capture: true },
-    );
-
-    eventListenerManager.addWindowListener("pointerdown", cancelToolCycleTap, { capture: true });
-    eventListenerManager.addWindowListener("blur", cancelToolCycleTap);
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: () =>
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
       shouldForwardKeyboardEvent: (event) =>
-        isTargetKeyCombination(event, pluginRegistry.store.options),
+        isTargetKeyCombination(event, pluginRegistry.store.options) ||
+        (isCopying() && event.type === "keydown" && Boolean(getToolCycleDirection(event))),
       onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
+        if (getToolCycleDirection(event) && isKeyboardEventTriggeredByInput(event)) return true;
         return dismissPopoverOnEscape(event) || dismissCompletedLabelsOnEscape(event);
       },
       shouldForwardViewportEvent: (frameDocument) => {
@@ -3167,7 +3112,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
-        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold") {
+        if (isToggleSession()) {
           if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
           return;
         }
@@ -3315,15 +3260,31 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.removeSelectedAnnotations();
           return;
         }
+        const toolCycleDirection = getToolCycleDirection(event);
+        const isMenuItemChord =
+          toolCycleDirection && isEventFromOverlay(event, "data-react-grab-menu-item");
         // Editable controls keep their native arrow/Tab keys (caret movement,
         // focus traversal) and Enter. This one guard covers every navigation
         // path in this handler, including the overlay branch, and precedes
         // the active-mode preventDefault below.
         if (
           (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
+          !isMenuItemChord &&
           isTextFieldKeyEvent(event)
         )
           return;
+
+        if (toolCycleDirection && (isActivated() || isCopying())) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (isMenuItemChord || isCopying() || isAnyPopoverOpen() || isPromptMode()) return;
+          if (!isToggleSession() || isDragging()) {
+            tryHandleNavigationKey(event);
+          } else if (!event.repeat) {
+            cycleSelectionTool(toolCycleDirection);
+          }
+          return;
+        }
 
         blockEnterIfNeeded(event);
 
@@ -3465,10 +3426,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           }
         }
 
-        if (
-          (didJustCopy() || isCopyFeedbackCooldownActive) &&
-          (!store.wasActivatedByToggle || pluginRegistry.store.options.activationMode === "hold")
-        ) {
+        if ((didJustCopy() || isCopyFeedbackCooldownActive) && !isToggleSession()) {
           if (isReleasingActivationKey || isReleasingModifier) {
             clearCopyFeedbackCooldown();
             releaseHoldSession();
@@ -3486,11 +3444,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         if (isActivated()) {
           if (isReleasingModifier) {
-            if (
-              store.wasActivatedByToggle &&
-              pluginRegistry.store.options.activationMode !== "hold"
-            )
-              return;
+            if (isToggleSession()) return;
             releaseHoldSession();
           } else if (isHoldMode && isReleasingActivationKey) {
             if (keydownSpamTimerId !== null) {
@@ -3511,8 +3465,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
 
         if (isReleasingActivationKey || isReleasingModifier) {
-          if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold")
-            return;
+          if (isToggleSession()) return;
 
           const shouldRelease =
             isHoldingKeys() || (activationHoldState.holdTimerFired && isReleasingModifier);
@@ -4820,10 +4773,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onCopyScreenshotInstance={copyLabelScreenshot}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
-                  !store.isTouchMode &&
-                  (shouldFocusPromptAfterEnter() ||
-                    (store.wasActivatedByToggle &&
-                      pluginRegistry.store.options.activationMode !== "hold"))
+                  !store.isTouchMode && (shouldFocusPromptAfterEnter() || isToggleSession())
                 }
                 onInstancePromptFocusRelease={() => returnFocusToPage()}
                 onDismissPill={(event) => {

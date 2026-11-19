@@ -13,7 +13,7 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 | **Specs** (**1**)      | A panel of the styles applied to the hovered element, applied ones on top and the rest by type: appearance, spacing, layout, size, typography. Under each value it names the design token it came from, such as `--ds-space-050 × 3`.                        |
 | **Spacing** (**2**)    | The element's distance to the nearest sibling or container edge on each side, with its size in the name tag. Around elements too small to hold them, the numbers move out past the end of each line so they never overlap.                                   |
 | **Screenshot** (**4**) | Copies a screenshot with every grab: the pill's camera runs by itself once the references are copied, so one paste brings both. Off by default and remembered, like Specs and Spacing. On an address without HTTPS that means a download per grab.           |
-| **Pen**                | Draw on the page in Red, Orange, Yellow, Green or Black. Hold **Shift** for a straight line. While active, tap **⌘** (**Ctrl** on Windows and Linux) to step Grab → Pen → Rectangle → Text, or **⇧⌘** to step back.                                          |
+| **Pen**                | Draw on the page in Red, Orange, Yellow, Green or Black. Hold **Shift** for a straight line. With Grab toggled on, hold **⌘** (**Ctrl** on Windows and Linux) and press **→** to step Grab → Pen → Rectangle → Text or **←** to step back.                   |
 | **Rectangle**          | Drag an outline in the selected color. Hold **Shift** for a square.                                                                                                                                                                                          |
 | **Text**               | Click to place a note, in the same colors as the pen.                                                                                                                                                                                                        |
 | **Move** and **Clear** | Appear once something is drawn; press **v** to pick Move up or put it down. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all. |
@@ -41,7 +41,7 @@ The pill also has an **Optional context** field for a quick follow-up. When Grab
 
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.12`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.13`.
 
 ### Let your agent do it
 
@@ -57,7 +57,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.12/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.13/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -73,7 +73,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.12/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.13/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -90,7 +90,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.12/react-grab-0.2.0-vpk.12.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.13/react-grab-0.2.0-vpk.13.tgz
 ```
 
 Then load it at the top of the entry file:

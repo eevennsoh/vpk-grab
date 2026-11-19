@@ -38,6 +38,7 @@ import { isDefiniteSpecDimension } from "../../utils/is-definite-spec-dimension.
 import { getElementLayoutSize } from "../../utils/get-element-layout-size.js";
 import { getElementSpecs } from "../../utils/get-element-specs.js";
 import { getSpecsPanelCorner } from "../../utils/get-specs-panel-corner.js";
+import { getToolCycleDirection } from "../../utils/get-tool-cycle-direction.js";
 import { getVisualViewport } from "../../utils/get-visual-viewport.js";
 import { overlayBoundsToRect } from "../../utils/overlay-bounds-to-rect.js";
 import {
@@ -413,6 +414,9 @@ export const SpecsPanel: Component<SpecsPanelProps> = (props) => {
       )}
       onPointerEnter={() => props.onHoverChange(true)}
       onPointerLeave={() => props.onHoverChange(false)}
+      on:keydown={(event) => {
+        if (getToolCycleDirection(event)) event.stopPropagation();
+      }}
       onFocusIn={() => setHasFocusWithin(true)}
       onFocusOut={(event) => {
         const nextFocus = event.relatedTarget;
