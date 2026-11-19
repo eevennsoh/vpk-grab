@@ -496,6 +496,25 @@ test.describe("Annotations", () => {
     await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
   });
 
+  test("the clear shortcut still works after Grab is switched off, but not in a page field", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+
+    await page.locator("[data-testid='test-input']").fill("keep these words");
+    await page.locator("[data-testid='test-input']").press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+
+    await page.locator("[data-testid='test-input']").blur();
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+    expect(await reactGrab.isOverlayVisible()).toBe(false);
+  });
+
   test("the clear shortcut removes only the selected annotation while one is selected", async ({
     reactGrab,
     page,

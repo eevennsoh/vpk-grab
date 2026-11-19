@@ -365,13 +365,16 @@ test.describe("Screenshot capture", () => {
     expect(await getCopyEventCount(page)).toBe(0);
   });
 
-  test("consecutive Shift+drag screenshots keep Grab on", async ({ reactGrab, page }) => {
+  test("a Shift+drag right after a screenshot takes the next one, and Grab stays on", async ({
+    reactGrab,
+    page,
+  }) => {
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
-    await getCompletion(reactGrab).getByRole("button", { name: "Dismiss" }).click();
     await shiftDrag(page, CAPTURE_START, CAPTURE_END);
     await expect.poll(() => getImageWrites(page)).toHaveLength(2);
+    await expect(getCompletion(reactGrab)).toHaveCount(1);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
   });
 
@@ -1812,7 +1815,7 @@ test.describe("Copied pill", () => {
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("Page button");
   });
 
-  for (const gesture of ["drag", "Shift+click", "Shift+drag"]) {
+  for (const gesture of ["drag", "Shift+click"]) {
     test(`a ${gesture} elsewhere dismisses without starting a selection`, async ({
       reactGrab,
       page,
@@ -1825,8 +1828,8 @@ test.describe("Copied pill", () => {
       await page.mouse.down();
       if (gesture.endsWith("drag")) {
         await page.mouse.move(CAPTURE_END.x, CAPTURE_END.y, { steps: DRAG_STEPS });
+        expect((await reactGrab.getState()).isDragging).toBe(false);
       }
-      expect((await reactGrab.getState()).isDragging).toBe(false);
       await page.mouse.up();
       if (isShiftHeld) await page.keyboard.up("Shift");
       await expect.poll(() => getLabelInstanceCount(reactGrab)).toBe(0);
@@ -1835,6 +1838,26 @@ test.describe("Copied pill", () => {
       expect(await getImageWrites(page)).toHaveLength(0);
     });
   }
+
+  test("a Shift+drag elsewhere dismisses the pill and takes a screenshot", async ({
+    reactGrab,
+    page,
+  }) => {
+    await grabFirstTodo(reactGrab, page);
+    const firstCopy = await reactGrab.getClipboardContent();
+    const screenshotToggle = page.locator(AUTO_SCREENSHOT_TOGGLE_SELECTOR);
+    await page.keyboard.down("Shift");
+    await expect(screenshotToggle).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up("Shift");
+    await expect(screenshotToggle).toHaveAttribute("aria-pressed", "false");
+    await shiftDrag(page, CAPTURE_START, CAPTURE_END);
+    await expect.poll(() => getImageWrites(page)).toHaveLength(1);
+    const completion = reactGrab.getOverlayHost().locator(COMPLETION_SELECTOR);
+    await expect(completion).toHaveCount(1);
+    await expect(completion).toContainText("Image copied");
+    expect(await getCopyEventCount(page)).toBe(1);
+    expect(await reactGrab.getClipboardContent()).toBe(firstCopy);
+  });
 
   test("an armed comment waits for the press after dismissal", async ({ reactGrab, page }) => {
     await grabFirstTodo(reactGrab, page);

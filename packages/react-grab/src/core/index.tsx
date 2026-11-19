@@ -714,9 +714,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !store.pendingCommentMode;
     const isScreenshotMode = createMemo(
       () =>
-        isShiftKeyHeld() &&
-        canTakeScreenshot() &&
-        (isDragging() || (!copiedPill() && !inspect.isSpecsPanelHovered())),
+        isShiftKeyHeld() && canTakeScreenshot() && (isDragging() || !inspect.isSpecsPanelHovered()),
     );
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
@@ -839,8 +837,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     let pillDismissPointerId: number | null = null;
+    let isPillDismissalShiftPress = false;
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
-      if (event.isPrimary && event.button === 0) pillDismissPointerId = null;
+      if (event.isPrimary && event.button === 0) {
+        pillDismissPointerId = null;
+        isPillDismissalShiftPress = false;
+      }
       if (!copiedPill() || isEventFromOverlay(event, "data-react-grab-completion")) return false;
       const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
@@ -869,6 +871,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
       }
       resumeHoverAtPointer();
+      // Shift is the screenshot tool, so a Shift drag goes on to take the next
+      // screenshot once the pill is gone. A Shift click still only dismisses.
+      if (isSelectionPress && event.shiftKey && canTakeScreenshot()) {
+        isPillDismissalShiftPress = true;
+        return false;
+      }
       return isSelectionPress;
     };
 
@@ -2698,7 +2706,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // marquee; with a toolbar action pending both pick an element for it.
       const isUndersizedScreenshot =
         canReleaseAsScreenshot && isShiftHeld && !isScreenshotSized && !isPendingToolbarSelection();
-      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
+      const isPillDismissalOnly = isPillDismissalShiftPress && !shouldCaptureScreenshot;
+      isPillDismissalShiftPress = false;
+      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot && !isPillDismissalOnly;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
       // resets dragStart in the store, which would zero out the rectangle.
@@ -2718,6 +2728,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       stopSpaceDragRepositioning();
       autoScroller.stop();
       restoreHostBodyStyle("userSelect");
+      if (isPillDismissalOnly) return;
 
       if (dragSelectionRect && shouldCaptureScreenshot) {
         actions.unfreeze();
@@ -3232,8 +3243,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
         }
+        // Drawings stay on the page after Grab is switched off, so the shortcut
+        // that clears them works then too.
         if (
-          canHandleEditShortcut &&
+          !isPromptMode() &&
+          !isCopying() &&
+          !isTextFieldKeyEvent(event) &&
           inspect.hasAnnotations() &&
           isClearAnnotationsShortcut(event)
         ) {

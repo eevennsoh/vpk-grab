@@ -155,7 +155,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
   annotations together, and v picks it up or puts it down. **⌘⌫** (Ctrl+Backspace
-  elsewhere) clears every drawing and note, or just the selection; ⌘Z undoes it.
+  elsewhere) clears every drawing and note, or just the selection, even after Grab is
+  switched off; ⌘Z undoes it.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
   drawings, notes, moves, removals and style changes.
 
