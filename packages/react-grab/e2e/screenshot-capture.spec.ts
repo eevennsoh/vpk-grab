@@ -1560,7 +1560,6 @@ test.describe("Copied pill", () => {
 
   test("starting a pen stroke dismisses the pill", async ({ reactGrab, page }) => {
     await grabKeepingGrabActive(reactGrab, page, FIRST_TODO_SELECTOR);
-    await page.locator(PEN_TOOL_SELECTOR).focus();
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
     await expect(page.locator(PEN_TOOL_SELECTOR)).toHaveAttribute("aria-pressed", "true");
     await expect(getCompletion(reactGrab)).toHaveCount(1);

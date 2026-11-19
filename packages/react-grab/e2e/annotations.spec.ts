@@ -667,16 +667,82 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     });
   }
 
-  test("the pill field keeps the chord with and without context", async ({ reactGrab, page }) => {
+  const observeArrowRight = async (reactGrab: ReactGrabPageObject) => {
+    const page = reactGrab.page;
+    await page.addInitScript(() => {
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "ArrowRight") {
+            setTimeout(() => {
+              document.body.dataset.arrowPrevented = String(event.defaultPrevented);
+            });
+          }
+        },
+        true,
+      );
+    });
+    await page.reload();
+    await reactGrab.activate();
+    await page.evaluate(() => {
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
+        },
+        true,
+      );
+    });
+  };
+
+  const grabWithEmptyPillField = async (reactGrab: ReactGrabPageObject) => {
     await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
-    await page.keyboard.press("Enter");
-    const field = page.getByPlaceholder("Optional context");
+    await reactGrab.page.keyboard.press("Enter");
+    const field = reactGrab.page.getByPlaceholder("Optional context");
     await expect(field).toBeFocused();
+    await expect(field).toHaveValue("");
+    return field;
+  };
+
+  test("cycles tools from the focused empty pill field", async ({ reactGrab, page }) => {
+    await observeArrowRight(reactGrab);
+    const field = await grabWithEmptyPillField(reactGrab);
+    const body = page.locator("body");
+    await page.keyboard.down(reactGrab.modifierKey);
+    for (const action of ["annotate-pen", "annotate-rectangle"]) {
+      await page.keyboard.press("ArrowRight");
+      await expect(toolbarAction(page, action)).toHaveAttribute("aria-pressed", "true");
+      await expect(field).toBeFocused();
+      await expect(body).toHaveAttribute("data-arrow-prevented", "true");
+      await expect(body).not.toHaveAttribute("data-page-arrow");
+    }
+    await page.keyboard.up(reactGrab.modifierKey);
+    await page.keyboard.type("note");
+    await expect(field).toHaveValue("note");
+  });
+
+  test("the pill field keeps caret movement until its context is cleared", async ({
+    reactGrab,
+    page,
+  }) => {
+    const field = await grabWithEmptyPillField(reactGrab);
     await expectCaretMovement(reactGrab, field);
-    await field.fill("");
+    const grab = toolbarAction(page, "copy");
+    await expect(grab).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type(" ");
+    await expect(field).toHaveValue(" ");
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
     await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
-    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await expect(field).toHaveJSProperty("selectionStart", 0);
+    await expect(grab).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await expect(field).toHaveValue("");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("the comment field keeps native caret movement and propagation", async ({
@@ -720,30 +786,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
   }
 
   test("claims the chord before page listeners only while active", async ({ reactGrab, page }) => {
-    await page.addInitScript(() => {
-      window.addEventListener(
-        "keydown",
-        (event) => {
-          if (event.key === "ArrowRight") {
-            setTimeout(() => {
-              document.body.dataset.arrowPrevented = String(event.defaultPrevented);
-            });
-          }
-        },
-        true,
-      );
-    });
-    await page.reload();
-    await reactGrab.activate();
-    await page.evaluate(() => {
-      window.addEventListener(
-        "keydown",
-        (event) => {
-          if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
-        },
-        true,
-      );
-    });
+    await observeArrowRight(reactGrab);
     const body = page.locator("body");
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
     await expect(body).toHaveAttribute("data-arrow-prevented", "true");

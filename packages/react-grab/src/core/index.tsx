@@ -3275,7 +3275,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         const toolCycleDirection = getToolCycleDirection(event);
         if (toolCycleDirection) {
-          if (isPillPromptEvent(event)) return;
           if (
             isActivated() &&
             !isPromptMode() &&
@@ -3290,6 +3289,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             if (!event.repeat) cycleSelectionTool(toolCycleDirection);
             return;
           }
+          if (isPillPromptEvent(event)) return;
         }
 
         blockEnterIfNeeded(event);
