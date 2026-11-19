@@ -1091,7 +1091,6 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
     expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}→`);
     expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}←`);
 
-    await reactGrab.deactivate();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
     await page.waitForTimeout(TOOLBAR_SETTLE_MS);
     await reactGrab.dragToolbar(TOOLBAR_SIDE_EDGE_DRAG_PX.x, TOOLBAR_SIDE_EDGE_DRAG_PX.y);
@@ -1101,7 +1100,6 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
         () => JSON.parse(localStorage.getItem("react-grab-toolbar-state") ?? "{}").edge,
       ),
     ).toBe("right");
-    await reactGrab.activate();
     expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}↓`);
     expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}↑`);
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowDown");

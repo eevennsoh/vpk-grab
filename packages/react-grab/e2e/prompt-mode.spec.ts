@@ -805,6 +805,8 @@ test.describe("Enter and Escape review corrections", () => {
     await expect(page.locator(promptSelector)).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(page.locator("[data-react-grab-hierarchy-menu]")).toHaveCount(0);
+    await expect(page.locator(completionSelector)).toBeVisible();
+    expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(true);
     await page.keyboard.press("Escape");
     await expect(page.locator(completionSelector)).toHaveCount(0);
     await page.keyboard.press("ArrowUp");

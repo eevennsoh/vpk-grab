@@ -161,6 +161,10 @@ export const createToolbarDrag = (config: ToolbarDragConfig): ToolbarDragResult 
     const rect = containerRef?.getBoundingClientRect();
     if (!rect) return;
 
+    // Keep the release on the pressed control when Grab intercepts page pointerups.
+    if (event.isTrusted && event.target instanceof Element) {
+      event.target.setPointerCapture(event.pointerId);
+    }
     pointerStartPosition = { x: event.clientX, y: event.clientY };
 
     dragOffset = {

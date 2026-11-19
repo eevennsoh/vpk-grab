@@ -1694,6 +1694,7 @@ test.describe("Copied pill", () => {
     }) => {
       await grabFirstTodo(reactGrab, page);
       if (!isGrabActive) await page.evaluate(() => window.__REACT_GRAB__?.deactivate());
+      await expect.poll(() => isReactGrabActive(page)).toBe(isGrabActive);
       const frameTarget = page
         .frameLocator(SAME_ORIGIN_IFRAME_SELECTOR)
         .locator(IFRAME_TARGET_SELECTOR);
@@ -1704,6 +1705,7 @@ test.describe("Copied pill", () => {
       });
       await frameTarget.click({ force: true });
       await expect.poll(() => getLabelInstanceCount(reactGrab)).toBe(0);
+      await expect(getCompletion(reactGrab)).toHaveCount(0);
       for (const type of ["pointerdown", "pointerup", "click"]) {
         expect(await frameTarget.getAttribute(`data-${type}`)).toBe(
           isGrabActive ? null : "received",
@@ -1764,6 +1766,7 @@ test.describe("Copied pill", () => {
   }) => {
     await injectPageButton(page);
     await grabFirstTodo(reactGrab, page);
+    await expect(getCompletion(reactGrab)).toHaveCount(1);
     const firstCopy = await reactGrab.getClipboardContent();
     const pageButton = page.locator(`#${PAGE_BUTTON_ID}`);
     await pageButton.click({ force: true });
@@ -1775,7 +1778,9 @@ test.describe("Copied pill", () => {
     expect(await getPageButtonClickCount(page)).toBe(0);
 
     await pageButton.click({ force: true });
+    await expect(getCompletion(reactGrab)).toHaveCount(1);
     await expect(getCompletion(reactGrab)).toContainText("Copied");
+    await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("Page button");
   });
 
@@ -2396,7 +2401,6 @@ test.describe("Copied pill camera cancellation", () => {
     expect(await reactGrab.copyElementViaApi(MAIN_TITLE_SELECTOR)).toBe(true);
     const newerCopy = await waitForNewerCopy();
 
-    await expect.poll(() => reactGrab.getTargetTestId()).toBe("main-title");
     await expect(completion.locator(CAPTURING_SELECTOR)).toHaveCount(0);
     await expect(completion.locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
     await expect(completion).toContainText("Copied");

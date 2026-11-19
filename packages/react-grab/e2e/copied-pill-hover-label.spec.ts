@@ -2,7 +2,8 @@
 // the live hover label would land in the same spot, half under it.
 import type { Page } from "@playwright/test";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
-import { switchOnSpecs } from "./specs-panel-fixture.js";
+import { Z_INDEX_OVERLAY } from "./constants.js";
+import { getCenter, switchOnSpecs } from "./specs-panel-fixture.js";
 
 const LIVE_LABEL_SELECTOR =
   "[data-react-grab-selection-label]:not([data-react-grab-label-instance])";
@@ -149,6 +150,7 @@ test.describe("Hover label beside a Copied pill", () => {
     expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
 
     const copiedBounds = await reactGrab.getSelectionBoxBounds();
+    expect(copiedBounds).not.toBeNull();
     await reactGrab.hoverElement(`#${CELL_ID_PREFIX}1`);
     await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     expect(await reactGrab.getSelectionBoxBounds()).toEqual(copiedBounds);
@@ -159,6 +161,11 @@ test.describe("Hover label beside a Copied pill", () => {
     await page.keyboard.press("Escape");
     await expectLiveLabelFor(reactGrab, "article");
     await expect.poll(getTargetId).toBe(`${CELL_ID_PREFIX}1`);
+    expect((await reactGrab.getState()).isActive).toBe(true);
+
+    await moveTo(page, getCellCenter(0));
+    await expectLiveLabelFor(reactGrab, "article");
+    await expect.poll(getTargetId).toBe(`${CELL_ID_PREFIX}0`);
   });
 
   test("every element of a marquee copy shows only the pill", async ({ reactGrab, page }) => {
@@ -184,9 +191,86 @@ test.describe("Hover label beside a Copied pill", () => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     }
 
+    await moveTo(page, INNER_BLOCK_POINT);
+    await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     await page.keyboard.press("Escape");
+    await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
+    await expectLiveLabelFor(reactGrab, "section");
+  });
+
+  test("Escape after an arrow-key copy resumes hover at the stationary pointer", async ({
+    reactGrab,
+    page,
+  }) => {
     await moveTo(page, INNER_BLOCK_POINT);
     await expectLiveLabelFor(reactGrab, "section");
+    await page.keyboard.press("ArrowUp");
+    await expectLiveLabelFor(reactGrab, "div");
+    await page.keyboard.press("Enter");
+    await expect(getInstanceLabels(reactGrab)).toContainText("Copied");
+    expect(await page.evaluate(() => window.__REACT_GRAB__?.getState().targetElement?.id)).toBe(
+      OUTER_BLOCK_ID,
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
+    await expectLiveLabelFor(reactGrab, "section");
+  });
+
+  test("dragging to dismiss neither selects text nor drags a link or image", async ({
+    reactGrab,
+    page,
+  }) => {
+    const block = page.locator(`#${OUTER_BLOCK_ID}`);
+    await block.evaluate((element, zIndex) => {
+      element.style.zIndex = String(zIndex);
+      const text = document.createElement("span");
+      text.textContent = "Selectable page text";
+      const link = document.createElement("a");
+      link.href = "#drag-target";
+      link.textContent = "Draggable page link";
+      const image = new Image();
+      image.src = document.createElement("canvas").toDataURL();
+      image.style.height = "1em";
+      element.prepend(text, link, image);
+      element.addEventListener("dragstart", () => element.setAttribute("data-drag-started", ""));
+    }, Z_INDEX_OVERLAY);
+
+    for (const startTag of ["span", "a", "img"]) {
+      await clickAt(reactGrab, page, getCellCenter(0));
+      const endTag = startTag === "span" ? "a" : "span";
+      const end = await getCenter(page, `#${OUTER_BLOCK_ID} ${endTag}`);
+      await block.locator(startTag).hover();
+      await page.mouse.down();
+      await page.mouse.move(end.x, end.y, { steps: DRAG_STEPS });
+      await page.mouse.up();
+
+      await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+      expect(await block.getAttribute("data-drag-started")).toBeNull();
+    }
+  });
+
+  test("a right press dismisses the pill and reaches the page with its context menu", async ({
+    reactGrab,
+    page,
+  }) => {
+    await clickAt(reactGrab, page, getCellCenter(0));
+    const block = page.locator(`#${OUTER_BLOCK_ID}`);
+    await block.evaluate((element, zIndex) => {
+      element.style.zIndex = String(zIndex);
+      element.onpointerdown = (event) => {
+        element.dataset.pressedButton = String(event.button);
+      };
+      element.oncontextmenu = (event) => {
+        element.dataset.contextMenuPrevented = String(event.defaultPrevented);
+      };
+    }, Z_INDEX_OVERLAY);
+
+    await page.mouse.click(INNER_BLOCK_POINT.x, INNER_BLOCK_POINT.y, { button: "right" });
+    await expect(getInstanceLabels(reactGrab)).toHaveCount(0);
+    await expect(block).toHaveAttribute("data-pressed-button", "2");
+    await expect(block).toHaveAttribute("data-context-menu-prevented", "false");
   });
 
   test("per-element pills each cover their own element", async ({ reactGrab, page }) => {

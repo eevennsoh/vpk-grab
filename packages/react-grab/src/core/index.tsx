@@ -1,7 +1,6 @@
 // @ts-expect-error - CSS imported as text via tsup loader
 import cssText from "../../dist/styles.css";
 import {
-  batch,
   createMemo,
   createRoot,
   createSignal,
@@ -311,7 +310,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     let disposeRenderer: (() => void) | undefined;
     const toolbarStateChangeCallbacks = new Set<(state: ToolbarState) => void>();
 
-    const pluginRegistry = createPluginRegistry(settableOptions);
+    const pluginRegistry = createPluginRegistry(settableOptions, () => {
+      labelController.dismissCompleted();
+      resumeHoverAtPointer();
+    });
+    const { areLabelInstancesShown } = pluginRegistry;
 
     const { store, actions, pointer, viewportVersion, current } = createGrabStore({
       keyHoldDuration: pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS,
@@ -471,11 +474,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     let shiftSelectionLabelAnchorRatioByElement = new WeakMap<Element, number>();
     const keyboardSelection = createKeyboardSelectionController();
-
-    const areLabelInstancesShown = () =>
-      Boolean(
-        pluginRegistry.store.theme.enabled && pluginRegistry.store.theme.grabbedBoxes.enabled,
-      );
 
     const copiedPill = createMemo(() =>
       areLabelInstancesShown()
@@ -833,14 +831,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         handlePointerMove(position.x, position.y, isShiftKeyHeld());
       }
     };
-
-    createEffect(
-      on(areLabelInstancesShown, (areLabelsShown) => {
-        if (areLabelsShown) return;
-        labelController.dismissCompleted();
-        resumeHoverAtPointer();
-      }),
-    );
 
     let pillDismissPointerId: number | null = null;
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
@@ -2871,7 +2861,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     const tryHandleEnterCopy = (event: KeyboardEvent): boolean => {
-      if (!isEnterCode(event.code) || copiedPill()) return false;
+      if (!isEnterCode(event.code) || isSelectionHeldByPill()) return false;
       const activationModifiers = store.wasActivatedByToggle
         ? null
         : getModifiersFromActivationKey(pluginRegistry.store.options.activationKey);
@@ -2959,7 +2949,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (!navigationKey) return false;
       if (isAnyPopoverOpen()) return false;
 
-      if (copiedPill()) {
+      if (isSelectionHeldByPill()) {
         if (isEventFromOverlay(event, "data-react-grab-ignore-events")) return false;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -3007,7 +2997,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (event.metaKey || event.ctrlKey || event.altKey) return null;
       if (event.repeat) return null;
       if (isKeyboardEventTriggeredByInput(event)) return null;
-      if (!isActivated() || copiedPill()) return null;
+      if (!isActivated() || isSelectionHeldByPill()) return null;
       if (isCopying()) return null;
       if (isSelectionInteractionLocked()) return null;
       if (isAnyPopoverOpen()) return null;
@@ -4884,33 +4874,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const copyElementAPI = async (elements: Element | Element[]): Promise<boolean> => {
       const elementsArray = Array.isArray(elements) ? elements : [elements];
       if (elementsArray.length === 0) return false;
-      const previousPill = copiedPill();
-      const signal = previousPill ? startCopyOperation() : getCopySignal();
-      const copyResult = await copyResolvedElements(elementsArray, signal);
-      if (copyResult.status !== "succeeded") return false;
-      if (previousPill && copiedPill()?.id === previousPill.id && !signal.aborted) {
-        batch(() => {
-          const entries = elementsArray.map((element) => ({
-            element,
-            tagName: getTagName(element),
-          }));
-          const labelInstanceIds = labelController.createPerElementInstances(entries, "copied", {
-            target: { primaryElement: elementsArray[0], elements: elementsArray },
-            pointer: pointer(),
-          });
-          if (copyResult.copiedContent !== undefined) {
-            for (const labelInstanceId of labelInstanceIds) {
-              labelController.setCopiedContent(
-                labelInstanceId,
-                copyResult.copiedContent,
-                copyResult.copiedMetadata,
-              );
-            }
-          }
-          startAutomaticScreenshot(labelInstanceIds);
-        });
-      }
-      return true;
+      const copyResult = await copyResolvedElements(elementsArray, getCopySignal());
+      return copyResult.status === "succeeded";
     };
 
     const api: ReactGrabAPI = {

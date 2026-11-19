@@ -445,6 +445,7 @@ test.describe("Copied pill prompt", () => {
 
       await page.keyboard.press("Escape");
       await page.keyboard.press("ArrowUp");
+      await expect(getLiveLabels(reactGrab)).toHaveCount(1);
       await expect.poll(async () => (await reactGrab.getSelectionLabelInfo()).tagName).toBe("li");
       await page.keyboard.press("Enter");
       await expect.poll(() => getCopyEventCount(page)).toBe(2);

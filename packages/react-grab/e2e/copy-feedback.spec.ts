@@ -168,6 +168,8 @@ test.describe("Copy Feedback Behavior", () => {
       await expect.poll(() => reactGrab.isOverlayVisible(), { timeout: 3000 }).toBe(true);
 
       await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await reactGrab.hoverUntilTargetSelected("[data-testid='todo-list'] h1");
+      expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
       await reactGrab.clickElement("[data-testid='todo-list'] h1");
       await expect.poll(() => reactGrab.getClipboardContent()).toContain("Todo List");
     });
@@ -273,6 +275,7 @@ test.describe("Copy Feedback Behavior", () => {
       await reactGrab.page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
       try {
         await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+        await reactGrab.hoverUntilTargetSelected("li:first-child span");
         await reactGrab.clickElement("li:first-child span");
         await expect.poll(() => reactGrab.getClipboardContent()).toContain("Buy groceries");
         await reactGrab.page.getByRole("button", { name: "Dismiss", exact: true }).click();

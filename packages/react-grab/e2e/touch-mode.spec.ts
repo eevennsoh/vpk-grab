@@ -81,6 +81,8 @@ test.describe("Touch Mode", () => {
       const completion = reactGrab.getOverlayHost().locator("[data-react-grab-completion]");
       await expect(completion).toContainText("Copied");
       const firstCopy = await reactGrab.getClipboardContent();
+      expect(firstCopy).toContain("Todo List");
+      expect(await reactGrab.isOverlayVisible()).toBe(true);
 
       await reactGrab.touchTap("[data-testid='main-title']");
       await expect.poll(() => reactGrab.getLabelInstancesInfo()).toEqual([]);
