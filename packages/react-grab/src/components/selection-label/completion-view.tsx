@@ -1,4 +1,12 @@
-import { createSignal, onCleanup, Show, splitProps, type Component, type JSX } from "solid-js";
+import {
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  Show,
+  splitProps,
+  type Component,
+  type JSX,
+} from "solid-js";
 import type { CompletionViewProps, PillPromptProps } from "../../types.js";
 import {
   COMPLETION_DISMISS_ICON_SIZE_PX,
@@ -42,6 +50,8 @@ interface CompletionTooltipContent {
 interface CompletionActionButtonProps {
   label: string;
   tooltipShortcut?: string;
+  tooltipId: string;
+  activeTooltipLabel?: string;
   onClick: (event: MouseEvent) => void;
   onTooltipChange: (anchor: CompletionTooltipAnchor | null) => void;
   children: JSX.Element;
@@ -51,6 +61,8 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
   const [local, attributes] = splitProps(props, [
     "label",
     "tooltipShortcut",
+    "tooltipId",
+    "activeTooltipLabel",
     "onClick",
     "onTooltipChange",
     "children",
@@ -65,6 +77,7 @@ const CompletionActionButton: Component<CompletionActionButtonProps> = (props) =
       data-react-grab-ignore-events
       data-react-grab-completion-action
       aria-label={local.label}
+      aria-describedby={local.activeTooltipLabel === local.label ? local.tooltipId : undefined}
       class={cn(
         buttonVariants({ variant: "ghost" }),
         "group pointer-events-auto size-4 text-[var(--rg-text-secondary)] hover:text-[var(--rg-text-primary)]",
@@ -153,6 +166,7 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
 
 export const CompletionView: Component<CompletionViewProps> = (props) => {
   let surfaceRef: HTMLDivElement | undefined;
+  const tooltipId = createUniqueId();
   let fadeTimeoutId: number | undefined;
   let dismissTimeoutId: number | undefined;
   const [didCopy, setDidCopy] = createSignal(false);
@@ -334,6 +348,8 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   <CompletionActionButton
                     data-react-grab-copy-screenshot
                     label="Copy image"
+                    tooltipId={tooltipId}
+                    activeTooltipLabel={tooltipContent()?.label}
                     onClick={onCopyScreenshot()}
                     onTooltipChange={handleTooltipChange}
                   >
@@ -352,6 +368,8 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   label="Dismiss"
                   tooltipShortcut={COMPLETION_DISMISS_TOOLTIP_SHORTCUT}
                   aria-keyshortcuts="Escape"
+                  tooltipId={tooltipId}
+                  activeTooltipLabel={tooltipContent()?.label}
                   onClick={onDismissPill()}
                   onTooltipChange={handleTooltipChange}
                 >
@@ -381,11 +399,13 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
         </Show>
       </Surface>
       <Tooltip
+        id={tooltipId}
         visible={Boolean(tooltipContent()) && !props.isDismissing && !isFading()}
         position={props.tooltipPosition}
         anchorRightPx={tooltipContent()?.rightOffsetPx}
         textContent={tooltipContent()?.label ?? ""}
         shortcut={tooltipContent()?.shortcut}
+        shouldStayInViewport
       />
     </>
   );

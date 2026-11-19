@@ -1,6 +1,6 @@
 // A text copy's Copied pill carries a prompt input: Enter with text copies the
 // same elements again with the prompt, as prompt mode would.
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { COMPLETION_STATUS_ROW_HEIGHT_PX, VIEWPORT_MARGIN_PX } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
@@ -1136,6 +1136,10 @@ test.describe("Copied pill prompt on touch", () => {
 const PILL_TOOLTIP_SELECTOR = "[data-react-grab-selection-label] [data-react-grab-tooltip]";
 const PILL_TOOLTIP_SHORTCUT_SELECTOR = "[data-react-grab-tooltip-shortcut]";
 const SEPARATOR_SELECTOR = "[data-react-grab-completion-separator]";
+const SCREENSHOT_ERROR_SELECTOR = "[data-react-grab-screenshot-error]";
+const PLACEMENT_TARGET_ID = "pill-tooltip-placement-target";
+const SHORT_TOOLTIP_VIEWPORT_PX = { width: 1280, height: 320 };
+const CRAMPED_TOOLTIP_VIEWPORT_PX = { width: 1280, height: 100 };
 
 interface PillBox {
   left: number;
@@ -1167,6 +1171,78 @@ const expectSingleSeparatorBeforeActions = async (reactGrab: ReactGrabPageObject
   if (hasCamera) expect(nextSibling).toBe("Copy image");
   else if (isCapturing) expect(nextSibling).toBe("capturing");
   else expect(nextSibling).toBe("Dismiss");
+};
+
+interface TooltipPlacementCase {
+  name: string;
+  targetStyle: Record<string, string>;
+  viewport?: { width: number; height: number };
+  isWrapped?: boolean;
+  hasScreenshotError?: boolean;
+}
+
+const TOOLTIP_PLACEMENT_CASES: TooltipPlacementCase[] = [
+  { name: "near the top edge", targetStyle: { top: "2px", left: "200px" } },
+  { name: "near the bottom edge", targetStyle: { bottom: "2px", left: "200px" } },
+  { name: "near the left edge", targetStyle: { top: "300px", left: "2px" } },
+  { name: "near the right edge", targetStyle: { top: "300px", right: "2px" } },
+  {
+    name: "in a short viewport",
+    targetStyle: { top: "140px", left: "200px" },
+    viewport: SHORT_TOOLTIP_VIEWPORT_PX,
+  },
+  {
+    name: "with a wrapped context field",
+    targetStyle: { top: "300px", left: "200px" },
+    isWrapped: true,
+  },
+  {
+    name: "with a wrapped context field filling a very short viewport",
+    targetStyle: { top: "0px", left: "200px", height: "8px" },
+    viewport: CRAMPED_TOOLTIP_VIEWPORT_PX,
+    isWrapped: true,
+  },
+  {
+    name: "on a pill with an image error",
+    targetStyle: { top: "300px", left: "200px" },
+    hasScreenshotError: true,
+  },
+];
+
+const addPlacementTarget = (page: Page, targetStyle: Record<string, string>) =>
+  page.evaluate(
+    ({ targetId, style }) => {
+      const target = document.createElement("button");
+      target.id = targetId;
+      target.textContent = "Target";
+      Object.assign(target.style, {
+        position: "fixed",
+        width: "60px",
+        height: "30px",
+        zIndex: "2147483000",
+        ...style,
+      });
+      document.body.append(target);
+    },
+    { targetId: PLACEMENT_TARGET_ID, style: targetStyle },
+  );
+
+const expectTooltipContained = async (page: Page, tooltip: Locator, button: Locator) => {
+  const tooltipBox = await tooltip.boundingBox();
+  const buttonBox = await button.boundingBox();
+  const viewport = page.viewportSize();
+  if (!tooltipBox || !buttonBox || !viewport) throw new Error("No tooltip, button or viewport");
+  expect(tooltipBox.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox.y).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox.x + tooltipBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(viewport.height);
+  const doesOverlapButton =
+    tooltipBox.x < buttonBox.x + buttonBox.width &&
+    tooltipBox.x + tooltipBox.width > buttonBox.x &&
+    tooltipBox.y < buttonBox.y + buttonBox.height &&
+    tooltipBox.y + tooltipBox.height > buttonBox.y;
+  expect(doesOverlapButton).toBe(false);
+  return tooltipBox;
 };
 
 const shiftDragScreenshot = async (page: Page) => {
@@ -1292,17 +1368,10 @@ test.describe("Copied pill chrome", () => {
       }
       await expect(tooltip).toHaveCSS("pointer-events", "none");
       expect(await measurePill(reactGrab)).toEqual(pillBefore);
-      const tooltipBox = await tooltip.boundingBox();
-      if (!tooltipBox) throw new Error("No tooltip box");
-      const viewport = page.viewportSize();
-      if (!viewport) throw new Error("No viewport");
+      const tooltipBox = await expectTooltipContained(page, tooltip, button);
       const isOutsidePill =
         tooltipBox.y + tooltipBox.height <= pillBefore.top || tooltipBox.y >= pillBefore.bottom;
       expect(isOutsidePill).toBe(true);
-      expect(tooltipBox.x).toBeGreaterThanOrEqual(0);
-      expect(tooltipBox.y).toBeGreaterThanOrEqual(0);
-      expect(tooltipBox.x + tooltipBox.width).toBeLessThanOrEqual(viewport.width);
-      expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(viewport.height);
 
       await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
       await expect(tooltip).toHaveCount(0);
@@ -1313,6 +1382,49 @@ test.describe("Copied pill chrome", () => {
       await page.mouse.down();
       await expect(tooltip).toHaveCount(0);
       await page.mouse.up();
+    });
+  }
+
+  for (const placement of TOOLTIP_PLACEMENT_CASES) {
+    test(`pill tooltips stay inside the viewport and off their button: ${placement.name}`, async ({
+      reactGrab,
+      page,
+    }) => {
+      if (placement.viewport) await page.setViewportSize(placement.viewport);
+      await addPlacementTarget(page, placement.targetStyle);
+      await clickCopy(reactGrab, page, `#${PLACEMENT_TARGET_ID}`);
+      const completion = getCompletion(reactGrab);
+      if (placement.isWrapped) {
+        await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
+        expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
+          SINGLE_LINE_HEIGHT_PX,
+        );
+      }
+      if (placement.hasScreenshotError) {
+        await installClipboardRecorder(page, { shouldReject: true });
+        await completion.locator(CAMERA_BUTTON_SELECTOR).click();
+        await expect(completion.locator(SCREENSHOT_ERROR_SELECTOR)).toHaveText(
+          "Couldn't copy image",
+        );
+      }
+      const tooltip = getPillTooltip(reactGrab);
+
+      for (const { name, selector } of [
+        { name: "Copy image", selector: CAMERA_BUTTON_SELECTOR },
+        { name: "Dismiss", selector: DISMISS_BUTTON_SELECTOR },
+      ]) {
+        const button = completion.locator(selector);
+        await button.hover();
+        await expect(tooltip).toContainText(name);
+        await expect(tooltip).toHaveAttribute("role", "tooltip");
+        const tooltipId = await tooltip.getAttribute("id");
+        expect(tooltipId).toBeTruthy();
+        await expect(button).toHaveAttribute("aria-describedby", tooltipId ?? "");
+        await expectTooltipContained(page, tooltip, button);
+        await page.mouse.move(AWAY_POSITION.x, AWAY_POSITION.y);
+        await expect(tooltip).toHaveCount(0);
+        await expect(button).not.toHaveAttribute("aria-describedby");
+      }
     });
   }
 

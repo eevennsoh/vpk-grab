@@ -288,16 +288,19 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
   const hadValidBounds = () => positionComputation().hadValidBounds;
 
   // Away from the selection when that side has room, so a pill tooltip covers
-  // neither the pill nor the element it labels.
+  // neither the pill nor the element it labels; otherwise the roomier side, so
+  // the Tooltip's viewport containment overlaps as little of the pill as it can.
   const completionTooltipPosition = (): "top" | "bottom" => {
     const labelTop = positionComputation().position.top;
     const viewport = getLabelViewport();
     const roomAbove = labelTop - viewport.offsetTop;
     const roomBelow = viewport.offsetTop + viewport.height - labelTop - measuredHeight();
-    if (arrowPosition() === "bottom") {
-      return roomBelow >= COMPLETION_TOOLTIP_CLEARANCE_PX ? "bottom" : "top";
+    const isAwaySideBelow = arrowPosition() === "bottom";
+    const roomOnAwaySide = isAwaySideBelow ? roomBelow : roomAbove;
+    if (roomOnAwaySide >= COMPLETION_TOOLTIP_CLEARANCE_PX) {
+      return isAwaySideBelow ? "bottom" : "top";
     }
-    return roomAbove >= COMPLETION_TOOLTIP_CLEARANCE_PX ? "top" : "bottom";
+    return roomBelow > roomAbove ? "bottom" : "top";
   };
 
   createEffect(

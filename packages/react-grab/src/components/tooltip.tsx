@@ -1,8 +1,15 @@
 import { createSignal, createEffect, For, on, onCleanup, Show } from "solid-js";
 import type { Component } from "solid-js";
 import { cn } from "../utils/cn.js";
+import { getContainmentShift } from "../utils/get-containment-shift.js";
+import { getVisualViewport } from "../utils/get-visual-viewport.js";
 import { splitShortcutAtCommand } from "../utils/split-shortcut-at-command.js";
-import { TOOLTIP_DELAY_MS, TOOLTIP_GRACE_PERIOD_MS, Z_INDEX_OVERLAY } from "../constants.js";
+import {
+  TOOLTIP_DELAY_MS,
+  TOOLTIP_GRACE_PERIOD_MS,
+  VIEWPORT_MARGIN_PX,
+  Z_INDEX_OVERLAY,
+} from "../constants.js";
 import { IconCommand } from "./icons/icon-command.jsx";
 
 let lastCloseTimestamp = 0;
@@ -12,16 +19,21 @@ const wasTooltipRecentlyVisible = () => {
 };
 
 interface TooltipProps {
+  id: string;
   visible: boolean;
   position: "top" | "bottom" | "left" | "right";
   textContent: string;
   shortcut?: string;
   anchorRightPx?: number;
+  shouldStayInViewport?: boolean;
 }
 
 export const Tooltip: Component<TooltipProps> = (props) => {
   const [delayedVisible, setDelayedVisible] = createSignal(false);
   const [shouldAnimate, setShouldAnimate] = createSignal(true);
+  const [containmentShiftX, setContainmentShiftX] = createSignal(0);
+  const [containmentShiftY, setContainmentShiftY] = createSignal(0);
+  let tooltipRef: HTMLDivElement | undefined;
   let delayTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
   createEffect(
@@ -55,6 +67,46 @@ export const Tooltip: Component<TooltipProps> = (props) => {
     ),
   );
 
+  // The position props only pick a side, so the rendered box is measured and
+  // shifted back inside the viewport. offsetWidth/offsetHeight ignore the
+  // fade-in scale, which would otherwise shrink the measured box.
+  createEffect(
+    on(
+      [
+        delayedVisible,
+        () => props.position,
+        () => props.anchorRightPx,
+        () => props.textContent,
+        () => props.shortcut,
+      ],
+      ([isVisible]) => {
+        if (!props.shouldStayInViewport || !isVisible || !tooltipRef) return;
+        const rect = tooltipRef.getBoundingClientRect();
+        const width = tooltipRef.offsetWidth;
+        const height = tooltipRef.offsetHeight;
+        const viewport = getVisualViewport();
+        const unshiftedLeft = rect.left + rect.width / 2 - width / 2 - containmentShiftX();
+        const unshiftedTop = rect.top + rect.height / 2 - height / 2 - containmentShiftY();
+        setContainmentShiftX(
+          getContainmentShift(
+            unshiftedLeft,
+            width,
+            viewport.offsetLeft + VIEWPORT_MARGIN_PX,
+            viewport.offsetLeft + viewport.width - VIEWPORT_MARGIN_PX,
+          ),
+        );
+        setContainmentShiftY(
+          getContainmentShift(
+            unshiftedTop,
+            height,
+            viewport.offsetTop + VIEWPORT_MARGIN_PX,
+            viewport.offsetTop + viewport.height - VIEWPORT_MARGIN_PX,
+          ),
+        );
+      },
+    ),
+  );
+
   onCleanup(() => {
     if (delayTimeoutId !== undefined) {
       clearTimeout(delayTimeoutId);
@@ -66,18 +118,35 @@ export const Tooltip: Component<TooltipProps> = (props) => {
 
   const positionStyle = (): Record<string, string> => {
     const isHorizontal = props.position === "top" || props.position === "bottom";
+    const shiftX = `${containmentShiftX()}px`;
+    const shiftY = `${containmentShiftY()}px`;
     if (isHorizontal && props.anchorRightPx !== undefined) {
-      return { right: `${props.anchorRightPx}px`, "z-index": `${Z_INDEX_OVERLAY}` };
+      return {
+        right: `${props.anchorRightPx}px`,
+        translate: `${shiftX} ${shiftY}`,
+        "z-index": `${Z_INDEX_OVERLAY}`,
+      };
     }
     if (isHorizontal) {
-      return { left: "50%", translate: "-50%", "z-index": `${Z_INDEX_OVERLAY}` };
+      return {
+        left: "50%",
+        translate: `calc(-50% + ${shiftX}) ${shiftY}`,
+        "z-index": `${Z_INDEX_OVERLAY}`,
+      };
     }
-    return { top: "50%", translate: "0 -50%", "z-index": `${Z_INDEX_OVERLAY}` };
+    return {
+      top: "50%",
+      translate: `${shiftX} calc(-50% + ${shiftY})`,
+      "z-index": `${Z_INDEX_OVERLAY}`,
+    };
   };
 
   return (
     <Show when={delayedVisible()}>
       <div
+        ref={tooltipRef}
+        id={props.id}
+        role="tooltip"
         data-react-grab-tooltip
         class={cn(
           "absolute flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-sans font-medium leading-4 pointer-events-none",
