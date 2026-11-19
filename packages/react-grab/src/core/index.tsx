@@ -176,6 +176,7 @@ import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
+import { isClearAnnotationsShortcut } from "../utils/is-clear-annotations-shortcut.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -443,6 +444,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
     const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
+    // With annotations selected, Clear removes just those.
+    const clearAnnotationsOrSelection = () =>
+      inspect.selectedAnnotationIds().length === 0
+        ? inspect.clearAnnotations()
+        : inspect.removeSelectedAnnotations();
     // Each tool gets its own cursor, drawn from its toolbar icon, so the page
     // shows which tool is in hand.
     const getAnnotationToolCursor = (tool: AnnotationTool): string => {
@@ -3227,6 +3233,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
         }
+        if (
+          canHandleEditShortcut &&
+          inspect.hasAnnotations() &&
+          isClearAnnotationsShortcut(event)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          clearAnnotationsOrSelection();
+          return;
+        }
         // Bare keys pick the toolbar's tools up and put them down, as in a
         // design tool, so a frozen hover state never needs a trip to the
         // toolbar. V only means something once there is a drawing to move,
@@ -4205,11 +4221,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onToggleAutoScreenshot: inspect.toggleAutoScreenshot,
       onSelectAnnotationTool: handleSelectAnnotationTool,
       onSelectAnnotationColor: inspect.selectAnnotationColor,
-      // With annotations selected the button removes just those.
-      onClearAnnotations: () =>
-        inspect.selectedAnnotationIds().length === 0
-          ? inspect.clearAnnotations()
-          : inspect.removeSelectedAnnotations(),
+      onClearAnnotations: clearAnnotationsOrSelection,
       onTextDraftChange: inspect.setTextDraftValue,
       onTextDraftCommit: inspect.commitTextDraft,
       onTextDraftCancel: inspect.discardTextDraft,

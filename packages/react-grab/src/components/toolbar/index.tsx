@@ -62,6 +62,7 @@ import {
   isHorizontalEdge,
 } from "../../utils/toolbar-position.js";
 import { createToolbarDrag } from "../../utils/create-toolbar-drag.js";
+import { getClearAnnotationsShortcutLabel } from "../../utils/get-clear-annotations-shortcut-label.js";
 import { accumulateRotationDeg } from "../../utils/accumulate-rotation.js";
 
 interface ToolbarProps {
@@ -1173,6 +1174,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
                 tooltip="Clear"
+                tooltipShortcut={getClearAnnotationsShortcutLabel()}
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup

@@ -154,7 +154,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   In a hold session the modifier with an arrow still navigates. With a drawing
   tool or Move in hand, 1 picks Pen, 2 picks Rectangle and 3 picks Text. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
-  annotations together, and v picks it up or puts it down.
+  annotations together, and v picks it up or puts it down. **⌘⌫** (Ctrl+Backspace
+  elsewhere) clears every drawing and note, or just the selection; ⌘Z undoes it.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
   drawings, notes, moves, removals and style changes.
 

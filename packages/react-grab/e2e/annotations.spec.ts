@@ -475,6 +475,48 @@ test.describe("Annotations", () => {
     await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
   });
 
+  test("the modifier with Backspace clears every drawing and note, and undo brings them back", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(ANNOTATION_ACTIONS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Delete`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+  });
+
+  test("the clear shortcut removes only the selected annotation while one is selected", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y + 5);
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+  });
+
+  test("the Clear tooltip shows its shortcut", async ({ reactGrab, page }) => {
+    await toolbarAction(page, "annotate-clear").hover();
+    await expect(page.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      reactGrab.modifierKey === "Meta" ? "⌘⌫" : "Ctrl+Backspace",
+    );
+  });
+
   test("undo puts a moved drawing back and a new change clears redo", async ({
     reactGrab,
     page,

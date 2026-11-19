@@ -523,6 +523,9 @@ export const TOOL_CYCLE_DIRECTION_BY_KEY: ReadonlyMap<string, ToolCycleDirection
 ]);
 export const TOOL_CYCLE_MODIFIER_LABEL_MAC = "⌘";
 export const TOOL_CYCLE_MODIFIER_LABEL = "Ctrl+";
+export const CLEAR_ANNOTATIONS_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete"]);
+export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL_MAC = "⌘⌫";
+export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL = "Ctrl+Backspace";
 export const TOOL_CYCLE_HORIZONTAL_ARROW_LABELS: Readonly<Record<ToolCycleDirection, string>> = {
   forward: "→",
   backward: "←",
