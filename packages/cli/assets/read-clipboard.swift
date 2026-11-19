@@ -11,6 +11,7 @@ import AppKit
 let GRAB_MIME = "application/x-react-grab"
 let pasteboard = NSPasteboard.general
 var result: [String: Any] = ["changeCount": pasteboard.changeCount]
+result["hasImage"] = pasteboard.availableType(from: [.png, .tiff]) != nil
 
 if let text = pasteboard.string(forType: .string) {
   result["text"] = text

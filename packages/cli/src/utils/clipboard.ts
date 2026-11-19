@@ -9,6 +9,7 @@ import {
   LINUX_WEB_FORMAT_MAP,
   LINUX_WEB_FORMAT_ENTRY,
 } from "./constants.js";
+import { normalizeClipboardText } from "./normalize-clipboard-text.js";
 import { sleep } from "./sleep.js";
 
 export const HISTORY_FILE_NAME = "history.jsonl";
@@ -31,12 +32,14 @@ const SIGNATURE_SCAN_CHARS = 32 * 1024;
 export const GRAB_MIME = "application/x-react-grab";
 const CHROMIUM_CUSTOM_FORMAT = "chromium/x-web-custom-data";
 
-// React Grab plain-text payloads always carry a component-stack frame such as
+// Next.js grab text can carry a component-stack frame such as
 // "in LoginForm (at components/login-form.tsx:46:19)". Used to recognize a grab
 // when the structured custom clipboard format is unavailable (text fallback).
 // `[^\n]{1,400}?` allows parentheses in paths (e.g. Next.js route groups
 // `(auth)`) while bounding backtracking on hostile clipboard text.
 const GRAB_TEXT_SIGNATURE = /\bin\s+\S+\s+\(at\s+[^\n]{1,400}?:\d+:\d+\)/;
+const GRAB_REFERENCE_PREFIX = /^\[<[A-Za-z]/;
+const GRAB_REFERENCE_CONTEXT = /(?:<\/[A-Za-z][^\s<>]*>| \/>) (?:in|key:|selector:) \S/;
 
 interface GrabEntry {
   tagName?: string;
@@ -61,8 +64,9 @@ interface CapturedGrab extends GrabRecord {
 
 // What a platform reader returns each poll. `grab` is the resolved
 // application/x-react-grab JSON string when present.
-interface ClipboardSnapshot {
+export interface ClipboardSnapshot {
   changeCount: number | null;
+  hasImage?: boolean;
   text?: string;
   grab?: string;
 }
@@ -71,6 +75,7 @@ interface ClipboardSnapshot {
 // from `grab` directly or by decoding `pickleBase64`.
 interface NativeRead {
   changeCount?: number | null;
+  hasImage?: boolean;
   text?: string;
   grab?: string;
   pickleBase64?: string;
@@ -135,10 +140,16 @@ export const extractGrab = (raw: NativeRead): string | undefined => {
   return getNewerGrab(raw.grab, pickleGrab);
 };
 
-export const isGrabText = (text: string): boolean =>
-  GRAB_TEXT_SIGNATURE.test(
-    text.length > SIGNATURE_SCAN_CHARS ? text.slice(0, SIGNATURE_SCAN_CHARS) : text,
-  );
+export const isGrabText = (text: string): boolean => {
+  const sample = text.slice(0, SIGNATURE_SCAN_CHARS);
+  if (GRAB_TEXT_SIGNATURE.test(sample)) return true;
+  return sample
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        line.endsWith("]") && GRAB_REFERENCE_PREFIX.test(line) && GRAB_REFERENCE_CONTEXT.test(line),
+    );
+};
 
 // A grab can carry the user's own instruction (React Grab prompt mode). It lives
 // in entries[].commentText when structured, otherwise it is prepended above the
@@ -197,10 +208,11 @@ export const compileSwiftReader = (readersDir: string, workDir: string): string 
   if (!hasCommand("swiftc")) return null;
   const source = path.join(readersDir, "read-clipboard.swift");
   if (!fs.existsSync(source)) return null;
-  const binary = path.join(workDir, DARWIN_READER_BINARY_NAME);
-  const isStale =
-    !fs.existsSync(binary) || fs.statSync(source).mtimeMs > fs.statSync(binary).mtimeMs;
-  if (isStale && spawnSync("swiftc", ["-O", source, "-o", binary]).status !== 0) return null;
+  const sourceHash = shortHash(fs.readFileSync(source, "utf8"));
+  const binary = path.join(workDir, `${DARWIN_READER_BINARY_NAME}-${sourceHash}`);
+  if (!fs.existsSync(binary) && spawnSync("swiftc", ["-O", source, "-o", binary]).status !== 0) {
+    return null;
+  }
   return binary;
 };
 
@@ -212,7 +224,12 @@ const createDarwinReader = (options: CreateReaderOptions): ClipboardReader | nul
       read: () => {
         const raw = runJson(binary, []);
         if (!raw) return null;
-        return { changeCount: raw.changeCount ?? null, text: raw.text, grab: extractGrab(raw) };
+        return {
+          changeCount: raw.changeCount ?? null,
+          hasImage: raw.hasImage,
+          text: raw.text,
+          grab: extractGrab(raw),
+        };
       },
     };
   }
@@ -328,6 +345,7 @@ const createWindowsReader = (options: CreateReaderOptions): ClipboardReader | nu
       if (!raw) return null;
       return {
         changeCount: raw.changeCount ?? null,
+        hasImage: raw.hasImage,
         text: raw.text ?? undefined,
         grab: extractGrab(raw),
       };
@@ -384,13 +402,19 @@ export const runWatchLoop = async (options: RunWatchLoopOptions): Promise<void> 
   let lastChangeCount: number | null = null;
   let lastTimestamp = 0;
   let lastTextHash = "";
+  // While the clipboard holds the imageless text of a recorded grab, its next image
+  // belongs to that grab, whether added automatically or by the camera later.
+  // An image write with the same text when none is awaited is a repeat grab.
+  let isImageWriteAwaited = false;
   let lastErrorMessage = "";
   let sequence = 0;
 
   const initial = read();
   if (initial && !replayLast) {
     lastChangeCount = initial.changeCount;
-    if (initial.text) lastTextHash = shortHash(initial.text);
+    isImageWriteAwaited = !initial.hasImage;
+    const text = normalizeClipboardText(initial.text);
+    if (text) lastTextHash = shortHash(text);
     if (initial.grab) {
       try {
         lastTimestamp = (JSON.parse(initial.grab) as { timestamp?: number }).timestamp ?? 0;
@@ -408,8 +432,10 @@ export const runWatchLoop = async (options: RunWatchLoopOptions): Promise<void> 
       if (!snapshot) continue;
       if (snapshot.changeCount !== null && snapshot.changeCount === lastChangeCount) continue;
 
-      const textHash = snapshot.text ? shortHash(snapshot.text) : "";
+      const text = normalizeClipboardText(snapshot.text);
+      const textHash = text ? shortHash(text) : "";
       const didTextChange = textHash !== lastTextHash;
+      const hasImage = Boolean(snapshot.hasImage);
 
       let record: GrabRecord | null = null;
       let nextTimestamp = lastTimestamp;
@@ -433,8 +459,12 @@ export const runWatchLoop = async (options: RunWatchLoopOptions): Promise<void> 
             entries: Array.isArray(parsed.entries) ? (parsed.entries as GrabEntry[]) : [],
           };
         }
-      } else if (didTextChange && snapshot.text && isGrabText(snapshot.text)) {
-        record = { source: "text", timestamp: Date.now(), content: snapshot.text, entries: [] };
+      } else if (
+        (didTextChange || (snapshot.changeCount !== null && hasImage && !isImageWriteAwaited)) &&
+        text &&
+        isGrabText(text)
+      ) {
+        record = { source: "text", timestamp: Date.now(), content: text, entries: [] };
       }
 
       if (!record) {
@@ -442,6 +472,7 @@ export const runWatchLoop = async (options: RunWatchLoopOptions): Promise<void> 
         // state so the same content is not re-scanned every poll.
         lastChangeCount = snapshot.changeCount;
         lastTextHash = textHash;
+        isImageWriteAwaited = isImageWriteAwaited && !didTextChange && !hasImage;
         continue;
       }
 
@@ -459,6 +490,7 @@ export const runWatchLoop = async (options: RunWatchLoopOptions): Promise<void> 
       lastChangeCount = snapshot.changeCount;
       lastTextHash = textHash;
       lastTimestamp = nextTimestamp;
+      isImageWriteAwaited = !hasImage;
     } catch (error) {
       const message = String((error as Error)?.message ?? error);
       if (message !== lastErrorMessage) {

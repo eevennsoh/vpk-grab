@@ -130,11 +130,11 @@ example, in `<head>` before the app's own scripts, on development pages only.
   remembered): every grab copies its references at once, then the pill's camera
   runs by itself so the clipboard ends with the references and a PNG. Chromium sites
   with an existing unsanitized clipboard write grant also keep the metadata
-  with the PNG. The fork’s macOS and Linux watchers can then recognize a grab
-  first seen after the image arrives. With default permissions, or on Windows,
-  a poll that misses the initial text copy can miss a repeated grab. A copy
-  with several pills takes one image, on the pill with Optional context, and
-  Optional context stays after the image; a prompt is copied with a fresh
+  with the PNG. The fork’s watcher records each grab once whichever copy it sees
+  first; on Linux, or with a text-only reader, a poll that sees only an image
+  copy without that metadata can still miss a repeated grab of the same element.
+  A copy with several pills takes one image, on the pill with Optional context,
+  and Optional context stays after the image; a prompt is copied with a fresh
   image. Over plain HTTP each grab downloads its image instead.
 - **Hold Shift** with Specs on: pins the panel so they can edit it: switch a
   property off and on, pick another token or keyword, or type a value.
