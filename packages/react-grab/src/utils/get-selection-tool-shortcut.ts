@@ -12,9 +12,8 @@ import { getCycledSelectionTool } from "./get-cycled-selection-tool.js";
 import { isMac } from "./is-mac.js";
 
 // From Grab, the platform modifier and horizontal arrows reach the adjacent
-// tools in the ring. Drawing tools and Move show the drawing
-// numbers, including the tool in hand. Before activation only Grab has a key,
-// the one that activates.
+// tools in the ring. Drawing tools and Move show the drawing numbers, including
+// the tool in hand. Before activation only Grab has a key, the one that activates.
 export const getSelectionToolShortcut = (
   tool: SelectionTool,
   currentTool: AnnotationTool,

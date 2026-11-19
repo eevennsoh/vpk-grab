@@ -144,11 +144,11 @@ example, in `<head>` before the app's own scripts, on development pages only.
   another element shows the distances between the two.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
-  square. Hold Cmd (Ctrl off the Mac) and press Right to step through Grab, Pen,
-  Rectangle and Text, or Left to step back. With a drawing tool or Move in hand, 1 picks Pen, 2 picks
-  Rectangle and 3 picks Text. **Move** and **Clear** appear
-  once something is drawn; Move box-selects and drags annotations together,
-  and v picks it up or puts it down.
+  square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right to
+  step through Grab, Pen, Rectangle and Text, or Left to step back. With a drawing
+  tool or Move in hand, 1 picks Pen, 2 picks Rectangle and 3 picks Text. **Move**
+  and **Clear** appear once something is drawn. Move box-selects and drags
+  annotations together, and v picks it up or puts it down.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
   drawings, notes, moves, removals and style changes.
 

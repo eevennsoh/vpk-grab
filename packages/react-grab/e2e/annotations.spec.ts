@@ -598,37 +598,56 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
   });
 
-  for (const activationMode of ["hold", "toggle"]) {
-    test(`holding the activation shortcut in ${activationMode} mode keeps sibling navigation`, async ({
-      reactGrab,
-      page,
-    }) => {
-      await reactGrab.deactivate();
-      await reactGrab.updateOptions({
-        activationMode,
-        activationKey: `${reactGrab.modifierKey}+${NON_NATIVE_ACTIVATION_KEY}`,
-      });
-      await page.keyboard.down(reactGrab.modifierKey);
-      await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
-      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
-      await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
-      await page.keyboard.press("ArrowUp");
-      const selected = page.getByRole("menuitemradio", { checked: true });
-      const first = await selected.getAttribute("data-react-grab-menu-item");
-      if (!first) throw new Error("Missing selected hierarchy row");
-      await page.keyboard.press("ArrowRight");
-      await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
-      await expect(selected).not.toHaveAttribute("data-react-grab-menu-item", first);
-      await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
-      if (activationMode === "toggle") {
-        await page.keyboard.press("ArrowRight");
-        await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
-      }
-      await page.keyboard.up(reactGrab.modifierKey);
+  test("a kept-on session steps on the first arrow with the activation shortcut still down", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await reactGrab.updateOptions({
+      activationMode: "toggle",
+      activationKey: `${reactGrab.modifierKey}+${NON_NATIVE_ACTIVATION_KEY}`,
     });
-  }
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.press("ArrowRight");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+  });
 
-  const expectCaretMovement = async (reactGrab: ReactGrabPageObject, field: Locator) => {
+  test("a hold session keeps sibling navigation with the modifier down", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await reactGrab.updateOptions({
+      activationMode: "hold",
+      activationKey: NON_NATIVE_ACTIVATION_KEY,
+    });
+    await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] li:first-child span");
+    await page.keyboard.press("ArrowUp");
+    const selected = page.getByRole("menuitemradio", { checked: true });
+    const first = await selected.getAttribute("data-react-grab-menu-item");
+    if (!first) throw new Error("Missing selected hierarchy row");
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.press("ArrowRight");
+    await expect(selected).not.toHaveAttribute("data-react-grab-menu-item", first);
+    await page.keyboard.press("ArrowLeft");
+    await expect(selected).toHaveAttribute("data-react-grab-menu-item", first);
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+  });
+
+  const expectCaretMovement = async (
+    reactGrab: ReactGrabPageObject,
+    field: Locator,
+    scope: "page" | "overlay",
+  ) => {
     await field.evaluate((element) => {
       window.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -643,10 +662,12 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await reactGrab.page.keyboard.down(reactGrab.modifierKey);
     await reactGrab.page.keyboard.press("ArrowLeft");
     await expect(field).toHaveJSProperty("selectionStart", 0);
-    await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
+    if (scope === "page") await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
+    else await expect(field).not.toHaveAttribute("data-page-key");
     await reactGrab.page.keyboard.press("ArrowRight");
     await expect(field).toHaveJSProperty("selectionStart", word.length);
-    await expect(field).toHaveAttribute("data-page-key", "ArrowRight");
+    if (scope === "page") await expect(field).toHaveAttribute("data-page-key", "ArrowRight");
+    else await expect(field).not.toHaveAttribute("data-page-key");
     await reactGrab.page.keyboard.up(reactGrab.modifierKey);
   };
 
@@ -662,10 +683,20 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
         field.dataset.testid = "cycle-page-field";
         body.prepend(field);
       });
-      await expectCaretMovement(reactGrab, root.getByTestId("cycle-page-field"));
+      await expectCaretMovement(reactGrab, root.getByTestId("cycle-page-field"), "page");
       await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
     });
   }
+
+  const observePageArrowRight = () => {
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
+      },
+      true,
+    );
+  };
 
   const observeArrowRight = async (reactGrab: ReactGrabPageObject) => {
     const page = reactGrab.page;
@@ -684,15 +715,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     });
     await page.reload();
     await reactGrab.activate();
-    await page.evaluate(() => {
-      window.addEventListener(
-        "keydown",
-        (event) => {
-          if (event.key === "ArrowRight") document.body.dataset.pageArrow = event.key;
-        },
-        true,
-      );
-    });
+    await page.evaluate(observePageArrowRight);
   };
 
   const grabWithEmptyPillField = async (reactGrab: ReactGrabPageObject) => {
@@ -726,7 +749,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     page,
   }) => {
     const field = await grabWithEmptyPillField(reactGrab);
-    await expectCaretMovement(reactGrab, field);
+    await expectCaretMovement(reactGrab, field, "overlay");
     const grab = toolbarAction(page, "copy");
     await expect(grab).toHaveAttribute("aria-pressed", "true");
 
@@ -734,7 +757,7 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await page.keyboard.type(" ");
     await expect(field).toHaveValue(" ");
     await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
-    await expect(field).toHaveAttribute("data-page-key", "ArrowLeft");
+    await expect(field).not.toHaveAttribute("data-page-key");
     await expect(field).toHaveJSProperty("selectionStart", 0);
     await expect(grab).toHaveAttribute("aria-pressed", "true");
 
@@ -745,27 +768,21 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("the comment field keeps native caret movement and propagation", async ({
-    reactGrab,
-    page,
-  }) => {
+  test("the comment field keeps caret movement inside the overlay", async ({ reactGrab, page }) => {
     await reactGrab.enterPromptMode("[data-testid='todo-list'] h1");
-    await expectCaretMovement(reactGrab, page.getByPlaceholder("Add context"));
+    await expectCaretMovement(reactGrab, page.getByPlaceholder("Add context"), "overlay");
     expect(await reactGrab.isPromptModeActive()).toBe(true);
   });
 
-  test("the note field keeps native caret movement and propagation", async ({
-    reactGrab,
-    page,
-  }) => {
+  test("the note field keeps caret movement inside the overlay", async ({ reactGrab, page }) => {
     await toolbarAction(page, "annotate-text").click();
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
-    await expectCaretMovement(reactGrab, page.getByLabel("Annotation text"));
+    await expectCaretMovement(reactGrab, page.getByLabel("Annotation text"), "overlay");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
   for (const control of ["value", "filter"]) {
-    test(`the Specs ${control} field keeps native caret movement and propagation`, async ({
+    test(`the Specs ${control} field keeps caret movement inside the overlay`, async ({
       reactGrab,
       page,
     }) => {
@@ -776,14 +793,91 @@ test.describe("Tool cycling with the platform modifier and horizontal arrows", (
       const row = specRow(page, "padding");
       if (control === "filter") {
         await row.locator("[data-react-grab-spec-menu-trigger]").click();
-        await expectCaretMovement(reactGrab, page.getByPlaceholder("Filter tokens and values"));
+        await expectCaretMovement(
+          reactGrab,
+          page.getByPlaceholder("Filter tokens and values"),
+          "overlay",
+        );
       } else {
         await row.locator("[data-react-grab-spec-value]").click();
-        await expectCaretMovement(reactGrab, row.locator("[data-react-grab-specs-input]"));
+        await expectCaretMovement(
+          reactGrab,
+          row.locator("[data-react-grab-specs-input]"),
+          "overlay",
+        );
       }
       await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
     });
   }
+
+  test("claims the chord during a selection drag", async ({ reactGrab, page }) => {
+    await observeArrowRight(reactGrab);
+    await page.mouse.move(MARQUEE_START.x, MARQUEE_START.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END.x, MARQUEE_END.y);
+    await expect.poll(async () => (await reactGrab.getState()).isDragging).toBe(true);
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(page.locator("body")).toHaveAttribute("data-arrow-prevented", "true");
+    await expect(page.locator("body")).not.toHaveAttribute("data-page-arrow");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.up();
+  });
+
+  test("claims the chord during a pending copy", async ({ reactGrab, page }) => {
+    await observeArrowRight(reactGrab);
+    await page.evaluate(() =>
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "pending-tool-cycle-copy",
+        hooks: {
+          onBeforeCopy: () =>
+            new Promise<void>((resolve) => {
+              window.addEventListener("finish-copy", () => resolve(), { once: true });
+            }),
+        },
+      }),
+    );
+    await reactGrab.hoverUntilSelected("[data-testid='todo-list'] h1");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(true);
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(page.locator("body")).toHaveAttribute("data-arrow-prevented", "true");
+    await expect(page.locator("body")).not.toHaveAttribute("data-page-arrow");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "false");
+    const frameBody = page.frameLocator("[data-testid='same-origin-iframe']").locator("body");
+    await frameBody.evaluate(observePageArrowRight);
+    await frameBody.evaluate((body) => {
+      body.tabIndex = -1;
+      body.focus();
+    });
+    await expect(frameBody).toBeFocused();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(frameBody).toHaveAttribute("data-arrow-prevented", "true");
+    await expect(frameBody).not.toHaveAttribute("data-page-arrow");
+    await page.evaluate(() => window.dispatchEvent(new Event("finish-copy")));
+    await expect(page.getByPlaceholder("Optional context")).toBeFocused();
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("claims the chord with a toolbar menu item focused", async ({ reactGrab, page }) => {
+    await observeArrowRight(reactGrab);
+    await page.evaluate(() =>
+      window.__REACT_GRAB__?.registerPlugin({
+        name: "tool-cycle-menu-choice",
+        actions: [{ id: "choice", label: "Choice", showInToolbarMenu: true, onAction: () => {} }],
+      }),
+    );
+    await reactGrab.rightClickToolbarToggle();
+    const item = page.locator(
+      '[data-react-grab-toolbar-menu] [data-react-grab-menu-item="choice"]',
+    );
+    await item.focus();
+    await expect(item).toBeFocused();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(page.locator("body")).toHaveAttribute("data-arrow-prevented", "true");
+    await expect(page.locator("body")).not.toHaveAttribute("data-page-arrow");
+    await expect(item).toBeFocused();
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+  });
 
   test("claims the chord before page listeners only while active", async ({ reactGrab, page }) => {
     await observeArrowRight(reactGrab);

@@ -320,6 +320,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const isHoldingKeys = createMemo(() => current().state === "holding");
     const isActivated = createMemo(() => current().state === "active");
+    const isToggleSession = () =>
+      store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold";
     const isFrozenPhase = createMemo(() => {
       const currentState = current();
       return currentState.state === "active" && currentState.phase === "frozen";
@@ -649,7 +651,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void dragPreviewElements();
     };
     let keydownSpamTimerId: number | null = null;
-    let heldActivationKeyCode: string | null = null;
     let toggleShortcutPressTimestampMs: number | null = null;
     const activationHoldState = {
       timerId: null as number | null,
@@ -1965,7 +1966,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const deactivateRenderer = (shouldPreservePillPromptFocus = false) => {
       clearCopyFeedbackCooldown();
       cancelPendingCopies();
-      heldActivationKeyCode = null;
       toggleShortcutPressTimestampMs = null;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
@@ -2714,7 +2714,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       shouldForwardInteraction: () =>
         isActivated() || isHoldingKeys() || isDragging() || isSelectionInteractionLocked(),
       shouldForwardKeyboardEvent: (event) =>
-        isTargetKeyCombination(event, pluginRegistry.store.options),
+        isTargetKeyCombination(event, pluginRegistry.store.options) ||
+        (isCopying() && event.type === "keydown" && Boolean(getToolCycleDirection(event))),
       onFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
@@ -3111,11 +3112,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
-        if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold") {
-          if (!event.repeat) {
-            toggleShortcutPressTimestampMs = performance.now();
-            heldActivationKeyCode = event.code;
-          }
+        if (isToggleSession()) {
+          if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
           return;
         }
         if (event.repeat) return;
@@ -3160,7 +3158,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           activationDuration += INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS;
         }
         resetCopyConfirmation();
-        heldActivationKeyCode = event.code;
         actions.startHold(activationDuration);
       }
     };
@@ -3263,33 +3260,30 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           inspect.removeSelectedAnnotations();
           return;
         }
+        const toolCycleDirection = getToolCycleDirection(event);
+        const isMenuItemChord =
+          toolCycleDirection && isEventFromOverlay(event, "data-react-grab-menu-item");
         // Editable controls keep their native arrow/Tab keys (caret movement,
         // focus traversal) and Enter. This one guard covers every navigation
         // path in this handler, including the overlay branch, and precedes
         // the active-mode preventDefault below.
         if (
           (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
+          !isMenuItemChord &&
           isTextFieldKeyEvent(event)
         )
           return;
 
-        const toolCycleDirection = getToolCycleDirection(event);
-        if (toolCycleDirection) {
-          if (
-            isActivated() &&
-            !isPromptMode() &&
-            pluginRegistry.store.options.activationMode !== "hold" &&
-            heldActivationKeyCode === null &&
-            !isAnyPopoverOpen() &&
-            !isDragging() &&
-            !isShiftMultiSelecting()
-          ) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (!event.repeat) cycleSelectionTool(toolCycleDirection);
-            return;
+        if (toolCycleDirection && (isActivated() || isCopying())) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (isMenuItemChord || isCopying() || isAnyPopoverOpen() || isPromptMode()) return;
+          if (!isToggleSession() || isDragging()) {
+            tryHandleNavigationKey(event);
+          } else if (!event.repeat) {
+            cycleSelectionTool(toolCycleDirection);
           }
-          if (isPillPromptEvent(event)) return;
+          return;
         }
 
         blockEnterIfNeeded(event);
@@ -3373,17 +3367,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
-        const requiredModifiers = getModifiersFromActivationKey(
-          pluginRegistry.store.options.activationKey,
-        );
-        const isReleasingModifier =
-          (requiredModifiers.metaKey && !event.metaKey) ||
-          (requiredModifiers.ctrlKey && !event.ctrlKey) ||
-          (requiredModifiers.shiftKey && !event.shiftKey) ||
-          (requiredModifiers.altKey && !event.altKey);
-
-        if (isReleasingModifier || event.code === heldActivationKeyCode)
-          heldActivationKeyCode = null;
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         // A key the pill's prompt owns is still a release: it may end a hold
@@ -3412,6 +3395,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
+        const requiredModifiers = getModifiersFromActivationKey(
+          pluginRegistry.store.options.activationKey,
+        );
+        const isReleasingModifier =
+          (requiredModifiers.metaKey && !event.metaKey) ||
+          (requiredModifiers.ctrlKey && !event.ctrlKey) ||
+          (requiredModifiers.shiftKey && !event.shiftKey) ||
+          (requiredModifiers.altKey && !event.altKey);
+
         const isReleasingActivationKey = pluginRegistry.store.options.activationKey
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
@@ -3434,10 +3426,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           }
         }
 
-        if (
-          (didJustCopy() || isCopyFeedbackCooldownActive) &&
-          (!store.wasActivatedByToggle || pluginRegistry.store.options.activationMode === "hold")
-        ) {
+        if ((didJustCopy() || isCopyFeedbackCooldownActive) && !isToggleSession()) {
           if (isReleasingActivationKey || isReleasingModifier) {
             clearCopyFeedbackCooldown();
             releaseHoldSession();
@@ -3455,11 +3444,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         if (isActivated()) {
           if (isReleasingModifier) {
-            if (
-              store.wasActivatedByToggle &&
-              pluginRegistry.store.options.activationMode !== "hold"
-            )
-              return;
+            if (isToggleSession()) return;
             releaseHoldSession();
           } else if (isHoldMode && isReleasingActivationKey) {
             if (keydownSpamTimerId !== null) {
@@ -3480,8 +3465,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
 
         if (isReleasingActivationKey || isReleasingModifier) {
-          if (store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold")
-            return;
+          if (isToggleSession()) return;
 
           const shouldRelease =
             isHoldingKeys() || (activationHoldState.holdTimerFired && isReleasingModifier);
@@ -3768,7 +3752,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // the window loses focus) but do not deactivate if already active, since
       // the user may alt-tab back.
       eventListenerManager.addWindowListener("blur", () => {
-        heldActivationKeyCode = null;
         cancelActiveDrag();
         if (isHoldingKeys()) {
           clearHoldTimer();
@@ -4790,10 +4773,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 onCopyScreenshotInstance={copyLabelScreenshot}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
-                  !store.isTouchMode &&
-                  (shouldFocusPromptAfterEnter() ||
-                    (store.wasActivatedByToggle &&
-                      pluginRegistry.store.options.activationMode !== "hold"))
+                  !store.isTouchMode && (shouldFocusPromptAfterEnter() || isToggleSession())
                 }
                 onInstancePromptFocusRelease={() => returnFocusToPage()}
                 onDismissPill={(event) => {
