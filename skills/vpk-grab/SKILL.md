@@ -151,8 +151,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
   Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
   on either toolbar orientation; the tooltips show the arrows along the toolbar.
-  In a hold session the modifier with an arrow still navigates. With a drawing
-  tool or Move in hand, 1 picks Pen, 2 picks Rectangle and 3 picks Text. **Move**
+  In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only
+  ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
   annotations together, and v picks it up or puts it down. **⌘⌫** (Ctrl+Backspace
   elsewhere) clears every drawing and note, or just the selection; ⌘Z undoes it.

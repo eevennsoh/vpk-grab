@@ -19,7 +19,7 @@ Everything lives in React Grab's own toolbar and behind its one shortcut. Hover 
 | **Move** and **Clear** | Appear once something is drawn; press **v** to pick Move up or put it down. Drag a box to select several annotations (**Shift**-click adds or removes one), drag any selected one to move them together, press **Delete** to remove them, or clear them all with **⌘⌫** (**Ctrl+Backspace** on Windows and Linux; with a selection it removes just that). **⌘Z** brings them back. |
 | **Changes**            | Appears with the first style change, showing how many there are. Lists every change by element: remove one, click an element to reopen its panel, or reset them all.                                                                                                                                                                                                               |
 
-With Grab in hand, **1**, **2** and **3** toggle **Specs**, **Spacing** and **Screenshot**, which appear only with Grab. With Pen, Rectangle, Text or Move in hand, **1** picks Pen, **2** picks Rectangle and **3** picks Text. **⌘C** (**Ctrl+C**) picks Grab back up from any drawing tool or Move.
+With Grab in hand, **1**, **2** and **3** toggle **Specs**, **Spacing** and **Screenshot**, which appear only with Grab. The numbers never pick a drawing tool: with Pen, Rectangle, Text or Move in hand they do nothing, and **⌘** (**Ctrl**) with an arrow steps between tools. **⌘C** (**Ctrl+C**) picks Grab back up from any drawing tool or Move.
 
 Holding a key changes what the pointer does:
 

@@ -502,14 +502,6 @@ export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
-export const PEN_TOOL_KEY = "1";
-export const RECTANGLE_TOOL_KEY = "2";
-export const TEXT_TOOL_KEY = "3";
-export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefined>> = {
-  [PEN_TOOL_KEY]: "pen",
-  [RECTANGLE_TOOL_KEY]: "rectangle",
-  [TEXT_TOOL_KEY]: "text",
-};
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";

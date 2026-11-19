@@ -40,21 +40,28 @@ describe("getSelectionToolShortcut", () => {
     expect(getSelectionToolShortcut("text", "grab", true, "Ctrl+C", true)).toBe("Ctrl+↑");
   });
 
-  it("shows drawing numbers from every drawing tool and Move, including the current tool", () => {
-    const currentTools: AnnotationTool[] = ["pen", "rectangle", "text", "edit"];
+  it("never shows the numbers, which belong to Specs, Spacing and Screenshot", () => {
+    const currentTools: AnnotationTool[] = ["grab", "pen", "rectangle", "text", "edit"];
     for (const isToolbarVertical of [false, true]) {
       for (const currentTool of currentTools) {
-        expect(getSelectionToolShortcut("pen", currentTool, true, "⌘C", isToolbarVertical)).toBe(
-          "1",
-        );
-        expect(
-          getSelectionToolShortcut("rectangle", currentTool, true, "⌘C", isToolbarVertical),
-        ).toBe("2");
-        expect(getSelectionToolShortcut("text", currentTool, true, "⌘C", isToolbarVertical)).toBe(
-          "3",
-        );
+        for (const tool of ["grab", "pen", "rectangle", "text"] as const) {
+          expect(["1", "2", "3"]).not.toContain(
+            getSelectionToolShortcut(tool, currentTool, true, "⌘C", isToolbarVertical),
+          );
+        }
       }
     }
+  });
+
+  it("shows the arrows to the neighbouring tools from a drawing tool and none for the tool in hand", () => {
+    expect(getSelectionToolShortcut("pen", "pen", true, "⌘C", false)).toBeUndefined();
+    expect(getSelectionToolShortcut("rectangle", "pen", true, "⌘C", false)).toBe("⌘→");
+    expect(getSelectionToolShortcut("grab", "pen", true, "⌘C", false)).toBe("⌘←");
+    expect(getSelectionToolShortcut("text", "pen", true, "⌘C", false)).toBeUndefined();
+    expect(getSelectionToolShortcut("text", "rectangle", true, "⌘C", true)).toBe("⌘↓");
+    expect(getSelectionToolShortcut("pen", "rectangle", true, "⌘C", true)).toBe("⌘↑");
+    expect(getSelectionToolShortcut("grab", "edit", true, "⌘C", false)).toBe("⌘→");
+    expect(getSelectionToolShortcut("text", "edit", true, "⌘C", false)).toBe("⌘←");
   });
 
   it("shows the arrow back to Grab from Text and on to Grab from Move", () => {
