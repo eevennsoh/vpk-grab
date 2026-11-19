@@ -427,8 +427,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isSpecsFieldEvent(event) ||
         (isPillPromptEvent(event) &&
           (event.type === "keyup" ? readModifier(event) : isKeyOwnedByPillPrompt(event)));
-    const readShiftKey = (event: KeyboardEvent) => event.shiftKey;
-    const readAltKey = (event: KeyboardEvent) => event.altKey;
+    const readShiftKey = (event: KeyboardEvent | PointerEvent) => event.shiftKey;
+    const readAltKey = (event: KeyboardEvent | PointerEvent) => event.altKey;
     const isShiftKeyHeld = createModifierTracker(
       readShiftKey,
       createTypedModifierFilter(readShiftKey),

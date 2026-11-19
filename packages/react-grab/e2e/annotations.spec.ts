@@ -1615,6 +1615,25 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(page.locator(RECTANGLE_SELECTOR)).toHaveCount(1);
   });
 
+  test("a Shift whose keyup was swallowed does not square the rectangle draft", async ({
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.evaluate(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", shiftKey: true })),
+    );
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, { steps: RECTANGLE_DRAG_STEPS });
+    expect((await getSvgBox(page, "[data-react-grab-annotation-draft]")).height).toBe(
+      RECTANGLE_END_PX.y - RECTANGLE_START_PX.y,
+    );
+    await page.mouse.up();
+    expect((await getSvgBox(page, RECTANGLE_SELECTOR)).height).toBe(
+      RECTANGLE_END_PX.y - RECTANGLE_START_PX.y,
+    );
+  });
+
   test("a tiny drag draws nothing and Escape cancels the draft", async ({ reactGrab, page }) => {
     await toolbarAction(page, "annotate-rectangle").click();
     await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
