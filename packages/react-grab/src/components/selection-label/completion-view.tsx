@@ -12,6 +12,7 @@ import {
   COMPLETION_DISMISS_ICON_SIZE_PX,
   COMPLETION_DISMISS_TOOLTIP_SHORTCUT,
   COMPLETION_MAX_WIDTH_PX,
+  PILL_PROMPT_MIN_WIDTH_PX,
   COMPLETION_STATUS_ROW_HEIGHT_PX,
   COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX,
   FEEDBACK_DURATION_MS,
@@ -148,7 +149,11 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
   };
 
   return (
-    <div data-react-grab-pill-prompt class="flex items-center min-w-0 ml-1.5 py-1.5">
+    <div
+      data-react-grab-pill-prompt
+      class="flex items-center ml-1.5 py-1.5"
+      style={{ flex: "1 1 0px", "min-width": `${PILL_PROMPT_MIN_WIDTH_PX}px` }}
+    >
       <PromptTextarea
         ref={(element) => {
           textareaRef = element;
@@ -323,7 +328,6 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
             </Show>
             <span
               class="text-[var(--rg-text-primary)] text-[13px] leading-4 font-sans font-medium h-fit tabular-nums overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
-              classList={{ "shrink-0": Boolean(props.onSubmitPrompt) }}
               textContent={displayStatusText()}
             />
             <Show when={props.onSubmitPrompt}>

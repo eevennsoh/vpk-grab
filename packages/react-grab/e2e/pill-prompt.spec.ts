@@ -4,6 +4,7 @@ import type { Locator, Page } from "@playwright/test";
 import {
   COMPLETION_STATUS_ROW_HEIGHT_PX,
   COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX as PILL_WITH_THUMBNAIL_MAX_WIDTH_PX,
+  PILL_PROMPT_MIN_WIDTH_PX,
   VIEWPORT_MARGIN_PX,
 } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
@@ -849,6 +850,9 @@ test.describe("Copied pill prompt", () => {
         status === "Copied prompt & image" ? 1 : 0,
       );
       await expectPillWithinMargins(reactGrab);
+      expect((await measurePillPrompt(reactGrab)).promptWidth).toBeGreaterThanOrEqual(
+        PILL_PROMPT_MIN_WIDTH_PX - 1,
+      );
       await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
       await expectPillWithinMargins(reactGrab);
       expect((await measurePillPrompt(reactGrab)).textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
