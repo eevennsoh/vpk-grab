@@ -523,6 +523,10 @@ export const ANNOTATION_TRANSFORM_MIN_SIZE_PX = 8;
 // A straight line has no height to scale, so that axis is left alone rather
 // than divided by zero.
 export const ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX = 1;
+// A turn this close to a quarter turn counts as one: a group can then scale
+// the item along its own axes exactly instead of evenly.
+export const ANNOTATION_RIGHT_ANGLE_EPSILON_RAD = 0.001;
+export const ANNOTATION_TRANSFORM_IDENTITY_EPSILON = 0.0001;
 export const ANNOTATION_ROTATE_SNAP_DEG = 15;
 export const ANNOTATION_TRANSFORM_LABEL_OFFSET_PX = 14;
 export const ANNOTATION_CURSOR_DIRECTION_STEP_DEG = 45;

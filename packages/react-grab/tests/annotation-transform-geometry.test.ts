@@ -16,6 +16,8 @@ import { getResizeCursor } from "../src/utils/get-resize-cursor.js";
 import { getRotateCursor } from "../src/utils/get-rotate-cursor.js";
 import { getRotatedBounds } from "../src/utils/get-rotated-bounds.js";
 import { getSign } from "../src/utils/get-sign.js";
+import { isIdentityFrameTransform } from "../src/utils/is-identity-frame-transform.js";
+import { isRightAngleTurn } from "../src/utils/is-right-angle-turn.js";
 import { normalizeAngle } from "../src/utils/normalize-angle.js";
 import { resolveHeldModifier } from "../src/utils/resolve-held-modifier.js";
 import { transformAnnotationStroke } from "../src/utils/transform-annotation-stroke.js";
@@ -95,6 +97,31 @@ const resize = (
     result,
   );
   return result;
+};
+
+const transformStroke = (
+  stroke: AnnotationStroke,
+  transform: AnnotationFrameTransform,
+): AnnotationStroke => {
+  const target = { ...stroke, points: stroke.points.map((point) => ({ ...point })) };
+  transformAnnotationStroke(stroke, getAnnotationStrokeFrame(stroke), transform, target);
+  return target;
+};
+
+const transformText = (
+  note: AnnotationText,
+  baseWidth: number,
+  transform: AnnotationFrameTransform,
+): AnnotationText => {
+  const target = { ...note };
+  transformAnnotationText(
+    note,
+    baseWidth,
+    getAnnotationTextFrame(note, baseWidth),
+    transform,
+    target,
+  );
+  return target;
 };
 
 const expectPointClose = (actual: { x: number; y: number }, expected: { x: number; y: number }) => {
@@ -201,9 +228,10 @@ describe("resolveHeldModifier", () => {
     expect(resolveHeldModifier(false, true, true)).toBe(false);
   });
 
-  it("counts either source while the tracker is unchanged", () => {
+  it("follows the pointer event while the tracker is unchanged", () => {
     expect(resolveHeldModifier(false, false, true)).toBe(true);
-    expect(resolveHeldModifier(true, true, false)).toBe(true);
+    expect(resolveHeldModifier(true, true, false)).toBe(false);
+    expect(resolveHeldModifier(true, true, true)).toBe(true);
     expect(resolveHeldModifier(false, false, false)).toBe(false);
   });
 });
@@ -231,6 +259,29 @@ describe("applyFrameResize", () => {
     expect(result.scaleY).toBeCloseTo(1.5, 10);
     expect(result.targetX).toBeCloseTo(125, 10);
     expect(result.targetY).toBeCloseTo(112.5, 10);
+  });
+
+  it("locks the ratio to an inward drag on one axis, shrinking both", () => {
+    const result = resize(createFrame(), [1, 1], [-50, 0], true);
+    expect(result.scaleX).toBeCloseTo(0.5, 10);
+    expect(result.scaleY).toBeCloseTo(0.5, 10);
+    expect(result.targetX).toBeCloseTo(75, 10);
+    expect(result.targetY).toBeCloseTo(87.5, 10);
+  });
+
+  it("locks the ratio to an outward drag on one axis, growing both", () => {
+    const result = resize(createFrame(), [1, 1], [0, 25], true);
+    expect(result.scaleX).toBeCloseTo(1.5, 10);
+    expect(result.scaleY).toBeCloseTo(1.5, 10);
+  });
+
+  it("locks a mixed drag to the axis whose proportion changed most", () => {
+    const shrinking = resize(createFrame(), [1, 1], [-60, 10], true);
+    expect(shrinking.scaleX).toBeCloseTo(0.4, 10);
+    expect(shrinking.scaleY).toBeCloseTo(0.4, 10);
+    const growing = resize(createFrame(), [1, 1], [-20, 40], true);
+    expect(growing.scaleX).toBeCloseTo(1.8, 10);
+    expect(growing.scaleY).toBeCloseTo(1.8, 10);
   });
 
   it("locks an edge drag by scaling the other axis about its middle", () => {
@@ -284,16 +335,51 @@ describe("transformFramePoint", () => {
     transform.targetX = 10;
     transform.scaleX = 2;
     transform.angle = QUARTER_TURN;
-    expectPointClose(transformFramePoint(20, 0, transform), { x: 10, y: 20 });
+    const result = { x: 0, y: 0 };
+    transformFramePoint(20, 0, transform, result);
+    expectPointClose(result, { x: 10, y: 20 });
   });
 });
 
 describe("getItemAxisScale", () => {
-  it("is exact for an item square to its group and evens out at a slant", () => {
-    expect(getItemAxisScale(2, 1, 0, false)).toBeCloseTo(2, 10);
-    expect(getItemAxisScale(2, 1, QUARTER_TURN, false)).toBeCloseTo(1, 10);
-    expect(getItemAxisScale(2, 1, QUARTER_TURN, true)).toBeCloseTo(2, 10);
-    expect(getItemAxisScale(3, 3, 0.7, true)).toBeCloseTo(3, 10);
+  it("takes the group's axes as they are for an item square to it", () => {
+    expect(getItemAxisScale(2, 1, 0, false)).toBe(2);
+    expect(getItemAxisScale(2, -1, Math.PI, true)).toBe(1);
+  });
+
+  it("swaps the group's axes for an item a quarter turn round", () => {
+    expect(getItemAxisScale(2, 1, QUARTER_TURN, false)).toBe(1);
+    expect(getItemAxisScale(2, 1, QUARTER_TURN, true)).toBe(2);
+    expect(getItemAxisScale(2, 1, -QUARTER_TURN, false)).toBe(1);
+  });
+
+  it("is the even scale for an item at a slant", () => {
+    expect(getItemAxisScale(3, -3, 0.7, true)).toBe(3);
+    expect(getItemAxisScale(3, -3, EIGHTH_TURN, false)).toBe(3);
+  });
+});
+
+describe("isRightAngleTurn", () => {
+  it("counts upright and quarter turns, within a hair, and nothing between", () => {
+    expect(isRightAngleTurn(0)).toBe(true);
+    expect(isRightAngleTurn(QUARTER_TURN)).toBe(true);
+    expect(isRightAngleTurn(-Math.PI + 0.0001)).toBe(true);
+    expect(isRightAngleTurn(3 * QUARTER_TURN)).toBe(true);
+    expect(isRightAngleTurn(EIGHTH_TURN)).toBe(false);
+    expect(isRightAngleTurn(0.01)).toBe(false);
+  });
+});
+
+describe("isIdentityFrameTransform", () => {
+  it("is true only when nothing scales, turns or moves", () => {
+    const transform = createTransform();
+    expect(isIdentityFrameTransform(transform)).toBe(true);
+    transform.scaleX = 1 + 1e-9;
+    expect(isIdentityFrameTransform(transform)).toBe(true);
+    expect(isIdentityFrameTransform({ ...transform, scaleY: 1.01 })).toBe(false);
+    expect(isIdentityFrameTransform({ ...transform, scaleX: -1 })).toBe(false);
+    expect(isIdentityFrameTransform({ ...transform, angle: 0.01 })).toBe(false);
+    expect(isIdentityFrameTransform({ ...transform, targetX: 1 })).toBe(false);
   });
 });
 
@@ -335,7 +421,7 @@ describe("transformAnnotationStroke", () => {
   it("stretches a rectangle's points and keeps it a rectangle", () => {
     const rectangle = createRectangle(50, 75, 150, 125);
     const transform = resize(getAnnotationStrokeFrame(rectangle), [1, 0], [50, 0]);
-    const resized = transformAnnotationStroke(rectangle, transform);
+    const resized = transformStroke(rectangle, transform);
     expect(resized.points.map((point) => [point.x, point.y])).toEqual([
       [50, 75],
       [200, 75],
@@ -348,7 +434,7 @@ describe("transformAnnotationStroke", () => {
   it("resizes a turned rectangle along its own axes and keeps its turn", () => {
     const rectangle = createRectangle(50, 75, 150, 125, QUARTER_TURN);
     const frame = getAnnotationStrokeFrame(rectangle);
-    const resized = transformAnnotationStroke(rectangle, resize(frame, [1, 0], [0, 50]));
+    const resized = transformStroke(rectangle, resize(frame, [1, 0], [0, 50]));
     const resizedFrame = getAnnotationStrokeFrame(resized);
     expect(resizedFrame.width).toBeCloseTo(150, 6);
     expect(resizedFrame.height).toBeCloseTo(50, 6);
@@ -365,12 +451,12 @@ describe("transformAnnotationStroke", () => {
     inPlace.targetX = 100;
     inPlace.targetY = 100;
     inPlace.angle = QUARTER_TURN;
-    const turned = transformAnnotationStroke(rectangle, inPlace);
+    const turned = transformStroke(rectangle, inPlace);
     expect(turned.points).toEqual(rectangle.points);
     expect(turned.rotation).toBeCloseTo(QUARTER_TURN, 10);
 
     const aroundGroup = { ...inPlace, originX: 0, originY: 100, targetX: 0, targetY: 100 };
-    const orbited = getAnnotationStrokeFrame(transformAnnotationStroke(rectangle, aroundGroup));
+    const orbited = getAnnotationStrokeFrame(transformStroke(rectangle, aroundGroup));
     expect(orbited.centerX).toBeCloseTo(0, 6);
     expect(orbited.centerY).toBeCloseTo(200, 6);
   });
@@ -383,16 +469,45 @@ describe("transformAnnotationStroke", () => {
     transform.targetX = 100;
     transform.targetY = 100;
     transform.scaleX = -1;
-    const flipped = transformAnnotationStroke(rectangle, transform);
+    const flipped = transformStroke(rectangle, transform);
     expect(flipped.rotation).toBeCloseTo(-0.4, 10);
     expect(flipped.points[0].x).toBeCloseTo(150, 10);
+  });
+
+  it("writes into the target's own points so a drag reuses them", () => {
+    const rectangle = createRectangle(50, 75, 150, 125);
+    const target = { ...rectangle, points: rectangle.points.map((point) => ({ ...point })) };
+    const targetPoints = target.points;
+    const firstPoint = target.points[0];
+    transformAnnotationStroke(
+      rectangle,
+      getAnnotationStrokeFrame(rectangle),
+      resize(getAnnotationStrokeFrame(rectangle), [-1, -1], [-10, -10]),
+      target,
+    );
+    expect(target.points).toBe(targetPoints);
+    expect(target.points[0]).toBe(firstPoint);
+    expect(firstPoint.x).toBeCloseTo(40, 10);
+    expect(rectangle.points[0].x).toBe(50);
+  });
+
+  it("returns every corner of a slanted item in an evenly scaled group when undone", () => {
+    const rectangle = createRectangle(50, 75, 150, 125, EIGHTH_TURN);
+    const groupFrame = createFrame({ centerX: 200, centerY: 150, width: 400, height: 300 });
+    const grown = transformStroke(rectangle, resize(groupFrame, [1, 0], [400, 0], true));
+    const grownFrame = { ...groupFrame, centerX: 400, width: 800, height: 600 };
+    const restored = transformStroke(grown, resize(grownFrame, [1, 0], [-400, 0], true));
+    restored.points.forEach((point, pointIndex) =>
+      expectPointClose(point, rectangle.points[pointIndex]),
+    );
+    expect(restored.rotation).toBeCloseTo(EIGHTH_TURN, 10);
   });
 
   it("keeps each point's ink weight", () => {
     const stroke = { ...createRectangle(0, 0, 10, 10), isRectangle: false };
     stroke.points[1].weight = 0.9;
     const transform = resize(getAnnotationStrokeFrame(stroke), [1, 1], [10, 10]);
-    expect(transformAnnotationStroke(stroke, transform).points[1].weight).toBe(0.9);
+    expect(transformStroke(stroke, transform).points[1].weight).toBe(0.9);
   });
 });
 
@@ -400,7 +515,7 @@ describe("transformAnnotationText", () => {
   it("scales a note evenly from the corner that was dragged", () => {
     const note = createNote();
     const frame = getAnnotationTextFrame(note, 40);
-    const scaled = transformAnnotationText(note, 40, resize(frame, [1, 1], [40, 20], true));
+    const scaled = transformText(note, 40, resize(frame, [1, 1], [40, 20], true));
     expect(scaled.scale).toBeCloseTo(2, 10);
     const scaledFrame = getAnnotationTextFrame(scaled, 40);
     expect(scaledFrame.centerX - scaledFrame.width / 2).toBeCloseTo(100, 6);
@@ -415,7 +530,7 @@ describe("transformAnnotationText", () => {
     transform.targetX = 120;
     transform.targetY = 110;
     transform.angle = 0.5;
-    const turned = transformAnnotationText(note, 40, transform);
+    const turned = transformText(note, 40, transform);
     expect(turned.x).toBeCloseTo(note.x, 10);
     expect(turned.y).toBeCloseTo(note.y, 10);
     expect(turned.rotation).toBeCloseTo(0.5, 10);
@@ -430,6 +545,6 @@ describe("transformAnnotationText", () => {
     transform.targetY = 110;
     transform.scaleX = -1;
     transform.scaleY = -1;
-    expect(transformAnnotationText(note, 40, transform).scale).toBeCloseTo(1, 10);
+    expect(transformText(note, 40, transform).scale).toBeCloseTo(1, 10);
   });
 });

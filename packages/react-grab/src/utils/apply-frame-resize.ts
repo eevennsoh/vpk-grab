@@ -14,7 +14,9 @@ const clampScale = (scale: number, minScale: number): number =>
 // Resizes a frame along its own (possibly turned) axes by the pointer's travel
 // from where the handle was pressed. The side opposite the handle stays put,
 // or the centre does when resizing from the centre; dragging past that side
-// flips the frame. Writes into `result` so a drag allocates nothing per move.
+// flips the frame. A locked ratio follows the axis that changed most in
+// proportion, shrinking as well as growing. Writes into `result` so a drag
+// allocates nothing per move.
 export const applyFrameResize = (
   frame: AnnotationFrame,
   handleDirectionX: number,
@@ -45,13 +47,9 @@ export const applyFrameResize = (
   if (isAspectLocked && (isDraggingWidth || isDraggingHeight)) {
     const minScaleX = isWidthScalable ? getMinScale(frame.width) : 0;
     const minScaleY = isHeightScalable ? getMinScale(frame.height) : 0;
-    const evenScale = Math.max(
-      isDraggingWidth && isDraggingHeight
-        ? Math.max(Math.abs(scaleX), Math.abs(scaleY))
-        : Math.abs(isDraggingWidth ? scaleX : scaleY),
-      minScaleX,
-      minScaleY,
-    );
+    const isWidthLeading =
+      isDraggingWidth && (!isDraggingHeight || Math.abs(scaleX - 1) >= Math.abs(scaleY - 1));
+    const evenScale = Math.max(Math.abs(isWidthLeading ? scaleX : scaleY), minScaleX, minScaleY);
     scaleX = isWidthScalable ? (isDraggingWidth ? getSign(scaleX) : 1) * evenScale : 1;
     scaleY = isHeightScalable ? (isDraggingHeight ? getSign(scaleY) : 1) * evenScale : 1;
   } else {

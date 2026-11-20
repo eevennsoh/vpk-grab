@@ -4245,6 +4245,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       isTransformingAnnotations: inspect.isTransforming,
       annotationSelectionFrame: inspect.selectionFrame,
       selectedAnnotationFrames: inspect.selectedAnnotationFrames,
+      getPreviewAnnotationStroke: inspect.getPreviewStroke,
+      getPreviewAnnotationText: inspect.getPreviewText,
       annotationTransformLabel: inspect.transformLabel,
       isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
       isSpecsPinLocked: inspect.isSpecsPinLocked,

@@ -46,7 +46,9 @@ import { getRotateCursor } from "../utils/get-rotate-cursor.js";
 import { getSign } from "../utils/get-sign.js";
 import { getNextInkWeight, INK_NEUTRAL_WEIGHT } from "../utils/ink-path.js";
 import { loadInspectSettings, saveInspectSettings } from "../utils/inspect-settings.js";
+import { isIdentityFrameTransform } from "../utils/is-identity-frame-transform.js";
 import { isRectOverlapping } from "../utils/is-rect-overlapping.js";
+import { isRightAngleTurn } from "../utils/is-right-angle-turn.js";
 import { measureAnnotationTextWidth } from "../utils/measure-annotation-text-width.js";
 import { normalizeAngle } from "../utils/normalize-angle.js";
 import { resolveHeldModifier } from "../utils/resolve-held-modifier.js";
@@ -92,6 +94,19 @@ interface TransformPointer {
   wasAltTrackedAtEvent: boolean;
 }
 
+interface TransformStrokeItem {
+  startStroke: AnnotationStroke;
+  startFrame: AnnotationFrame;
+  previewStroke: AnnotationStroke;
+}
+
+interface TransformTextItem {
+  startText: AnnotationText;
+  baseWidth: number;
+  startFrame: AnnotationFrame;
+  previewText: AnnotationText;
+}
+
 interface ActiveTransform {
   pointerId: number;
   kind: AnnotationTransformKind;
@@ -100,7 +115,8 @@ interface ActiveTransform {
   isUniformOnly: boolean;
   pressPoint: Position;
   startSnapshot: AnnotationSnapshot;
-  transformedIds: Set<string>;
+  strokeItems: Map<string, TransformStrokeItem>;
+  textItems: Map<string, TransformTextItem>;
   didTransform: boolean;
   pointer: TransformPointer;
   frameTransform: AnnotationFrameTransform;
@@ -112,8 +128,6 @@ interface PressedTransformHandle {
 }
 
 interface TransformPreview {
-  strokes: AnnotationStroke[];
-  texts: AnnotationText[];
   frame: AnnotationFrame;
   label: AnnotationTransformLabel;
 }
@@ -221,11 +235,12 @@ export const createInspectController = (options: InspectControllerOptions) => {
   );
   const [annotationColor, setAnnotationColor] = createSignal(initialSettings.annotationColor);
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
-  const [committedStrokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
-  const [committedTexts, setTexts] = createSignal<AnnotationText[]>([]);
+  const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
+  const [texts, setTexts] = createSignal<AnnotationText[]>([]);
   const [transformPointer, setTransformPointer] = createSignal<TransformPointer | null>(null, {
     equals: false,
   });
+  const [transformingIds, setTransformingIds] = createSignal<ReadonlySet<string> | null>(null);
   const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([], { equals: false });
   const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
@@ -281,7 +296,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
   // While a resize or rotate is dragged, what shows is derived from where the
   // annotations started and where the pointer and modifiers are now, so Shift
   // or Alt pressed mid-drag takes effect at once, and Escape only has to stop
-  // deriving to put everything back.
+  // deriving to put everything back. The shapes are written into copies made
+  // on press, so each keeps its element and only its geometry is redrawn.
   const transformPreview = createMemo((): TransformPreview | null => {
     const pointer = transformPointer();
     const transform = activeTransform;
@@ -336,20 +352,24 @@ export const createInspectController = (options: InspectControllerOptions) => {
       frameTransform.angle = frameRotation - startFrame.rotation;
       labelText = formatTransformAngle(frameRotation);
     }
-    const { transformedIds, startSnapshot } = transform;
+    for (const item of transform.strokeItems.values()) {
+      transformAnnotationStroke(
+        item.startStroke,
+        item.startFrame,
+        frameTransform,
+        item.previewStroke,
+      );
+    }
+    for (const item of transform.textItems.values()) {
+      transformAnnotationText(
+        item.startText,
+        item.baseWidth,
+        item.startFrame,
+        frameTransform,
+        item.previewText,
+      );
+    }
     return {
-      strokes: startSnapshot.strokes.map((stroke) =>
-        transformedIds.has(stroke.id) ? transformAnnotationStroke(stroke, frameTransform) : stroke,
-      ),
-      texts: startSnapshot.texts.map((annotationText) =>
-        transformedIds.has(annotationText.id)
-          ? transformAnnotationText(
-              annotationText,
-              measureAnnotationTextWidth(annotationText),
-              frameTransform,
-            )
-          : annotationText,
-      ),
       frame: {
         centerX: frameTransform.targetX,
         centerY: frameTransform.targetY,
@@ -365,21 +385,37 @@ export const createInspectController = (options: InspectControllerOptions) => {
     };
   });
 
-  const strokes = createMemo(() => transformPreview()?.strokes ?? committedStrokes());
-  const texts = createMemo(() => transformPreview()?.texts ?? committedTexts());
-  const isTransforming = () => transformPointer() !== null;
+  const isTransforming = () => transformingIds() !== null;
+
+  // Only the shapes being transformed follow the preview, so every other
+  // shape's render stays untouched by the drag.
+  const getPreviewStroke = (stroke: AnnotationStroke): AnnotationStroke => {
+    if (!transformingIds()?.has(stroke.id) || !transformPreview()) return stroke;
+    return activeTransform?.strokeItems.get(stroke.id)?.previewStroke ?? stroke;
+  };
+
+  const getPreviewText = (annotationText: AnnotationText): AnnotationText => {
+    if (!transformingIds()?.has(annotationText.id) || !transformPreview()) return annotationText;
+    return activeTransform?.textItems.get(annotationText.id)?.previewText ?? annotationText;
+  };
+
+  const getTextBaseWidth = (annotationText: AnnotationText): number =>
+    activeTransform?.textItems.get(annotationText.id)?.baseWidth ??
+    measureAnnotationTextWidth(annotationText);
 
   const selectedAnnotationFrames = createMemo((): AnnotationFrame[] => {
     const selectedIds = new Set(selectedAnnotationIds());
     if (selectedIds.size === 0) return [];
     const frames: AnnotationFrame[] = [];
     for (const stroke of strokes()) {
-      if (selectedIds.has(stroke.id)) frames.push(getAnnotationStrokeFrame(stroke));
+      if (selectedIds.has(stroke.id)) {
+        frames.push(getAnnotationStrokeFrame(getPreviewStroke(stroke)));
+      }
     }
     for (const annotationText of texts()) {
       if (selectedIds.has(annotationText.id)) {
         frames.push(
-          getAnnotationTextFrame(annotationText, measureAnnotationTextWidth(annotationText)),
+          getAnnotationTextFrame(getPreviewText(annotationText), getTextBaseWidth(annotationText)),
         );
       }
     }
@@ -609,7 +645,10 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const discardTransform = () => {
     activeTransform = null;
-    setTransformPointer(null);
+    batch(() => {
+      setTransformPointer(null);
+      setTransformingIds(null);
+    });
   };
 
   // A move cut short (the tool changed mid-move) still leaves the annotations
@@ -745,10 +784,37 @@ export const createInspectController = (options: InspectControllerOptions) => {
     setIsEditPressing(true);
   };
 
+  // A group scales unevenly only when that keeps every item in it a true
+  // copy of itself: no note, which only scales evenly, and no item at a slant
+  // to the group, which would skew.
   const startTransform = (event: PointerEvent, pressedHandle: PressedTransformHandle) => {
     const frame = selectionFrame();
     if (!frame) return;
     const pressPoint = toPagePoint(event);
+    const selectedIds = new Set(selectedAnnotationIds());
+    const strokeItems = new Map<string, TransformStrokeItem>();
+    const textItems = new Map<string, TransformTextItem>();
+    let hasSlantedStroke = false;
+    for (const stroke of strokes()) {
+      if (!selectedIds.has(stroke.id)) continue;
+      if (!isRightAngleTurn(stroke.rotation)) hasSlantedStroke = true;
+      strokeItems.set(stroke.id, {
+        startStroke: stroke,
+        startFrame: getAnnotationStrokeFrame(stroke),
+        previewStroke: { ...stroke, points: stroke.points.map((point) => ({ ...point })) },
+      });
+    }
+    for (const annotationText of texts()) {
+      if (!selectedIds.has(annotationText.id)) continue;
+      const baseWidth = measureAnnotationTextWidth(annotationText);
+      textItems.set(annotationText.id, {
+        startText: annotationText,
+        baseWidth,
+        startFrame: getAnnotationTextFrame(annotationText, baseWidth),
+        previewText: { ...annotationText },
+      });
+    }
+    const isGroup = strokeItems.size + textItems.size > 1;
     activeTransform = {
       pointerId: event.pointerId,
       kind: pressedHandle.kind,
@@ -760,10 +826,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
         height: frame.height,
         rotation: frame.rotation,
       },
-      isUniformOnly: isSelectionTextOnly(),
+      isUniformOnly: textItems.size > 0 || (isGroup && hasSlantedStroke),
       pressPoint,
       startSnapshot: captureAnnotations(),
-      transformedIds: new Set(selectedAnnotationIds()),
+      strokeItems,
+      textItems,
       didTransform: false,
       pointer: {
         pageX: pressPoint.x,
@@ -784,7 +851,10 @@ export const createInspectController = (options: InspectControllerOptions) => {
         angle: 0,
       },
     };
-    setTransformPointer(activeTransform.pointer);
+    batch(() => {
+      setTransformingIds(selectedIds);
+      setTransformPointer(activeTransform?.pointer ?? null);
+    });
   };
 
   const updateTransform = (transform: ActiveTransform, event: PointerEvent) => {
@@ -801,17 +871,29 @@ export const createInspectController = (options: InspectControllerOptions) => {
     setTransformPointer(pointer);
   };
 
-  const commitTransform = () => {
-    const preview = transformPreview();
-    const startSnapshot = activeTransform?.startSnapshot;
+  // The copies drawn during the drag become the shapes themselves. A drag
+  // that ends where it began, or only along an axis that cannot change,
+  // changes nothing and so leaves no step to undo.
+  const commitTransform = (transform: ActiveTransform) => {
+    const didChange =
+      transformPreview() !== null && !isIdentityFrameTransform(transform.frameTransform);
     batch(() => {
-      if (preview) {
-        setStrokes(preview.strokes);
-        setTexts(preview.texts);
+      if (didChange) {
+        setStrokes((previousStrokes) =>
+          previousStrokes.map(
+            (stroke) => transform.strokeItems.get(stroke.id)?.previewStroke ?? stroke,
+          ),
+        );
+        setTexts((previousTexts) =>
+          previousTexts.map(
+            (annotationText) =>
+              transform.textItems.get(annotationText.id)?.previewText ?? annotationText,
+          ),
+        );
       }
       discardTransform();
     });
-    if (preview && startSnapshot) recordAnnotationChange(startSnapshot);
+    if (didChange) recordAnnotationChange(transform.startSnapshot);
   };
 
   // A press on empty page deselects, as it does in a design tool, and a drag
@@ -978,7 +1060,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const handlePointerUp = (event: PointerEvent) => {
     if (activeTransform && activeTransform.pointerId === event.pointerId) {
-      commitTransform();
+      updateTransform(activeTransform, event);
+      commitTransform(activeTransform);
       return;
     }
     if (activeMove && activeMove.pointerId === event.pointerId) {
@@ -1050,6 +1133,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
     isTransforming,
     selectionFrame,
     selectedAnnotationFrames,
+    getPreviewStroke,
+    getPreviewText,
     transformLabel,
     pinnedSpecsElement,
     pinSpecs: (element: Element, isPointerOverPanel: boolean) =>

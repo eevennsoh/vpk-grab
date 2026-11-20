@@ -57,6 +57,8 @@ interface AnnotationLayerProps {
   isTransforming: boolean;
   selectionFrame: AnnotationSelectionFrame | null;
   selectedAnnotationFrames: AnnotationFrame[];
+  getPreviewStroke: (stroke: AnnotationStroke) => AnnotationStroke;
+  getPreviewText: (annotationText: AnnotationText) => AnnotationText;
   transformLabel: AnnotationTransformLabel | null;
   selectedAnnotationIds: string[];
   marqueeRect: Rect | null;
@@ -111,13 +113,14 @@ const getRotateZonePath = (frame: AnnotationFrame, handle: AnnotationTransformHa
   ].join("");
 };
 
-const getTextTransformStyle = (annotationText: AnnotationText): JSX.CSSProperties => {
+const getTextTransformStyle = (
+  annotationText: AnnotationText,
+  getTransformOrigin: () => string,
+): JSX.CSSProperties => {
   if (annotationText.rotation === 0 && annotationText.scale === 1) return {};
-  const baseWidth = measureAnnotationTextWidth(annotationText);
-  const baseHeight = getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX;
   return {
     transform: `rotate(${annotationText.rotation}rad) scale(${annotationText.scale})`,
-    "transform-origin": `${baseWidth / 2}px ${baseHeight / 2}px`,
+    "transform-origin": getTransformOrigin(),
   };
 };
 
@@ -188,12 +191,16 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         <g style={{ transform: pageTransform() }}>
           <For each={props.strokes}>
             {(stroke) => {
-              const strokePath = createInkPath(
-                stroke.points,
-                ANNOTATION_STROKE_WIDTH_PX,
-                stroke.isStraight,
-                stroke.isRectangle,
+              const previewStroke = () => props.getPreviewStroke(stroke);
+              const strokePath = createMemo(() =>
+                createInkPath(
+                  previewStroke().points,
+                  ANNOTATION_STROKE_WIDTH_PX,
+                  stroke.isStraight,
+                  stroke.isRectangle,
+                ),
               );
+              const strokeTransform = createMemo(() => getStrokeTransform(previewStroke()));
               return (
                 <>
                   <path
@@ -202,21 +209,21 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                     }
                     data-react-grab-annotation-id={stroke.id}
                     data-react-grab-annotation-selected={isSelected(stroke.id) ? "" : undefined}
-                    d={strokePath}
+                    d={strokePath()}
                     fill={stroke.isRectangle ? "none" : stroke.color}
                     stroke={stroke.isRectangle ? stroke.color : "transparent"}
                     stroke-width={
                       stroke.isRectangle ? ANNOTATION_STROKE_WIDTH_PX : ANNOTATION_HIT_WIDTH_PX
                     }
                     stroke-linejoin="round"
-                    transform={getStrokeTransform(stroke)}
+                    transform={strokeTransform()}
                     style={editingStyle(stroke.isRectangle ? "stroke" : "all")}
                   />
                   <Show when={stroke.isRectangle}>
                     <path
                       data-react-grab-annotation-id={stroke.id}
-                      d={strokePath}
-                      transform={getStrokeTransform(stroke)}
+                      d={strokePath()}
+                      transform={strokeTransform()}
                       fill="none"
                       stroke="transparent"
                       stroke-width={ANNOTATION_HIT_WIDTH_PX}
@@ -261,24 +268,37 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         style={{ transform: pageTransform(), "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
       >
         <For each={props.texts}>
-          {(annotationText) => (
-            <div
-              data-react-grab-annotation-text
-              data-react-grab-annotation-id={annotationText.id}
-              data-react-grab-annotation-selected={isSelected(annotationText.id) ? "" : undefined}
-              class="absolute whitespace-pre rounded-[3px]"
-              style={{
-                ...textBaseStyle,
-                ...editingStyle("auto"),
-                ...getTextTransformStyle(annotationText),
-                left: `${annotationText.x}px`,
-                top: textTop(annotationText.y),
-                color: annotationText.color,
-                "text-shadow": TEXT_HALO,
-              }}
-              textContent={annotationText.text}
-            />
-          )}
+          {(annotationText) => {
+            const previewText = () => props.getPreviewText(annotationText);
+            let transformOrigin: string | undefined;
+            const getTransformOrigin = () => {
+              if (transformOrigin === undefined) {
+                const baseWidth = measureAnnotationTextWidth(annotationText);
+                const baseHeight =
+                  getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX;
+                transformOrigin = `${baseWidth / 2}px ${baseHeight / 2}px`;
+              }
+              return transformOrigin;
+            };
+            return (
+              <div
+                data-react-grab-annotation-text
+                data-react-grab-annotation-id={annotationText.id}
+                data-react-grab-annotation-selected={isSelected(annotationText.id) ? "" : undefined}
+                class="absolute whitespace-pre rounded-[3px]"
+                style={{
+                  ...textBaseStyle,
+                  ...editingStyle("auto"),
+                  ...getTextTransformStyle(previewText(), getTransformOrigin),
+                  left: `${previewText().x}px`,
+                  top: textTop(previewText().y),
+                  color: annotationText.color,
+                  "text-shadow": TEXT_HALO,
+                }}
+                textContent={annotationText.text}
+              />
+            );
+          }}
         </For>
       </div>
       <svg

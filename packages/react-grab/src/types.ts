@@ -941,6 +941,8 @@ export interface InspectRendererState {
   isTransformingAnnotations: Accessor<boolean>;
   annotationSelectionFrame: Accessor<AnnotationSelectionFrame | null>;
   selectedAnnotationFrames: Accessor<AnnotationFrame[]>;
+  getPreviewAnnotationStroke: (stroke: AnnotationStroke) => AnnotationStroke;
+  getPreviewAnnotationText: (annotationText: AnnotationText) => AnnotationText;
   annotationTransformLabel: Accessor<AnnotationTransformLabel | null>;
   isSpecsPinned: Accessor<boolean>;
   isSpecsPinLocked: Accessor<boolean>;

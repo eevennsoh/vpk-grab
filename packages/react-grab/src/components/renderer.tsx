@@ -74,6 +74,8 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             isTransforming={inspect().isTransformingAnnotations()}
             selectionFrame={inspect().annotationSelectionFrame()}
             selectedAnnotationFrames={inspect().selectedAnnotationFrames()}
+            getPreviewStroke={inspect().getPreviewAnnotationStroke}
+            getPreviewText={inspect().getPreviewAnnotationText}
             transformLabel={inspect().annotationTransformLabel()}
             selectedAnnotationIds={inspect().selectedAnnotationIds()}
             marqueeRect={inspect().annotationMarqueeRect()}
