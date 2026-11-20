@@ -163,7 +163,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   handles resize (Shift keeps the proportions, Alt resizes from the centre,
   dragging past the far side flips) and the area just outside a corner rotates
   (Shift snaps to 15°); Escape mid-drag calls a resize or rotate off; notes scale
-  from their corners. **⌘⌫** (Ctrl+Backspace
+  from their corners, and a group that includes a note or a shape turned at a
+  slant always keeps its proportions. **⌘⌫** (Ctrl+Backspace
   elsewhere) clears every drawing and note, or just the selection, even after Grab is
   switched off; ⌘Z undoes it.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
