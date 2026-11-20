@@ -1,6 +1,7 @@
 import { ANNOTATION_STROKE_WIDTH_PX, ANNOTATION_TEXT_LINE_HEIGHT_PX } from "../constants.js";
 import type { AnnotationSnapshotForCapture, AnnotationText, Rect } from "../types.js";
 import { getAnnotationStrokeBounds } from "./get-annotation-stroke-bounds.js";
+import { getAnnotationTextLines } from "./get-annotation-text-lines.js";
 import { isRectOverlapping } from "./is-rect-overlapping.js";
 
 export const filterAnnotationsInRect = (
@@ -18,7 +19,10 @@ export const filterAnnotationsInRect = (
         left: annotationText.x,
         top: annotationText.y - ANNOTATION_TEXT_LINE_HEIGHT_PX / 2,
         right: annotationText.x + measureTextWidth(annotationText),
-        bottom: annotationText.y + ANNOTATION_TEXT_LINE_HEIGHT_PX / 2,
+        bottom:
+          annotationText.y +
+          getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX -
+          ANNOTATION_TEXT_LINE_HEIGHT_PX / 2,
       },
       pageRect,
     ),

@@ -81,12 +81,16 @@ import {
   ANNOTATION_INPUT_ATTRIBUTE,
   MOVE_TOOL_CURSOR,
   MOVE_TOOL_PRESSED_CURSOR,
-  DRAWING_TOOL_BY_KEY,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
+  PROMPT_COPIED_FEEDBACK_MS,
+  IMAGE_ONLY_COPIED_STATUS_TEXT,
+  IMAGE_ONLY_SAVED_STATUS_TEXT,
+  COMBINED_IMAGE_COPIED_STATUS_TEXT,
+  COMBINED_IMAGE_SAVED_STATUS_TEXT,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -147,6 +151,7 @@ import type {
   ReactGrabAPI,
   ReactGrabState,
   SelectionLabelInstance,
+  PromptCopyTarget,
   ContextMenuActionContext,
   HierarchyState,
   HierarchyEntry,
@@ -176,6 +181,8 @@ import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
+import { isClearAnnotationsShortcut } from "../utils/is-clear-annotations-shortcut.js";
+import { isPillSwapCopyShortcut } from "../utils/is-pill-swap-copy-shortcut.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -427,8 +434,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         isSpecsFieldEvent(event) ||
         (isPillPromptEvent(event) &&
           (event.type === "keyup" ? readModifier(event) : isKeyOwnedByPillPrompt(event)));
-    const readShiftKey = (event: KeyboardEvent) => event.shiftKey;
-    const readAltKey = (event: KeyboardEvent) => event.altKey;
+    const readShiftKey = (event: KeyboardEvent | PointerEvent) => event.shiftKey;
+    const readAltKey = (event: KeyboardEvent | PointerEvent) => event.altKey;
     const isShiftKeyHeld = createModifierTracker(
       readShiftKey,
       createTypedModifierFilter(readShiftKey),
@@ -443,6 +450,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // Pen and Text take over the pointer from element selection while the
     // overlay stays active (and the page stays frozen) underneath them.
     const isAnnotating = () => isActivated() && inspect.annotationTool() !== "grab";
+    // With annotations selected, Clear removes just those.
+    const clearAnnotationsOrSelection = () =>
+      inspect.selectedAnnotationIds().length === 0
+        ? inspect.clearAnnotations()
+        : inspect.removeSelectedAnnotations();
     // Each tool gets its own cursor, drawn from its toolbar icon, so the page
     // shows which tool is in hand.
     const getAnnotationToolCursor = (tool: AnnotationTool): string => {
@@ -709,9 +721,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       !store.pendingCommentMode;
     const isScreenshotMode = createMemo(
       () =>
-        isShiftKeyHeld() &&
-        canTakeScreenshot() &&
-        (isDragging() || (!copiedPill() && !inspect.isSpecsPanelHovered())),
+        isShiftKeyHeld() && canTakeScreenshot() && (isDragging() || !inspect.isSpecsPanelHovered()),
     );
     let lastShiftReleaseTimestampMs = Number.NEGATIVE_INFINITY;
     let dragStartTimestampMs = Number.NEGATIVE_INFINITY;
@@ -834,8 +844,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     let pillDismissPointerId: number | null = null;
+    let isPillDismissalShiftPress = false;
     const dismissCompletedLabelsOnPress = (event: PointerEvent) => {
-      if (event.isPrimary && event.button === 0) pillDismissPointerId = null;
+      if (event.isPrimary && event.button === 0) {
+        pillDismissPointerId = null;
+        isPillDismissalShiftPress = false;
+      }
       if (!copiedPill() || isEventFromOverlay(event, "data-react-grab-completion")) return false;
       const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
@@ -864,6 +878,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (inspect.isSpecsPinLocked()) inspect.unpinSpecs();
       }
       resumeHoverAtPointer();
+      // Shift is the screenshot tool, so a Shift drag goes on to take the next
+      // screenshot once the pill is gone. A Shift click still only dismisses.
+      if (isSelectionPress && event.shiftKey && canTakeScreenshot()) {
+        isPillDismissalShiftPress = true;
+        return false;
+      }
       return isSelectionPress;
     };
 
@@ -1074,7 +1094,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
     };
 
-    const handleSubmitPromptInstance = (instanceId: string, prompt: string) => {
+    // The field comes back once the copy lands, so another prompt can follow:
+    // straight away after a plain copy, and after a moment of "Copied with
+    // prompt" feedback after a prompt.
+    const restorePillPrompt = (instanceId: string, promptTarget: PromptCopyTarget) => {
+      const instance = store.labelInstances.find(
+        (labelInstance) => labelInstance.id === instanceId,
+      );
+      if (instance?.status !== "copied" || instance.promptTarget) return;
+      actions.patchLabelInstance(instanceId, {
+        promptTarget,
+        statusText: instance.thumbnailUrl ? COMBINED_IMAGE_COPIED_STATUS_TEXT : undefined,
+      });
+    };
+
+    const recopyLabelElements = (instanceId: string, prompt?: string) => {
       actions.relinkLiveElements();
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
@@ -1086,14 +1120,28 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
       labelController.cancelScreenshotCapture(instanceId);
-      labelController.startPromptCopy(instanceId, PROMPT_COPIED_STATUS_TEXT);
+      labelController.startPromptCopy(instanceId, prompt ? PROMPT_COPIED_STATUS_TEXT : undefined);
       runLabeledCopy({
         primaryElement: promptTarget.primaryElement,
         targetElements: promptTarget.elements,
         labelInstanceIds: [instanceId],
         extraPrompt: prompt,
+        onComplete: () => {
+          if (!prompt) {
+            restorePillPrompt(instanceId, promptTarget);
+            return;
+          }
+          window.setTimeout(() => {
+            if (!disposed) restorePillPrompt(instanceId, promptTarget);
+          }, PROMPT_COPIED_FEEDBACK_MS);
+        },
       });
     };
+
+    const handleSubmitPromptInstance = (instanceId: string, prompt: string) =>
+      recopyLabelElements(instanceId, prompt);
+
+    const handleCopyElementInstance = (instanceId: string) => recopyLabelElements(instanceId);
 
     const handleAcknowledgeErrorInstance = (instanceId: string) => {
       retryCopyByInstanceId.get(instanceId)?.siblingIds.delete(instanceId);
@@ -2532,7 +2580,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         labelController.setImage(
           labelInstanceId,
-          deliveryOutcome.value === "saved" ? "Image saved" : "Image copied",
+          deliveryOutcome.value === "saved" ? "Saved image" : "Copied image",
           blobOutcome.value,
         );
         return { status: "succeeded" };
@@ -2693,7 +2741,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // marquee; with a toolbar action pending both pick an element for it.
       const isUndersizedScreenshot =
         canReleaseAsScreenshot && isShiftHeld && !isScreenshotSized && !isPendingToolbarSelection();
-      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot;
+      const isPillDismissalOnly = isPillDismissalShiftPress && !shouldCaptureScreenshot;
+      isPillDismissalShiftPress = false;
+      const isMarqueeRelease = wasDragGesture && !isUndersizedScreenshot && !isPillDismissalOnly;
 
       // The rectangle needs to be calculated before endDrag() because endDrag
       // resets dragStart in the store, which would zero out the rectangle.
@@ -2713,6 +2763,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       stopSpaceDragRepositioning();
       autoScroller.stop();
       restoreHostBodyStyle("userSelect");
+      if (isPillDismissalOnly) return;
 
       if (dragSelectionRect && shouldCaptureScreenshot) {
         actions.unfreeze();
@@ -3198,6 +3249,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           dismissCompletedLabelsOnEscape(event);
           return;
         }
+        if (handlePillSwapCopyShortcut(event)) return;
         if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
@@ -3227,6 +3279,20 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             return;
           }
         }
+        // Drawings stay on the page after Grab is switched off, so the shortcut
+        // that clears them works then too.
+        if (
+          !isPromptMode() &&
+          !isCopying() &&
+          !isTextFieldKeyEvent(event) &&
+          inspect.hasAnnotations() &&
+          isClearAnnotationsShortcut(event)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          clearAnnotationsOrSelection();
+          return;
+        }
         // Bare keys pick the toolbar's tools up and put them down, as in a
         // design tool, so a frozen hover state never needs a trip to the
         // toolbar. V only means something once there is a drawing to move,
@@ -3237,14 +3303,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         if (canHandleEditShortcut && isBareKeyPress) {
           const pressedKey = event.key.toLowerCase();
           const runToolShortcut = (): boolean => {
-            if (isAnnotating()) {
-              const drawingTool = DRAWING_TOOL_BY_KEY[pressedKey];
-              if (drawingTool) {
-                if (inspect.annotationTool() !== drawingTool)
-                  handleSelectAnnotationTool(drawingTool);
-                return true;
-              }
-            }
             switch (pressedKey) {
               case SPECS_TOOL_KEY:
                 if (isAnnotating()) return false;
@@ -4164,6 +4222,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       isSpecsEnabled: inspect.isSpecsEnabled,
       isRedlinesEnabled: inspect.isRedlinesEnabled,
       isAutoScreenshotEnabled: inspect.isAutoScreenshotEnabled,
+      isScreenshotMode,
       annotationTool: inspect.annotationTool,
       element: inspectElement,
       measureTarget: inspect.measureTargetElement,
@@ -4204,11 +4263,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onToggleAutoScreenshot: inspect.toggleAutoScreenshot,
       onSelectAnnotationTool: handleSelectAnnotationTool,
       onSelectAnnotationColor: inspect.selectAnnotationColor,
-      // With annotations selected the button removes just those.
-      onClearAnnotations: () =>
-        inspect.selectedAnnotationIds().length === 0
-          ? inspect.clearAnnotations()
-          : inspect.removeSelectedAnnotations(),
+      onClearAnnotations: clearAnnotationsOrSelection,
       onTextDraftChange: inspect.setTextDraftValue,
       onTextDraftCommit: inspect.commitTextDraft,
       onTextDraftCancel: inspect.discardTextDraft,
@@ -4290,6 +4345,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         previousInstance.copiedMetadata === instance.copiedMetadata &&
         previousInstance.isCapturingScreenshot === instance.isCapturingScreenshot &&
         previousInstance.screenshotErrorMessage === instance.screenshotErrorMessage &&
+        previousInstance.promptTarget === instance.promptTarget &&
+        previousInstance.isImageOnlyCopy === instance.isImageOnlyCopy &&
         previousInstance.bounds.x === newBounds.x &&
         previousInstance.bounds.y === newBounds.y &&
         previousInstance.bounds.width === newBounds.width &&
@@ -4677,7 +4734,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // the text copy stays. Any newer clipboard write or the pill's removal
     // cancels the capture, and the pending image then rejects so this write
     // cannot overwrite the newer one.
-    const copyLabelScreenshot = (instanceId: string) => {
+    const copyLabelScreenshot = (instanceId: string, isImageOnly: boolean) => {
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
       );
@@ -4685,10 +4742,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const { copiedContent, copiedMetadata } = instance;
       if (copiedContent === undefined) return;
       const isAutoScreenshotEnabled = inspect.isAutoScreenshotEnabled();
-      const keptStatusText =
-        isAutoScreenshotEnabled && instance.statusText === PROMPT_COPIED_STATUS_TEXT
-          ? instance.statusText
-          : undefined;
 
       labelController.cancelScreenshotCaptures();
       const captureSignal = labelController.startScreenshotCapture(instanceId);
@@ -4705,12 +4758,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         return captureResult;
       });
-      const deliveryPromise = deliverPngBlob(
-        blobPromise,
-        copiedContent,
-        copiedMetadata,
-        screenshotWritePermission?.state,
-      );
+      const deliveryPromise = isImageOnly
+        ? deliverPngBlob(blobPromise)
+        : deliverPngBlob(
+            blobPromise,
+            copiedContent,
+            copiedMetadata,
+            screenshotWritePermission?.state,
+          );
 
       void Promise.allSettled([blobPromise, deliveryPromise]).then(
         ([blobOutcome, deliveryOutcome]) => {
@@ -4723,16 +4778,40 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             labelController.failScreenshotCapture(instanceId, "Couldn't copy image");
             return;
           }
-          const imageStatusText =
-            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image";
+          const isSaved = deliveryOutcome.value === "saved";
+          if (isImageOnly) {
+            labelController.setImage(
+              instanceId,
+              isSaved ? IMAGE_ONLY_SAVED_STATUS_TEXT : IMAGE_ONLY_COPIED_STATUS_TEXT,
+              blobOutcome.value,
+              true,
+              true,
+            );
+            return;
+          }
           labelController.setImage(
             instanceId,
-            keptStatusText ?? imageStatusText,
+            isSaved ? COMBINED_IMAGE_SAVED_STATUS_TEXT : COMBINED_IMAGE_COPIED_STATUS_TEXT,
             blobOutcome.value,
             isAutoScreenshotEnabled,
           );
         },
       );
+    };
+
+    // The pill's swap shortcut puts the other copy in the clipboard: the image
+    // alone after a text copy, and the element's text back after the image. A
+    // hold session's own modifier is the activation shortcut, not this one.
+    const handlePillSwapCopyShortcut = (event: KeyboardEvent): boolean => {
+      if (!isPillSwapCopyShortcut(event) || isHoldingKeys() || isKeyboardEventComposing(event))
+        return false;
+      const pill = copiedPill();
+      if (!pill || pill.isCapturingScreenshot || pill.copiedContent === undefined) return false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (pill.isImageOnlyCopy) recopyLabelElements(pill.id);
+      else copyLabelScreenshot(pill.id, true);
+      return true;
     };
 
     // One copy, one image: of several pills, the one offering the prompt
@@ -4745,7 +4824,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
       const captureInstance =
         copiedInstances.find((labelInstance) => labelInstance.promptTarget) ?? copiedInstances[0];
-      if (captureInstance) copyLabelScreenshot(captureInstance.id);
+      if (captureInstance) copyLabelScreenshot(captureInstance.id, false);
     };
 
     createEffect(() => {
@@ -4800,7 +4879,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
-                onCopyScreenshotInstance={copyLabelScreenshot}
+                onCopyScreenshotInstance={(instanceId) => copyLabelScreenshot(instanceId, true)}
+                onCopyElementInstance={handleCopyElementInstance}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
                   !store.isTouchMode && (shouldFocusPromptAfterEnter() || isToggleSession())

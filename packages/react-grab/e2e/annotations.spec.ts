@@ -475,6 +475,67 @@ test.describe("Annotations", () => {
     await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
   });
 
+  test("the modifier with Backspace clears every drawing and note, and undo brings them back", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(ANNOTATION_ACTIONS_SELECTOR)).not.toHaveAttribute("data-revealed");
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Delete`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+  });
+
+  test("the clear shortcut still works after Grab is switched off, but not in a page field", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.deactivate();
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+
+    await page.locator("[data-testid='test-input']").fill("keep these words");
+    await page.locator("[data-testid='test-input']").press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+
+    await page.locator("[data-testid='test-input']").blur();
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
+    expect(await reactGrab.isOverlayVisible()).toBe(false);
+  });
+
+  test("the clear shortcut removes only the selected annotation while one is selected", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    await page.mouse.click(LINE_START.x + 100, LINE_START.y + 5);
+    await expect(page.locator(`${STROKE_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+Backspace`);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+  });
+
+  test("the Clear tooltip shows its shortcut", async ({ reactGrab, page }) => {
+    await toolbarAction(page, "annotate-clear").hover();
+    await expect(page.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+      "data-react-grab-tooltip-shortcut",
+      reactGrab.modifierKey === "Meta" ? "⌘⌫" : "Ctrl+Backspace",
+    );
+  });
+
   test("undo puts a moved drawing back and a new change clears redo", async ({
     reactGrab,
     page,
@@ -900,6 +961,30 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
     expect(await reactGrab.isPromptModeActive()).toBe(true);
   });
 
+  test("Shift+Enter starts a new line in a note and Enter commits both lines", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-text").click();
+    await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
+    const noteInput = page.locator("[data-react-grab-annotation-input]");
+    await expect(noteInput).toBeFocused();
+    await page.keyboard.type("First line");
+    const singleLineHeight = (await noteInput.boundingBox())?.height ?? 0;
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("Second line");
+    await expect(noteInput).toHaveValue("First line\nSecond line");
+    expect((await noteInput.boundingBox())?.height ?? 0).toBeGreaterThan(singleLineHeight);
+    expect(await reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.keyboard.press("Enter");
+    await expect(noteInput).toHaveCount(0);
+    const note = page.locator(TEXT_SELECTOR).last();
+    await expect(note).toHaveText("First line\nSecond line", { useInnerText: true });
+    const noteBox = await note.boundingBox();
+    expect(noteBox?.height ?? 0).toBeGreaterThan(singleLineHeight);
+  });
+
   test("the note field keeps caret movement inside the overlay", async ({ reactGrab, page }) => {
     await toolbarAction(page, "annotate-text").click();
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
@@ -1067,10 +1152,16 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
     expect(await readShortcut("copy", "Grab")).toBeNull();
 
     await toolbarAction(page, "annotate-pen").click();
-    expect(await readShortcut("annotate-text", "Text")).toBe("3");
-    expect(await readShortcut("annotate-rectangle", "Rectangle")).toBe("2");
+    expect(await readShortcut("annotate-rectangle", "Rectangle")).toBe(`${modifier}→`);
     expect(await readShortcut("copy", "Grab")).toBe(`${modifier}←`);
-    expect(await readShortcut("annotate-pen", "Pen")).toBe("1");
+    expect(await readShortcut("annotate-text", "Text")).toBeNull();
+    expect(await readShortcut("annotate-pen", "Pen")).toBeNull();
+
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
+    expect(await readShortcut("annotate-text", "Text")).toBe(`${modifier}→`);
+    expect(await readShortcut("annotate-pen", "Pen")).toBe(`${modifier}←`);
+    expect(await readShortcut("copy", "Grab")).toBeNull();
   });
 
   test("tooltips show the arrows along the toolbar's edge", async ({ reactGrab, page }) => {
@@ -1155,20 +1246,30 @@ test.describe("Grab, Pen, Rectangle and Text are one choice", () => {
     await expect(inspectTools).toHaveAttribute("data-revealed", "");
   });
 
-  test("1 and 2 pick Pen and Rectangle while leaving Specs and Spacing off", async ({
+  test("1, 2 and 3 leave the drawing tool in hand and Specs, Spacing and Screenshot off", async ({
     reactGrab,
     page,
   }) => {
     await reactGrab.activate();
     await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
-    await toolbarAction(page, "annotate-pen").click();
-    await page.keyboard.press("1");
-    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("2");
-    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
+    for (const toolActionId of [
+      "annotate-pen",
+      "annotate-rectangle",
+      "annotate-text",
+      "annotate-edit",
+    ]) {
+      if (toolActionId === "annotate-edit") await drawStraightLine(page);
+      await toolbarAction(page, toolActionId).click();
+      await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+      for (const key of ["1", "2", "3"]) {
+        await page.keyboard.press(key);
+        await expect(toolbarAction(page, toolActionId)).toHaveAttribute("aria-pressed", "true");
+      }
+    }
     await toolbarAction(page, "copy").click();
-    await expect(toolbarAction(page, "inspect-specs")).toHaveAttribute("aria-pressed", "false");
-    await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute("aria-pressed", "false");
+    for (const actionId of ["inspect-specs", "inspect-redlines", "auto-screenshot"]) {
+      await expect(toolbarAction(page, actionId)).toHaveAttribute("aria-pressed", "false");
+    }
   });
 
   for (const toolActionId of ["annotate-pen", "annotate-rectangle", "annotate-text"]) {
@@ -1350,7 +1451,7 @@ test.describe("The screenshot toggle", () => {
     );
   });
 
-  test("4 does nothing with Grab in hand, and with Pen in hand 3 picks Text and leaves it alone", async ({
+  test("4 does nothing with Grab in hand, and with Pen in hand 3 and 4 leave Pen in hand", async ({
     page,
   }) => {
     const toggle = toolbarAction(page, "auto-screenshot");
@@ -1366,9 +1467,7 @@ test.describe("The screenshot toggle", () => {
     await page.keyboard.press("4");
     await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("3");
-    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("3");
-    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
 
     await toolbarAction(page, "copy").click();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -1540,6 +1639,25 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(page.locator(RECTANGLE_SELECTOR)).toHaveCount(1);
   });
 
+  test("a Shift whose keyup was swallowed does not square the rectangle draft", async ({
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.evaluate(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", shiftKey: true })),
+    );
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, { steps: RECTANGLE_DRAG_STEPS });
+    expect((await getSvgBox(page, "[data-react-grab-annotation-draft]")).height).toBe(
+      RECTANGLE_END_PX.y - RECTANGLE_START_PX.y,
+    );
+    await page.mouse.up();
+    expect((await getSvgBox(page, RECTANGLE_SELECTOR)).height).toBe(
+      RECTANGLE_END_PX.y - RECTANGLE_START_PX.y,
+    );
+  });
+
   test("a tiny drag draws nothing and Escape cancels the draft", async ({ reactGrab, page }) => {
     await toolbarAction(page, "annotate-rectangle").click();
     await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
@@ -1560,46 +1678,43 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
   });
 
-  for (const interruption of ["1", "next-tool shortcut"]) {
-    test(`${interruption} cancels an active rectangle and the next Pen drag is freehand`, async ({
-      reactGrab,
-      page,
-    }) => {
-      await toolbarAction(page, "annotate-rectangle").click();
-      await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
-      await page.mouse.down();
-      await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, {
-        steps: RECTANGLE_DRAG_STEPS,
-      });
-      const draft = page.locator("[data-react-grab-annotation-draft]");
-      await expect(draft).toBeVisible();
-      if (interruption === "1") await page.keyboard.press("1");
-      else await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
-      await expect(
-        toolbarAction(page, interruption === "1" ? "annotate-pen" : "annotate-text"),
-      ).toHaveAttribute("aria-pressed", "true");
-      await expect(draft).toHaveCount(0);
-      await page.mouse.up();
-      await expect(draft).toHaveCount(0);
-      await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
-      await page.keyboard.press("1");
-      await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
-      await page.mouse.down();
-      await page.mouse.move(RECTANGLE_INTERIOR_PX.x, RECTANGLE_END_PX.y, {
-        steps: RECTANGLE_DRAG_STEPS,
-      });
-      await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_START_PX.y, {
-        steps: RECTANGLE_DRAG_STEPS,
-      });
-      await page.mouse.up();
-      await expect(draft).toHaveCount(0);
-      await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
-      await expect(page.locator(STROKE_SELECTOR)).toHaveAttribute(
-        "data-react-grab-annotation-stroke",
-        "freehand",
-      );
+  test("the next-tool shortcut cancels an active rectangle and the next Pen drag is freehand", async ({
+    reactGrab,
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_END_PX.y, {
+      steps: RECTANGLE_DRAG_STEPS,
     });
-  }
+    const draft = page.locator("[data-react-grab-annotation-draft]");
+    await expect(draft).toBeVisible();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
+    await expect(draft).toHaveCount(0);
+    await page.mouse.up();
+    await expect(draft).toHaveCount(0);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(0);
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.move(RECTANGLE_START_PX.x, RECTANGLE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(RECTANGLE_INTERIOR_PX.x, RECTANGLE_END_PX.y, {
+      steps: RECTANGLE_DRAG_STEPS,
+    });
+    await page.mouse.move(RECTANGLE_END_PX.x, RECTANGLE_START_PX.y, {
+      steps: RECTANGLE_DRAG_STEPS,
+    });
+    await page.mouse.up();
+    await expect(draft).toHaveCount(0);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(STROKE_SELECTOR)).toHaveAttribute(
+      "data-react-grab-annotation-stroke",
+      "freehand",
+    );
+  });
 
   for (const thinAxis of ["height", "width"]) {
     for (const thinSizePx of [0, RECTANGLE_TINY_DELTA_PX]) {
@@ -1722,8 +1837,6 @@ test.describe("Rectangle and drawing shortcuts", () => {
       .locator(STROKE_SELECTOR)
       .evaluateAll((elements) => elements.map((element) => element.getAttribute("d")));
     for (const [index, path] of before.entries()) expect(after[index]).not.toBe(path);
-    await page.keyboard.press("2");
-    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("Grab keeps 3 for Screenshot, leaves 4 to the page, and numbers typed into a note stay text", async ({
@@ -1780,21 +1893,6 @@ test.describe("Rectangle and drawing shortcuts", () => {
       "stroke",
       DEFAULT_ANNOTATION_COLOR,
     );
-  });
-
-  test("drawing numbers pick Pen Rectangle and Text without toggling the current tool", async ({
-    page,
-  }) => {
-    await toolbarAction(page, "annotate-pen").click();
-    for (const [key, tool] of [
-      ["2", "rectangle"],
-      ["3", "text"],
-      ["1", "pen"],
-      ["1", "pen"],
-    ]) {
-      await page.keyboard.press(key);
-      await expect(toolbarAction(page, `annotate-${tool}`)).toHaveAttribute("aria-pressed", "true");
-    }
   });
 
   test("only Black swatches have an inner ring while selection rings and dot sizes stay consistent in both themes", async ({

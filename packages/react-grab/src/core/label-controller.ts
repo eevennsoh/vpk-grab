@@ -77,13 +77,14 @@ interface LabelController {
   ) => string[];
   updateAfterCopy: (instanceId: string, didSucceed: boolean, errorMessage?: string) => void;
   markRetrying: (instanceId: string) => void;
-  startPromptCopy: (instanceId: string, copiedStatusText: string) => void;
+  startPromptCopy: (instanceId: string, copiedStatusText: string | undefined) => void;
   setCopiedContent: (instanceId: string, copiedContent: string, copiedMetadata?: string) => void;
   setImage: (
     instanceId: string,
     statusText: string,
     imageBlob: Blob,
     shouldKeepPrompt?: boolean,
+    isImageOnlyCopy?: boolean,
   ) => void;
   startScreenshotCapture: (instanceId: string) => AbortSignal;
   failScreenshotCapture: (instanceId: string, errorMessage: string) => void;
@@ -131,7 +132,7 @@ export const createLabelController = (
 ): LabelController => {
   const fadeTimeouts = new Map<string, number>();
   const screenshotCaptureControllers = new Map<string, AbortController>();
-  const copiedStatusTextById = new Map<string, string>();
+  const copiedStatusTextById = new Map<string, string | undefined>();
 
   const abortScreenshotCapture = (instanceId: string) => {
     screenshotCaptureControllers.get(instanceId)?.abort();
@@ -249,10 +250,9 @@ export const createLabelController = (
   const updateAfterCopy = (instanceId: string, didSucceed: boolean, errorMessage?: string) => {
     cancelFade(instanceId);
     if (didSucceed) {
-      const copiedStatusText = copiedStatusTextById.get(instanceId);
-      if (copiedStatusText !== undefined) {
+      if (copiedStatusTextById.has(instanceId)) {
+        store.patchLabelInstance(instanceId, { statusText: copiedStatusTextById.get(instanceId) });
         copiedStatusTextById.delete(instanceId);
-        store.patchLabelInstance(instanceId, { statusText: copiedStatusText });
       }
       store.updateLabelInstance(instanceId, "copied");
       if (!areLabelsShown()) scheduleFadeOut(instanceId);
@@ -268,9 +268,16 @@ export const createLabelController = (
 
   // The status text waits for the copy to land: until then the pill shows the
   // in-progress view, which would read that text in place of its own.
-  const startPromptCopy = (instanceId: string, copiedStatusText: string) => {
+  // A text copy replaces an image in the clipboard, so the image's thumbnail
+  // goes with it.
+  const startPromptCopy = (instanceId: string, copiedStatusText: string | undefined) => {
     copiedStatusTextById.set(instanceId, copiedStatusText);
-    store.patchLabelInstance(instanceId, { promptTarget: undefined });
+    revokeThumbnail(findInstance(instanceId));
+    store.patchLabelInstance(instanceId, {
+      promptTarget: undefined,
+      thumbnailUrl: undefined,
+      isImageOnlyCopy: undefined,
+    });
     markRetrying(instanceId);
   };
 
@@ -283,6 +290,7 @@ export const createLabelController = (
     statusText: string,
     imageBlob: Blob,
     shouldKeepPrompt = false,
+    isImageOnlyCopy = false,
   ) => {
     const instance = findInstance(instanceId);
     if (!instance) return;
@@ -294,6 +302,7 @@ export const createLabelController = (
       isCapturingScreenshot: undefined,
       screenshotErrorMessage: undefined,
       promptTarget: shouldKeepPrompt ? instance.promptTarget : undefined,
+      isImageOnlyCopy: isImageOnlyCopy || undefined,
     });
   };
 

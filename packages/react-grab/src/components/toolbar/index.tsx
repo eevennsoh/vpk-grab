@@ -62,6 +62,7 @@ import {
   isHorizontalEdge,
 } from "../../utils/toolbar-position.js";
 import { createToolbarDrag } from "../../utils/create-toolbar-drag.js";
+import { getClearAnnotationsShortcutLabel } from "../../utils/get-clear-annotations-shortcut-label.js";
 import { accumulateRotationDeg } from "../../utils/accumulate-rotation.js";
 
 interface ToolbarProps {
@@ -81,6 +82,7 @@ interface ToolbarProps {
   isSpecsEnabled?: boolean;
   isRedlinesEnabled?: boolean;
   isAutoScreenshotEnabled?: boolean;
+  isScreenshotMode?: boolean;
   annotationTool?: AnnotationTool;
   annotationColor?: string;
   hasAnnotations?: boolean;
@@ -169,6 +171,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   });
 
   const isVertical = () => !isHorizontalEdge(snapEdge());
+  // Holding Shift turns Grab into the screenshot tool, so the toggle lights up
+  // for as long as it is held, the way Alt lights Spacing.
+  const isScreenshotIconActive = () =>
+    Boolean(props.isAutoScreenshotEnabled || props.isScreenshotMode);
 
   const buttonSpacingClass = () => (isVertical() ? "mb-1.5" : "mr-1.5");
 
@@ -1058,7 +1064,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 actionId={AUTO_SCREENSHOT_ACTION_ID}
                 keepsPageFocus
                 label="Copy a screenshot with every grab"
-                isActive={Boolean(props.isAutoScreenshotEnabled)}
+                isActive={isScreenshotIconActive()}
                 class={actionButtonClass}
                 wrapperClass={actionButtonWrapperClass()}
                 onClick={handleToggleAutoScreenshot}
@@ -1067,8 +1073,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                   <MaterialIcon
                     paths={PHOTO_CAMERA_ICON_PATHS}
                     size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                    isFilled={Boolean(props.isAutoScreenshotEnabled)}
-                    class={actionIconClass(Boolean(props.isAutoScreenshotEnabled))}
+                    isFilled={isScreenshotIconActive()}
+                    class={actionIconClass(isScreenshotIconActive())}
                   />
                 }
                 tooltipVisible={isActionHovered(AUTO_SCREENSHOT_ACTION_ID)}
@@ -1168,6 +1174,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
                 tooltipPosition={tooltipPosition()}
                 tooltip="Clear"
+                tooltipShortcut={getClearAnnotationsShortcutLabel()}
               />
             </ToolbarRevealGroup>
             <ToolbarRevealGroup

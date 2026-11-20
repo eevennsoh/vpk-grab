@@ -87,7 +87,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
     if (props.discardPrompt) return true;
     if (
       isCompletedStatus() &&
-      (props.onDismiss || props.onCopyScreenshot || props.onSubmitPrompt)
+      (props.onDismiss || props.onCopyScreenshot || props.onCopyElement || props.onSubmitPrompt)
     ) {
       return true;
     }
@@ -408,6 +408,7 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
             onDismissPill={props.onDismissPill}
             onFadingChange={setIsInternalFading}
             onCopyScreenshot={props.onCopyScreenshot}
+            onCopyElement={props.onCopyElement}
             onSubmitPrompt={props.onSubmitPrompt}
             shouldFocusPrompt={props.shouldFocusPrompt}
             isGrabActive={props.isGrabActive}

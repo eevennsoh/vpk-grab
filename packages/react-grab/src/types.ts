@@ -429,6 +429,7 @@ export interface SelectionLabelInstance {
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
   promptTarget?: PromptCopyTarget;
+  isImageOnlyCopy?: boolean;
 }
 
 export interface SelectionLabelInstancePatch {
@@ -439,6 +440,7 @@ export interface SelectionLabelInstancePatch {
   isCapturingScreenshot?: boolean;
   screenshotErrorMessage?: string;
   promptTarget?: PromptCopyTarget;
+  isImageOnlyCopy?: boolean;
 }
 
 export interface FrozenLabelEntry {
@@ -487,6 +489,7 @@ export interface ReactGrabRendererProps {
   inputValue?: string;
   isPromptMode?: boolean;
   onCopyScreenshotInstance?: (instanceId: string) => void;
+  onCopyElementInstance?: (instanceId: string) => void;
   onSubmitPromptInstance?: (instanceId: string, prompt: string) => void;
   shouldFocusInstancePrompt?: boolean;
   onInstancePromptFocusRelease?: () => void;
@@ -616,6 +619,7 @@ export interface CompletionViewProps {
   onDismissPill?: (event: MouseEvent) => void;
   onFadingChange?: (isFading: boolean) => void;
   onCopyScreenshot?: () => void;
+  onCopyElement?: () => void;
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
   isGrabActive?: boolean;
@@ -631,6 +635,7 @@ export interface PromptTextareaProps {
   value: string;
   readOnly?: boolean;
   shouldFocusOnMount?: boolean;
+  isSingleLine?: boolean;
   onValueChange?: (value: string) => void;
   onKeyDown: (event: KeyboardEvent) => void;
   onFocus?: () => void;
@@ -642,6 +647,7 @@ export interface PillPromptProps {
   isGrabActive?: boolean;
   onSubmit: (prompt: string) => void;
   onFocusRelease?: () => void;
+  textareaRef?: (element: HTMLTextAreaElement) => void;
 }
 
 export interface SelectionLabelProps {
@@ -668,6 +674,7 @@ export interface SelectionLabelProps {
   onAcknowledgeError?: () => void;
   onRetry?: () => void;
   onCopyScreenshot?: () => void;
+  onCopyElement?: () => void;
   onHoverChange?: (isHovered: boolean) => void;
   hideArrow?: boolean;
   sizeText?: string;
@@ -865,6 +872,7 @@ export interface InspectRendererState {
   isSpecsEnabled: Accessor<boolean>;
   isRedlinesEnabled: Accessor<boolean>;
   isAutoScreenshotEnabled: Accessor<boolean>;
+  isScreenshotMode: Accessor<boolean>;
   annotationTool: Accessor<AnnotationTool>;
   element: Accessor<Element | null>;
   measureTarget: Accessor<Element | null>;

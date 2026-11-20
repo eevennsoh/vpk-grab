@@ -586,12 +586,18 @@ test.describe("Shift Multi-Select", () => {
     await reactGrab.page.waitForTimeout(100);
     await reactGrab.page.keyboard.up("Shift");
 
+    // The committed multi-selection holds its pill until it is dismissed.
+    const completion = reactGrab.getOverlayHost().locator("[data-react-grab-completion]");
+    await expect(completion).toHaveCount(2);
+    await reactGrab.page.keyboard.press("Escape");
+    await expect(completion).toHaveCount(0);
     await reactGrab.page.evaluate(() => navigator.clipboard.writeText("baseline"));
 
     await reactGrab.activate();
     await reactGrab.page.mouse.click(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2);
 
     await expect.poll(() => reactGrab.getClipboardContent()).toContain("TodoItem");
+    await expect(completion).toHaveCount(1);
   });
 
   test("should not commit accumulated selection on right-click during shift selection", async ({

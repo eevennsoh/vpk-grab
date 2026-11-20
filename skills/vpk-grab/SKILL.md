@@ -102,8 +102,13 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
   context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
-  press Enter to copy the same elements with that context. Its camera (Copy
-  image) adds an image. The pill holds the selection until you click elsewhere, click its
+  press Enter to copy the same elements with that context; "Copied prompt"
+  shows briefly, then the field returns empty. The field stays on one line and scrolls
+  sideways, fading at the edge with more text. With Screenshot on, the pill
+  reads "Copied prompt & image". Its camera (Copy image,
+  or Cmd+Enter / Ctrl+Enter) replaces the clipboard with the image alone; the
+  pill then offers Copy element (Grab icon, same shortcut) to put the element
+  text back. The pill holds the selection until you click elsewhere, click its
   Dismiss close button or press Esc. While Grab is on, the first click on the
   page dismisses the pill and the next click grabs an element. Dismissal
   leaves Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
@@ -130,8 +135,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
 - **Screenshot** (toolbar toggle, key 3 with Grab in hand, off by default and
-  remembered): every grab copies its references at once, then the pill's camera
-  runs by itself so the clipboard ends with the references and a PNG. Chromium sites
+  remembered): every grab copies its references at once, then a screenshot is
+  taken by itself so the clipboard ends with the references and a PNG. Chromium sites
   with an existing unsanitized clipboard write grant also keep the metadata
   with the PNG. The fork’s watcher records each grab once whichever copy it sees
   first; on Linux, or with a text-only reader, a poll that sees only an image
@@ -148,13 +153,15 @@ example, in `<head>` before the app's own scripts, on development pages only.
   shows the distances between the two. Letting go restores the toggle.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
-  square. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
+  square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
   Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
   on either toolbar orientation; the tooltips show the arrows along the toolbar.
-  In a hold session the modifier with an arrow still navigates. With a drawing
-  tool or Move in hand, 1 picks Pen, 2 picks Rectangle and 3 picks Text. **Move**
+  In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only
+  ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
-  annotations together, and v picks it up or puts it down.
+  annotations together, and v picks it up or puts it down. **⌘⌫** (Ctrl+Backspace
+  elsewhere) clears every drawing and note, or just the selection, even after Grab is
+  switched off; ⌘Z undoes it.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
   drawings, notes, moves, removals and style changes.
 

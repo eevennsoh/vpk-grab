@@ -502,14 +502,6 @@ export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
-export const PEN_TOOL_KEY = "1";
-export const RECTANGLE_TOOL_KEY = "2";
-export const TEXT_TOOL_KEY = "3";
-export const DRAWING_TOOL_BY_KEY: Readonly<Record<string, SelectionTool | undefined>> = {
-  [PEN_TOOL_KEY]: "pen",
-  [RECTANGLE_TOOL_KEY]: "rectangle",
-  [TEXT_TOOL_KEY]: "text",
-};
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
@@ -523,6 +515,11 @@ export const TOOL_CYCLE_DIRECTION_BY_KEY: ReadonlyMap<string, ToolCycleDirection
 ]);
 export const TOOL_CYCLE_MODIFIER_LABEL_MAC = "⌘";
 export const TOOL_CYCLE_MODIFIER_LABEL = "Ctrl+";
+export const CLEAR_ANNOTATIONS_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete"]);
+export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL_MAC = "⌘⌫";
+export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL = "Ctrl+Backspace";
+export const PILL_SWAP_COPY_SHORTCUT_LABEL_MAC = "⌘↵";
+export const PILL_SWAP_COPY_SHORTCUT_LABEL = "Ctrl+Enter";
 export const TOOL_CYCLE_HORIZONTAL_ARROW_LABELS: Readonly<Record<ToolCycleDirection, string>> = {
   forward: "→",
   backward: "←",
@@ -567,11 +564,19 @@ export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
 export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
 export const SCREENSHOT_SELECTION_PADDING_PX = 8;
-export const PROMPT_COPIED_STATUS_TEXT = "Copied with prompt";
+export const PROMPT_COPIED_STATUS_TEXT = "Copied prompt";
+export const IMAGE_ONLY_COPIED_STATUS_TEXT = "Copied image";
+export const IMAGE_ONLY_SAVED_STATUS_TEXT = "Saved image";
+export const COMBINED_IMAGE_COPIED_STATUS_TEXT = "Copied prompt & image";
+export const COMBINED_IMAGE_SAVED_STATUS_TEXT = "Copied prompt, saved image";
+// How long "Copied prompt" shows before the pill offers a fresh field.
+export const PROMPT_COPIED_FEEDBACK_MS = 1500;
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
 export const COMPLETION_MAX_WIDTH_PX = 280;
-export const COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
+export const COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX = 344;
+export const PROMPT_EDGE_FADE_PX = 12;
+export const PILL_PROMPT_MIN_WIDTH_PX = 48;
 export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
 export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";
