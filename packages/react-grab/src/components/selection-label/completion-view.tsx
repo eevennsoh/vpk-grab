@@ -32,6 +32,8 @@ import { IconCheck } from "../icons/icon-check.jsx";
 import { IconLoader } from "../icons/icon-loader.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
 import { CLOSE_SMALL_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { IconSelect } from "../icons/icon-select.jsx";
+import { getPillSwapCopyShortcutLabel } from "../../utils/get-pill-swap-copy-shortcut-label.js";
 import { Tooltip } from "../tooltip.jsx";
 import { PromptTextarea } from "./prompt-textarea.js";
 
@@ -323,7 +325,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                 />
               )}
             </Show>
-            <Show when={props.onCopyScreenshot || props.onDismissPill}>
+            <Show when={props.onCopyScreenshot || props.onCopyElement || props.onDismissPill}>
               <span
                 data-react-grab-completion-separator
                 aria-hidden="true"
@@ -348,6 +350,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   <CompletionActionButton
                     data-react-grab-copy-screenshot
                     label="Copy image"
+                    tooltipShortcut={getPillSwapCopyShortcutLabel()}
                     tooltipId={tooltipId}
                     activeTooltipLabel={tooltipContent()?.label}
                     onClick={onCopyScreenshot()}
@@ -360,6 +363,21 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                     />
                   </CompletionActionButton>
                 </Show>
+              )}
+            </Show>
+            <Show when={props.onCopyElement}>
+              {(onCopyElement) => (
+                <CompletionActionButton
+                  data-react-grab-copy-element
+                  label="Copy element"
+                  tooltipShortcut={getPillSwapCopyShortcutLabel()}
+                  tooltipId={tooltipId}
+                  activeTooltipLabel={tooltipContent()?.label}
+                  onClick={onCopyElement()}
+                  onTooltipChange={handleTooltipChange}
+                >
+                  <IconSelect size={14} class={ACTION_ICON_CLASS} />
+                </CompletionActionButton>
               )}
             </Show>
             <Show when={props.onDismissPill}>

@@ -34,6 +34,7 @@ const COMPLETION_SELECTOR = "[data-react-grab-completion]";
 const LIVE_LABEL_SELECTOR =
   "[data-react-grab-selection-label]:not([data-react-grab-label-instance])";
 const PILL_PROMPT_SELECTOR = "[data-react-grab-pill-prompt] textarea";
+const SWAP_COPY_SHORTCUT = "swap-copy";
 const CAMERA_BUTTON_SELECTOR = "[data-react-grab-copy-screenshot]";
 const DISMISS_BUTTON_SELECTOR = 'button[aria-label="Dismiss"]';
 const MORE_OPTIONS_SELECTOR = "[data-react-grab-more-options]";
@@ -553,23 +554,27 @@ test.describe("Copied pill prompt", () => {
       await expect.poll(() => isReactGrabActive(page)).toBe(false);
     });
 
-    test("the camera copies the original text and the image", async ({ reactGrab, page }) => {
+    test("the camera copies the image alone and keeps the typed text", async ({
+      reactGrab,
+      page,
+    }) => {
       await installClipboardRecorder(page);
+      const typedText = await getPillPrompt(reactGrab).inputValue();
 
       await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
-      await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+      await expect(getCompletion(reactGrab)).toContainText("Image copied");
       await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
         "Dismiss",
       );
       await expect(
         reactGrab.getOverlayHost().getByRole("button", { name: "More options", exact: true }),
       ).toHaveCount(0);
-      await expect(getPillPrompt(reactGrab)).toHaveCount(0);
+      await expect(getPillPrompt(reactGrab)).toHaveValue(typedText);
       await expect.poll(() => getImageWrites(page)).toHaveLength(1);
       const [imageWrite] = await getImageWrites(page);
-      expect(imageWrite.plainText).toContain("Buy groceries");
-      expect(imageWrite.plainText).not.toContain("ab");
+      expect(imageWrite.types).toEqual(["image/png"]);
+      expect(imageWrite.plainText).toBeNull();
     });
   });
 
@@ -607,18 +612,18 @@ test.describe("Copied pill prompt", () => {
     await expect(getPillPrompt(reactGrab)).toHaveValue("");
   });
 
-  test("the camera after a prompt copies the prompt with the image", async ({
+  test("the camera after a prompt replaces it with the image alone", async ({
     reactGrab,
     page,
   }) => {
     await reactGrab.activate();
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
-    const pillPromptWrites = await submitPillPrompt(reactGrab, page, PROMPT_TEXT);
+    await submitPillPrompt(reactGrab, page, PROMPT_TEXT);
     await installClipboardRecorder(page);
 
     await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
-    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab)).toContainText("Image copied");
     await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
       "Dismiss",
     );
@@ -627,8 +632,26 @@ test.describe("Copied pill prompt", () => {
     ).toHaveCount(0);
     await expect.poll(() => getImageWrites(page)).toHaveLength(1);
     const [imageWrite] = await getImageWrites(page);
-    expect(imageWrite.plainText).toBe(pillPromptWrites["text/plain"]);
-    expect(imageWrite.plainText?.startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
+    expect(imageWrite.types).toEqual(["image/png"]);
+  });
+
+  test("Copied with prompt shows for a moment, then the pill offers a fresh field", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    await submitPillPrompt(reactGrab, page, PROMPT_TEXT);
+    await expect(getCompletion(reactGrab)).toContainText("Copied with prompt");
+    await expect(getPillPrompt(reactGrab)).toHaveCount(0);
+
+    await expect(getCompletion(reactGrab)).not.toContainText("Copied with prompt");
+    await expect(getCompletion(reactGrab)).toContainText("Copied");
+    await expect(getPillPrompt(reactGrab)).toHaveValue("");
+    await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+
+    const secondWrites = await submitPillPrompt(reactGrab, page, "second ask");
+    expect(secondWrites["text/plain"]?.startsWith("second ask\n")).toBe(true);
   });
 
   test("a failed prompt copy keeps the prompt for Retry", async ({ reactGrab, page }) => {
@@ -1168,8 +1191,10 @@ const expectSingleSeparatorBeforeActions = async (reactGrab: ReactGrabPageObject
   });
   const hasCamera = (await completion.locator(CAMERA_BUTTON_SELECTOR).count()) > 0;
   const isCapturing = (await completion.locator(CAPTURING_SELECTOR).count()) > 0;
+  const hasCopyElement = (await completion.locator("[data-react-grab-copy-element]").count()) > 0;
   if (hasCamera) expect(nextSibling).toBe("Copy image");
   else if (isCapturing) expect(nextSibling).toBe("capturing");
+  else if (hasCopyElement) expect(nextSibling).toBe("Copy element");
   else expect(nextSibling).toBe("Dismiss");
 };
 
@@ -1285,7 +1310,7 @@ test.describe("Copied pill chrome", () => {
     heights.capturing = (await measurePill(reactGrab)).height;
 
     await openImageEncodingGate(page);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab)).toContainText("Image copied");
     await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
     await expectSingleSeparatorBeforeActions(reactGrab);
@@ -1342,7 +1367,7 @@ test.describe("Copied pill chrome", () => {
   });
 
   for (const { name, selector, shortcut } of [
-    { name: "Copy image", selector: CAMERA_BUTTON_SELECTOR, shortcut: null },
+    { name: "Copy image", selector: CAMERA_BUTTON_SELECTOR, shortcut: SWAP_COPY_SHORTCUT },
     { name: "Dismiss", selector: DISMISS_BUTTON_SELECTOR, shortcut: "Esc" },
   ]) {
     test(`hovering ${name} shows its tooltip outside the pill without moving it`, async ({
@@ -1358,14 +1383,14 @@ test.describe("Copied pill chrome", () => {
       const tooltip = getPillTooltip(reactGrab);
       await expect(tooltip).toBeVisible();
       await expect(tooltip).toContainText(name);
-      if (shortcut) {
-        await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
-          "data-react-grab-tooltip-shortcut",
-          shortcut,
-        );
-      } else {
-        await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveCount(0);
-      }
+      await expect(tooltip.locator(PILL_TOOLTIP_SHORTCUT_SELECTOR)).toHaveAttribute(
+        "data-react-grab-tooltip-shortcut",
+        shortcut === SWAP_COPY_SHORTCUT
+          ? reactGrab.modifierKey === "Meta"
+            ? "⌘↵"
+            : "Ctrl+Enter"
+          : shortcut,
+      );
       await expect(tooltip).toHaveCSS("pointer-events", "none");
       expect(await measurePill(reactGrab)).toEqual(pillBefore);
       const tooltipBox = await expectTooltipContained(page, tooltip, button);

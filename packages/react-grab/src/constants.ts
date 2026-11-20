@@ -518,6 +518,8 @@ export const TOOL_CYCLE_MODIFIER_LABEL = "Ctrl+";
 export const CLEAR_ANNOTATIONS_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete"]);
 export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL_MAC = "⌘⌫";
 export const CLEAR_ANNOTATIONS_SHORTCUT_LABEL = "Ctrl+Backspace";
+export const PILL_SWAP_COPY_SHORTCUT_LABEL_MAC = "⌘↵";
+export const PILL_SWAP_COPY_SHORTCUT_LABEL = "Ctrl+Enter";
 export const TOOL_CYCLE_HORIZONTAL_ARROW_LABELS: Readonly<Record<ToolCycleDirection, string>> = {
   forward: "→",
   backward: "←",
@@ -563,6 +565,11 @@ export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
 export const SCREENSHOT_SELECTION_PADDING_PX = 8;
 export const PROMPT_COPIED_STATUS_TEXT = "Copied with prompt";
+export const IMAGE_ONLY_COPIED_STATUS_TEXT = "Image copied";
+export const IMAGE_ONLY_SAVED_STATUS_TEXT = "Image saved";
+export const COMBINED_IMAGE_COPIED_STATUS_TEXT = "Copied with image";
+// How long "Copied with prompt" shows before the pill offers a fresh field.
+export const PROMPT_COPIED_FEEDBACK_MS = 1500;
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
 export const COMPLETION_MAX_WIDTH_PX = 280;

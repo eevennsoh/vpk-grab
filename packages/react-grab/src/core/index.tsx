@@ -86,6 +86,10 @@ import {
   SPECS_TOOL_KEY,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
+  PROMPT_COPIED_FEEDBACK_MS,
+  IMAGE_ONLY_COPIED_STATUS_TEXT,
+  IMAGE_ONLY_SAVED_STATUS_TEXT,
+  COMBINED_IMAGE_COPIED_STATUS_TEXT,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -146,6 +150,7 @@ import type {
   ReactGrabAPI,
   ReactGrabState,
   SelectionLabelInstance,
+  PromptCopyTarget,
   ContextMenuActionContext,
   HierarchyState,
   HierarchyEntry,
@@ -176,6 +181,7 @@ import { isEnterCode } from "../utils/is-enter-code.js";
 import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
 import { isClearAnnotationsShortcut } from "../utils/is-clear-annotations-shortcut.js";
+import { isPillSwapCopyShortcut } from "../utils/is-pill-swap-copy-shortcut.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
 import { loadToolbarState, saveToolbarState } from "../components/toolbar/state.js";
 import { createModifierTracker } from "../utils/modifier-tracker.js";
@@ -1087,7 +1093,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
     };
 
-    const handleSubmitPromptInstance = (instanceId: string, prompt: string) => {
+    // The field comes back once the copy lands, so another prompt can follow:
+    // straight away after a plain copy, and after a moment of "Copied with
+    // prompt" feedback after a prompt.
+    const restorePillPrompt = (instanceId: string, promptTarget: PromptCopyTarget) => {
+      const instance = store.labelInstances.find(
+        (labelInstance) => labelInstance.id === instanceId,
+      );
+      if (instance?.status !== "copied" || instance.promptTarget) return;
+      actions.patchLabelInstance(instanceId, {
+        promptTarget,
+        statusText: instance.thumbnailUrl ? COMBINED_IMAGE_COPIED_STATUS_TEXT : undefined,
+      });
+    };
+
+    const recopyLabelElements = (instanceId: string, prompt?: string) => {
       actions.relinkLiveElements();
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
@@ -1099,14 +1119,28 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return;
       }
       labelController.cancelScreenshotCapture(instanceId);
-      labelController.startPromptCopy(instanceId, PROMPT_COPIED_STATUS_TEXT);
+      labelController.startPromptCopy(instanceId, prompt ? PROMPT_COPIED_STATUS_TEXT : undefined);
       runLabeledCopy({
         primaryElement: promptTarget.primaryElement,
         targetElements: promptTarget.elements,
         labelInstanceIds: [instanceId],
         extraPrompt: prompt,
+        onComplete: () => {
+          if (!prompt) {
+            restorePillPrompt(instanceId, promptTarget);
+            return;
+          }
+          window.setTimeout(() => {
+            if (!disposed) restorePillPrompt(instanceId, promptTarget);
+          }, PROMPT_COPIED_FEEDBACK_MS);
+        },
       });
     };
+
+    const handleSubmitPromptInstance = (instanceId: string, prompt: string) =>
+      recopyLabelElements(instanceId, prompt);
+
+    const handleCopyElementInstance = (instanceId: string) => recopyLabelElements(instanceId);
 
     const handleAcknowledgeErrorInstance = (instanceId: string) => {
       retryCopyByInstanceId.get(instanceId)?.siblingIds.delete(instanceId);
@@ -3214,6 +3248,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           dismissCompletedLabelsOnEscape(event);
           return;
         }
+        if (handlePillSwapCopyShortcut(event)) return;
         if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
         // A note being typed owns its keys outright: Enter and Escape end the
         // note (not the session), and Cmd+C copies its text. So does a value
@@ -4309,6 +4344,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         previousInstance.copiedMetadata === instance.copiedMetadata &&
         previousInstance.isCapturingScreenshot === instance.isCapturingScreenshot &&
         previousInstance.screenshotErrorMessage === instance.screenshotErrorMessage &&
+        previousInstance.promptTarget === instance.promptTarget &&
+        previousInstance.isImageOnlyCopy === instance.isImageOnlyCopy &&
         previousInstance.bounds.x === newBounds.x &&
         previousInstance.bounds.y === newBounds.y &&
         previousInstance.bounds.width === newBounds.width &&
@@ -4696,7 +4733,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     // the text copy stays. Any newer clipboard write or the pill's removal
     // cancels the capture, and the pending image then rejects so this write
     // cannot overwrite the newer one.
-    const copyLabelScreenshot = (instanceId: string) => {
+    const copyLabelScreenshot = (instanceId: string, isImageOnly: boolean) => {
       const instance = store.labelInstances.find(
         (labelInstance) => labelInstance.id === instanceId,
       );
@@ -4705,7 +4742,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       if (copiedContent === undefined) return;
       const isAutoScreenshotEnabled = inspect.isAutoScreenshotEnabled();
       const keptStatusText =
-        isAutoScreenshotEnabled && instance.statusText === PROMPT_COPIED_STATUS_TEXT
+        !isImageOnly && isAutoScreenshotEnabled && instance.statusText === PROMPT_COPIED_STATUS_TEXT
           ? instance.statusText
           : undefined;
 
@@ -4724,12 +4761,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         return captureResult;
       });
-      const deliveryPromise = deliverPngBlob(
-        blobPromise,
-        copiedContent,
-        copiedMetadata,
-        screenshotWritePermission?.state,
-      );
+      const deliveryPromise = isImageOnly
+        ? deliverPngBlob(blobPromise)
+        : deliverPngBlob(
+            blobPromise,
+            copiedContent,
+            copiedMetadata,
+            screenshotWritePermission?.state,
+          );
 
       void Promise.allSettled([blobPromise, deliveryPromise]).then(
         ([blobOutcome, deliveryOutcome]) => {
@@ -4742,8 +4781,20 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             labelController.failScreenshotCapture(instanceId, "Couldn't copy image");
             return;
           }
-          const imageStatusText =
-            deliveryOutcome.value === "saved" ? "Copied, image saved" : "Copied with image";
+          const isSaved = deliveryOutcome.value === "saved";
+          if (isImageOnly) {
+            labelController.setImage(
+              instanceId,
+              isSaved ? IMAGE_ONLY_SAVED_STATUS_TEXT : IMAGE_ONLY_COPIED_STATUS_TEXT,
+              blobOutcome.value,
+              true,
+              true,
+            );
+            return;
+          }
+          const imageStatusText = isSaved
+            ? "Copied, image saved"
+            : COMBINED_IMAGE_COPIED_STATUS_TEXT;
           labelController.setImage(
             instanceId,
             keptStatusText ?? imageStatusText,
@@ -4752,6 +4803,21 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           );
         },
       );
+    };
+
+    // The pill's swap shortcut puts the other copy in the clipboard: the image
+    // alone after a text copy, and the element's text back after the image. A
+    // hold session's own modifier is the activation shortcut, not this one.
+    const handlePillSwapCopyShortcut = (event: KeyboardEvent): boolean => {
+      if (!isPillSwapCopyShortcut(event) || isHoldingKeys() || isKeyboardEventComposing(event))
+        return false;
+      const pill = copiedPill();
+      if (!pill || pill.isCapturingScreenshot || pill.copiedContent === undefined) return false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (pill.isImageOnlyCopy) recopyLabelElements(pill.id);
+      else copyLabelScreenshot(pill.id, true);
+      return true;
     };
 
     // One copy, one image: of several pills, the one offering the prompt
@@ -4764,7 +4830,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       );
       const captureInstance =
         copiedInstances.find((labelInstance) => labelInstance.promptTarget) ?? copiedInstances[0];
-      if (captureInstance) copyLabelScreenshot(captureInstance.id);
+      if (captureInstance) copyLabelScreenshot(captureInstance.id, false);
     };
 
     createEffect(() => {
@@ -4819,7 +4885,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
-                onCopyScreenshotInstance={copyLabelScreenshot}
+                onCopyScreenshotInstance={(instanceId) => copyLabelScreenshot(instanceId, true)}
+                onCopyElementInstance={handleCopyElementInstance}
                 onSubmitPromptInstance={handleSubmitPromptInstance}
                 shouldFocusInstancePrompt={
                   !store.isTouchMode && (shouldFocusPromptAfterEnter() || isToggleSession())

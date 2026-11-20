@@ -118,6 +118,18 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                   }
                   return () => props.onCopyScreenshotInstance?.(currentInstance.id);
                 })()}
+                onCopyElement={(() => {
+                  const currentInstance = instance();
+                  if (
+                    currentInstance.status !== "copied" ||
+                    !currentInstance.isImageOnlyCopy ||
+                    !currentInstance.promptTarget ||
+                    !hasLabelCompletionActions(currentInstance)
+                  ) {
+                    return undefined;
+                  }
+                  return () => props.onCopyElementInstance?.(currentInstance.id);
+                })()}
                 onSubmitPrompt={(() => {
                   const currentInstance = instance();
                   if (

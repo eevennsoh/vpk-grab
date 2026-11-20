@@ -102,8 +102,11 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
   context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
-  press Enter to copy the same elements with that context. Its camera (Copy
-  image) adds an image. The pill holds the selection until you click elsewhere, click its
+  press Enter to copy the same elements with that context; "Copied with
+  prompt" shows briefly, then the field returns empty. Its camera (Copy image,
+  or Cmd+Enter / Ctrl+Enter) replaces the clipboard with the image alone; the
+  pill then offers Copy element (Grab icon, same shortcut) to put the element
+  text back. The pill holds the selection until you click elsewhere, click its
   Dismiss close button or press Esc. While Grab is on, the first click on the
   page dismisses the pill and the next click grabs an element. Dismissal
   leaves Grab on if it was on; the next Esc leaves Grab. While Grab is on, an open
@@ -130,8 +133,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
   container edges, with its size in the name tag.
 - **Screenshot** (toolbar toggle, key 3 with Grab in hand, off by default and
-  remembered): every grab copies its references at once, then the pill's camera
-  runs by itself so the clipboard ends with the references and a PNG. Chromium sites
+  remembered): every grab copies its references at once, then a screenshot is
+  taken by itself so the clipboard ends with the references and a PNG. Chromium sites
   with an existing unsanitized clipboard write grant also keep the metadata
   with the PNG. The fork’s watcher records each grab once whichever copy it sees
   first; on Linux, or with a text-only reader, a poll that sees only an image
