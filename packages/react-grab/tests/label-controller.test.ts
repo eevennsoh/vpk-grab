@@ -252,7 +252,7 @@ describe("createLabelController", () => {
     );
     const instanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied");
     controller.startScreenshotCapture(instanceId);
-    controller.setImage(instanceId, "Copied with image", new Blob(), true);
+    controller.setImage(instanceId, "Copied prompt & image", new Blob(), true);
     expect(labelInstances[0]?.thumbnailUrl).toBe("blob:first");
 
     controller.startScreenshotCapture(instanceId);
@@ -287,8 +287,8 @@ describe("createLabelController", () => {
     });
     expect(labelInstances[0]?.statusText).toBe("Capturing…");
 
-    controller.setImage(instanceId, "Image copied", imageBlob);
-    controller.setImage(instanceId, "Image copied", imageBlob);
+    controller.setImage(instanceId, "Copied image", imageBlob);
+    controller.setImage(instanceId, "Copied image", imageBlob);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:1");
     expect(labelInstances[0]?.thumbnailUrl).toBe("blob:2");
 
@@ -299,7 +299,7 @@ describe("createLabelController", () => {
     expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:2");
 
     const clearedInstanceId = controller.createInstance(LABEL_BOUNDS, "", undefined, "copying");
-    controller.setImage(clearedInstanceId, "Image saved", imageBlob);
+    controller.setImage(clearedInstanceId, "Saved image", imageBlob);
     controller.clearAll();
     expect(revokeObjectURL).toHaveBeenLastCalledWith("blob:3");
   });
@@ -316,7 +316,7 @@ describe("createLabelController", () => {
     const instanceId = controller.createInstance(LABEL_BOUNDS, "", undefined, "copying");
     controller.clearAll();
 
-    controller.setImage(instanceId, "Image copied", new Blob());
+    controller.setImage(instanceId, "Copied image", new Blob());
 
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(labelInstances).toHaveLength(0);
@@ -371,7 +371,7 @@ describe("createLabelController", () => {
       () => areLabelsShown,
     );
     const instanceId = controller.createInstance(LABEL_BOUNDS, "button", undefined, "copying");
-    controller.setImage(instanceId, "Copied with image", new Blob());
+    controller.setImage(instanceId, "Copied prompt & image", new Blob());
     controller.updateAfterCopy(instanceId, true);
     labelInstances.push(
       { ...labelInstances[0], id: "pending-camera", thumbnailUrl: undefined },
@@ -511,7 +511,7 @@ describe("createLabelController", () => {
     });
     controller.updateAfterCopy(instanceId, true);
 
-    controller.startPromptCopy(instanceId, "Copied with prompt");
+    controller.startPromptCopy(instanceId, "Copied prompt");
     expect(labelInstances[0]).toMatchObject({ status: "copying", statusText: undefined });
     expect(labelInstances[0]?.promptTarget).toBeUndefined();
 
@@ -522,7 +522,7 @@ describe("createLabelController", () => {
     controller.updateAfterCopy(instanceId, true);
     expect(labelInstances[0]).toMatchObject({
       status: "copied",
-      statusText: "Copied with prompt",
+      statusText: "Copied prompt",
     });
   });
 
@@ -533,7 +533,7 @@ describe("createLabelController", () => {
       () => labelInstances,
     );
     const firstInstanceId = controller.createInstance(LABEL_BOUNDS, "a", undefined, "copied");
-    controller.startPromptCopy(firstInstanceId, "Copied with prompt");
+    controller.startPromptCopy(firstInstanceId, "Copied prompt");
     controller.dismissInstance(firstInstanceId);
 
     const nextInstanceId = controller.createInstance(LABEL_BOUNDS, "b", undefined, "copying");
@@ -554,10 +554,10 @@ describe("createLabelController", () => {
       promptTarget: { primaryElement: element, elements: [element] },
     });
 
-    controller.setImage(instanceId, "Copied with image", new Blob());
+    controller.setImage(instanceId, "Copied prompt & image", new Blob());
 
     expect(labelInstances[0]).toMatchObject({
-      statusText: "Copied with image",
+      statusText: "Copied prompt & image",
       thumbnailUrl: "blob:camera",
     });
     expect(labelInstances[0]?.promptTarget).toBeUndefined();
@@ -578,10 +578,10 @@ describe("createLabelController", () => {
     });
     controller.startScreenshotCapture(instanceId);
 
-    controller.setImage(instanceId, "Copied with image", new Blob(), true);
+    controller.setImage(instanceId, "Copied prompt & image", new Blob(), true);
 
     expect(labelInstances[0]).toMatchObject({
-      statusText: "Copied with image",
+      statusText: "Copied prompt & image",
       thumbnailUrl: "blob:automatic",
       promptTarget,
     });

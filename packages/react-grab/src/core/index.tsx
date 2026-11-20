@@ -90,6 +90,7 @@ import {
   IMAGE_ONLY_COPIED_STATUS_TEXT,
   IMAGE_ONLY_SAVED_STATUS_TEXT,
   COMBINED_IMAGE_COPIED_STATUS_TEXT,
+  COMBINED_IMAGE_SAVED_STATUS_TEXT,
   PEN_TOOL_CURSOR,
   GRAB_TOOL_CURSOR,
   TEXT_TOOL_CURSOR,
@@ -2579,7 +2580,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         }
         labelController.setImage(
           labelInstanceId,
-          deliveryOutcome.value === "saved" ? "Image saved" : "Image copied",
+          deliveryOutcome.value === "saved" ? "Saved image" : "Copied image",
           blobOutcome.value,
         );
         return { status: "succeeded" };
@@ -4741,10 +4742,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const { copiedContent, copiedMetadata } = instance;
       if (copiedContent === undefined) return;
       const isAutoScreenshotEnabled = inspect.isAutoScreenshotEnabled();
-      const keptStatusText =
-        !isImageOnly && isAutoScreenshotEnabled && instance.statusText === PROMPT_COPIED_STATUS_TEXT
-          ? instance.statusText
-          : undefined;
 
       labelController.cancelScreenshotCaptures();
       const captureSignal = labelController.startScreenshotCapture(instanceId);
@@ -4792,12 +4789,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             );
             return;
           }
-          const imageStatusText = isSaved
-            ? "Copied, image saved"
-            : COMBINED_IMAGE_COPIED_STATUS_TEXT;
           labelController.setImage(
             instanceId,
-            keptStatusText ?? imageStatusText,
+            isSaved ? COMBINED_IMAGE_SAVED_STATUS_TEXT : COMBINED_IMAGE_COPIED_STATUS_TEXT,
             blobOutcome.value,
             isAutoScreenshotEnabled,
           );

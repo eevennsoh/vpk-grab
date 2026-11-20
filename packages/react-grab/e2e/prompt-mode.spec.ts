@@ -335,7 +335,7 @@ test.describe("Enter copies first", () => {
     await expect
       .poll(() => reactGrab.getClipboardContent())
       .toContain("keep context after release");
-    await expect(page.locator("[data-react-grab-completion]")).toContainText("Copied with prompt");
+    await expect(page.locator("[data-react-grab-completion]")).toContainText("Copied prompt");
     expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
   });
 
@@ -635,7 +635,7 @@ test.describe("Enter and Escape review corrections", () => {
       const clipboard = await readClipboard();
       expect(clipboard["text/plain"]).toContain("review context");
       expect(clipboard["text/plain"]).toContain("Todo List");
-      await expect(page.locator(completionSelector)).toContainText("Copied with prompt");
+      await expect(page.locator(completionSelector)).toContainText("Copied prompt");
       expect(await page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
     });
   }
@@ -1035,7 +1035,7 @@ test.describe("Enter and Escape review corrections", () => {
     await expect.poll(() => page.evaluate(() => window.__REACT_GRAB__?.isActive())).toBe(false);
     await page.keyboard.type("context while off");
     await page.keyboard.press("Enter");
-    await expect(page.locator(completionSelector)).toContainText("Copied with prompt");
+    await expect(page.locator(completionSelector)).toContainText("Copied prompt");
     await expect(page.locator(promptSelector)).toHaveCount(0);
     expect(
       await page.evaluate(() => Boolean(document.activeElement?.shadowRoot?.activeElement)),

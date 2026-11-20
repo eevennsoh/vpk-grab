@@ -41,7 +41,7 @@ for (const automatic of [true, false]) {
     expect(copied[GRAB_CLIPBOARD_TYPE]).toBeTruthy();
     if (!automatic) await page.locator(CAMERA_SELECTOR).click();
     await expect(page.locator(COMPLETION_SELECTOR)).toContainText(
-      automatic ? "Copied with image" : "Image copied",
+      automatic ? "Copied prompt & image" : "Copied image",
     );
     expect(await readPermission()).toBe("prompt");
 
@@ -83,7 +83,7 @@ test("the camera still copies after transient activation expires on a granted or
     }
     button.click();
   }, CLIPBOARD_ACTIVATION_EXPIRY_MS);
-  await expect(page.locator(COMPLETION_SELECTOR)).toContainText("Image copied");
+  await expect(page.locator(COMPLETION_SELECTOR)).toContainText("Copied image");
   const types = await page.evaluate(async () => {
     const [item] = await navigator.clipboard.read();
     return [...item.types];

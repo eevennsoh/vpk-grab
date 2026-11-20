@@ -564,16 +564,18 @@ export const SCREENSHOT_TOOL_CURSOR = createSvgCursor(
 export const SCREENSHOT_SHIFT_RELEASE_GRACE_MS = 120;
 export const SCREENSHOT_MIN_SIZE_PX = 8;
 export const SCREENSHOT_SELECTION_PADDING_PX = 8;
-export const PROMPT_COPIED_STATUS_TEXT = "Copied with prompt";
-export const IMAGE_ONLY_COPIED_STATUS_TEXT = "Image copied";
-export const IMAGE_ONLY_SAVED_STATUS_TEXT = "Image saved";
-export const COMBINED_IMAGE_COPIED_STATUS_TEXT = "Copied with image";
-// How long "Copied with prompt" shows before the pill offers a fresh field.
+export const PROMPT_COPIED_STATUS_TEXT = "Copied prompt";
+export const IMAGE_ONLY_COPIED_STATUS_TEXT = "Copied image";
+export const IMAGE_ONLY_SAVED_STATUS_TEXT = "Saved image";
+export const COMBINED_IMAGE_COPIED_STATUS_TEXT = "Copied prompt & image";
+export const COMBINED_IMAGE_SAVED_STATUS_TEXT = "Copied prompt, saved image";
+// How long "Copied prompt" shows before the pill offers a fresh field.
 export const PROMPT_COPIED_FEEDBACK_MS = 1500;
 export const SCREENSHOT_MAX_EDGE_PX = 2000;
 export const SCREENSHOT_THUMBNAIL_SIZE_PX = 20;
 export const COMPLETION_MAX_WIDTH_PX = 280;
 export const COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
+export const PROMPT_EDGE_FADE_PX = 12;
 export const SCREENSHOT_SIZE_READOUT_OFFSET_PX = 6;
 export const SCREENSHOT_FILE_NAME_PREFIX = "vpk-grab";
 export const SCREENSHOT_FALLBACK_BACKGROUND_COLOR = "#ffffff";

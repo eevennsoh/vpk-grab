@@ -635,6 +635,7 @@ export interface PromptTextareaProps {
   value: string;
   readOnly?: boolean;
   shouldFocusOnMount?: boolean;
+  isSingleLine?: boolean;
   onValueChange?: (value: string) => void;
   onKeyDown: (event: KeyboardEvent) => void;
   onFocus?: () => void;
@@ -646,6 +647,7 @@ export interface PillPromptProps {
   isGrabActive?: boolean;
   onSubmit: (prompt: string) => void;
   onFocusRelease?: () => void;
+  textareaRef?: (element: HTMLTextAreaElement) => void;
 }
 
 export interface SelectionLabelProps {

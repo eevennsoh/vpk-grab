@@ -17,9 +17,7 @@ import {
   FEEDBACK_DURATION_MS,
   FADE_DURATION_MS,
   SCREENSHOT_THUMBNAIL_SIZE_PX,
-  TEXTAREA_MAX_HEIGHT_PX,
 } from "../../constants.js";
-import { autoResizeTextarea } from "../../utils/auto-resize-textarea.js";
 import { createConfirmationKeyboard } from "../../utils/create-confirmation-keyboard.js";
 import { isEnterCode } from "../../utils/is-enter-code.js";
 import { isEventFromOverlay } from "../../utils/is-event-from-overlay.js";
@@ -135,8 +133,9 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
   const handleKeyDown = (event: KeyboardEvent) => {
     if (isKeyboardEventComposing(event)) return;
     event.stopImmediatePropagation();
-    if (isEnterCode(event.code) && !event.shiftKey) {
+    if (isEnterCode(event.code)) {
       event.preventDefault();
+      if (event.shiftKey) return;
       const prompt = promptText().trim();
       if (prompt) props.onSubmit(prompt);
       return;
@@ -144,7 +143,6 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
     if (event.code === "Escape" && promptText()) {
       event.preventDefault();
       setPromptText("");
-      if (textareaRef) autoResizeTextarea(textareaRef, TEXTAREA_MAX_HEIGHT_PX);
       if (props.isGrabActive) releaseFocus();
     }
   };
@@ -152,11 +150,15 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
   return (
     <div data-react-grab-pill-prompt class="flex items-center min-w-0 ml-1.5 py-1.5">
       <PromptTextarea
-        ref={(element) => (textareaRef = element)}
+        ref={(element) => {
+          textareaRef = element;
+          props.textareaRef?.(element);
+        }}
         placeholder="Optional context"
         class="min-w-0"
         value={promptText()}
         shouldFocusOnMount={props.shouldFocus}
+        isSingleLine
         onValueChange={setPromptText}
         onKeyDown={handleKeyDown}
         onFocus={() => (hasFocus = true)}
@@ -168,6 +170,15 @@ const PillPrompt: Component<PillPromptProps> = (props) => {
 
 export const CompletionView: Component<CompletionViewProps> = (props) => {
   let surfaceRef: HTMLDivElement | undefined;
+  let promptTextareaRef: HTMLTextAreaElement | undefined;
+  // A click on the camera or Copy element hands the keyboard back to the
+  // field, so the user can carry on typing context after swapping the copy.
+  const withPromptFocus =
+    (action: (event: MouseEvent) => void) =>
+    (event: MouseEvent): void => {
+      action(event);
+      if (promptTextareaRef?.isConnected) promptTextareaRef.focus({ preventScroll: true });
+    };
   const tooltipId = createUniqueId();
   let fadeTimeoutId: number | undefined;
   let dismissTimeoutId: number | undefined;
@@ -322,6 +333,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   isGrabActive={props.isGrabActive}
                   onSubmit={onSubmitPrompt()}
                   onFocusRelease={props.onPromptFocusRelease}
+                  textareaRef={(element) => (promptTextareaRef = element)}
                 />
               )}
             </Show>
@@ -353,7 +365,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                     tooltipShortcut={getPillSwapCopyShortcutLabel()}
                     tooltipId={tooltipId}
                     activeTooltipLabel={tooltipContent()?.label}
-                    onClick={onCopyScreenshot()}
+                    onClick={withPromptFocus(onCopyScreenshot())}
                     onTooltipChange={handleTooltipChange}
                   >
                     <MaterialIcon
@@ -373,7 +385,7 @@ export const CompletionView: Component<CompletionViewProps> = (props) => {
                   tooltipShortcut={getPillSwapCopyShortcutLabel()}
                   tooltipId={tooltipId}
                   activeTooltipLabel={tooltipContent()?.label}
-                  onClick={onCopyElement()}
+                  onClick={withPromptFocus(onCopyElement())}
                   onTooltipChange={handleTooltipChange}
                 >
                   <IconSelect size={14} class={ACTION_ICON_CLASS} />

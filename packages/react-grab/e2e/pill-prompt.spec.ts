@@ -1,7 +1,11 @@
 // A text copy's Copied pill carries a prompt input: Enter with text copies the
 // same elements again with the prompt, as prompt mode would.
 import type { Locator, Page } from "@playwright/test";
-import { COMPLETION_STATUS_ROW_HEIGHT_PX, VIEWPORT_MARGIN_PX } from "../src/constants.js";
+import {
+  COMPLETION_STATUS_ROW_HEIGHT_PX,
+  COMPLETION_WITH_THUMBNAIL_MAX_WIDTH_PX as PILL_WITH_THUMBNAIL_MAX_WIDTH_PX,
+  VIEWPORT_MARGIN_PX,
+} from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   KEYBOARD_ACTIVATION_SETTLE_DELAY_MS,
@@ -52,7 +56,6 @@ const SHORT_PROMPT_TEXT = "make this a bit wider";
 const PLACEHOLDER_SLACK_PX = 2;
 const SINGLE_LINE_HEIGHT_PX = 16;
 const PILL_MAX_WIDTH_PX = 280;
-const PILL_WITH_THUMBNAIL_MAX_WIDTH_PX = 312;
 const REACT_GRAB_MIME_TYPE = "application/x-react-grab";
 const PROMPT_TEXT = "make this blue";
 const LONG_PROMPT_TEXT = "make this button blue and give it a little more room on both sides";
@@ -114,7 +117,7 @@ const submitPillPrompt = async (reactGrab: ReactGrabPageObject, page: Page, prom
   const waitForClipboardWrites = await reactGrab.captureNextClipboardWrites();
   await page.keyboard.press("Enter");
   const clipboardWrites = await waitForClipboardWrites();
-  await expect(getCompletion(reactGrab).filter({ hasText: "Copied with prompt" })).toHaveCount(1);
+  await expect(getCompletion(reactGrab).filter({ hasText: "Copied prompt" })).toHaveCount(1);
   await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName("Dismiss");
   return clipboardWrites;
 };
@@ -393,7 +396,7 @@ test.describe("Copied pill prompt", () => {
     expect(await isReactGrabActive(page)).toBe(true);
   });
 
-  test("an Image saved pill ends with Dismiss", async ({ reactGrab, page }) => {
+  test("a Saved image pill ends with Dismiss", async ({ reactGrab, page }) => {
     await page.evaluate(() =>
       Object.defineProperty(navigator.clipboard, "write", { configurable: true, value: undefined }),
     );
@@ -405,7 +408,7 @@ test.describe("Copied pill prompt", () => {
     await page.mouse.up();
     await page.keyboard.up("Shift");
 
-    await expect(getCompletion(reactGrab)).toContainText("Image saved");
+    await expect(getCompletion(reactGrab)).toContainText("Saved image");
     await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
       "Dismiss",
     );
@@ -527,11 +530,14 @@ test.describe("Copied pill prompt", () => {
       await expect(getLiveLabels(reactGrab)).toHaveCount(0);
     });
 
-    test("Shift+Enter inserts a newline", async ({ reactGrab, page }) => {
+    test("Shift+Enter keeps the field on one line and copies nothing", async ({
+      reactGrab,
+      page,
+    }) => {
       await page.keyboard.press("Shift+Enter");
       await page.keyboard.type("c");
 
-      await expect(getPillPrompt(reactGrab)).toHaveValue("ab\nc");
+      await expect(getPillPrompt(reactGrab)).toHaveValue("abc");
       await expect(getCompletion(reactGrab)).toHaveText(/^Copied/);
       await expect(getCompletion(reactGrab)).not.toContainText("with prompt");
     });
@@ -563,7 +569,7 @@ test.describe("Copied pill prompt", () => {
 
       await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
-      await expect(getCompletion(reactGrab)).toContainText("Image copied");
+      await expect(getCompletion(reactGrab)).toContainText("Copied image");
       await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
         "Dismiss",
       );
@@ -576,6 +582,46 @@ test.describe("Copied pill prompt", () => {
       expect(imageWrite.types).toEqual(["image/png"]);
       expect(imageWrite.plainText).toBeNull();
     });
+
+    test("clicking the camera, then Copy element, leaves the field focused to keep typing", async ({
+      reactGrab,
+      page,
+    }) => {
+      await installClipboardRecorder(page);
+      const typedText = await getPillPrompt(reactGrab).inputValue();
+
+      await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
+      await expect(getCompletion(reactGrab)).toContainText("Copied image");
+      await expect(getPillPrompt(reactGrab)).toBeFocused();
+      await page.keyboard.type(" more");
+      await expect(getPillPrompt(reactGrab)).toHaveValue(`${typedText} more`);
+
+      await getCompletion(reactGrab).locator("[data-react-grab-copy-element]").click();
+      await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
+      await expect(getPillPrompt(reactGrab)).toBeFocused();
+    });
+  });
+
+  test("a long prompt stays on one line, scrolls sideways and fades the hidden edge", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
+    const prompt = getPillPrompt(reactGrab);
+    const readMask = () => prompt.evaluate((textarea) => getComputedStyle(textarea).maskImage);
+
+    expect(await readMask()).toBe("none");
+    await page.keyboard.type("make this a much longer prompt that will not fit inside the pill");
+    expect((await measurePillPrompt(reactGrab)).textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
+    await expect.poll(() => prompt.evaluate((textarea) => textarea.scrollLeft)).toBeGreaterThan(0);
+    await expect
+      .poll(readMask)
+      .toMatch(/^linear-gradient\(to right, (rgba\(0, 0, 0, 0\)|transparent) 0px/);
+
+    await page.keyboard.press("Home");
+    await expect.poll(() => prompt.evaluate((textarea) => textarea.scrollLeft)).toBe(0);
+    await expect.poll(readMask).toMatch(/^linear-gradient\(to right, (rgb\(0, 0, 0\)|#000) 0px/);
   });
 
   test("typing keeps going while the pointer moves to other elements", async ({
@@ -623,7 +669,7 @@ test.describe("Copied pill prompt", () => {
 
     await getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR).click();
 
-    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await expect(getCompletion(reactGrab)).toContainText("Copied image");
     await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
       "Dismiss",
     );
@@ -635,17 +681,17 @@ test.describe("Copied pill prompt", () => {
     expect(imageWrite.types).toEqual(["image/png"]);
   });
 
-  test("Copied with prompt shows for a moment, then the pill offers a fresh field", async ({
+  test("Copied prompt shows for a moment, then the pill offers a fresh field", async ({
     reactGrab,
     page,
   }) => {
     await reactGrab.activate();
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
     await submitPillPrompt(reactGrab, page, PROMPT_TEXT);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with prompt");
+    await expect(getCompletion(reactGrab)).toContainText("Copied prompt");
     await expect(getPillPrompt(reactGrab)).toHaveCount(0);
 
-    await expect(getCompletion(reactGrab)).not.toContainText("Copied with prompt");
+    await expect(getCompletion(reactGrab)).not.toContainText("Copied prompt");
     await expect(getCompletion(reactGrab)).toContainText("Copied");
     await expect(getPillPrompt(reactGrab)).toHaveValue("");
     await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(1);
@@ -674,7 +720,7 @@ test.describe("Copied pill prompt", () => {
     const clipboardWrites = await waitForClipboardWrites();
 
     expect(clipboardWrites["text/plain"]?.startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with prompt");
+    await expect(getCompletion(reactGrab)).toContainText("Copied prompt");
     await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
       "Dismiss",
     );
@@ -748,7 +794,7 @@ test.describe("Copied pill prompt", () => {
     expect(await reactGrab.getClipboardContent()).toBe(pillPromptWrites["text/plain"]);
   });
 
-  test("a screenshot's Image copied pill has no prompt", async ({ reactGrab, page }) => {
+  test("a screenshot's Copied image pill has no prompt", async ({ reactGrab, page }) => {
     await installClipboardRecorder(page);
     await reactGrab.activate();
     await page.keyboard.down("Shift");
@@ -758,7 +804,7 @@ test.describe("Copied pill prompt", () => {
     await page.mouse.up();
     await page.keyboard.up("Shift");
 
-    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await expect(getCompletion(reactGrab)).toContainText("Copied image");
     await expect(getCompletion(reactGrab).getByRole("button").last()).toHaveAccessibleName(
       "Dismiss",
     );
@@ -786,28 +832,26 @@ test.describe("Copied pill prompt", () => {
     await expectInsideViewport();
   });
 
-  for (const status of ["Copied", "Copied with image"]) {
+  for (const status of ["Copied", "Copied prompt & image"]) {
     test(`the ${status} pill fits a narrow viewport and Dismiss is clickable`, async ({
       reactGrab,
       page,
     }) => {
       await installClipboardRecorder(page);
       await reactGrab.activate();
-      if (status === "Copied with image") await switchOnScreenshotToggle(page);
+      if (status === "Copied prompt & image") await switchOnScreenshotToggle(page);
       await page.setViewportSize(NARROW_PILL_VIEWPORT_PX);
       await addEdgeTarget(page);
       await clickCopy(reactGrab, page, `#${EDGE_TARGET_ID}`);
       const completion = getCompletion(reactGrab);
       await expect(completion).toContainText(status);
       await expect(completion.locator(THUMBNAIL_SELECTOR)).toHaveCount(
-        status === "Copied with image" ? 1 : 0,
+        status === "Copied prompt & image" ? 1 : 0,
       );
       await expectPillWithinMargins(reactGrab);
       await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
       await expectPillWithinMargins(reactGrab);
-      expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
-        SINGLE_LINE_HEIGHT_PX,
-      );
+      expect((await measurePillPrompt(reactGrab)).textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
 
       if (status === "Copied") {
         const camera = completion.locator(CAMERA_BUTTON_SELECTOR);
@@ -1025,16 +1069,16 @@ test.describe("Copied pill prompt", () => {
     });
 
     await page.keyboard.press("Enter");
-    await expect(getCompletion(reactGrab).filter({ hasText: "Copied with prompt" })).toHaveCount(1);
+    await expect(getCompletion(reactGrab).filter({ hasText: "Copied prompt" })).toHaveCount(1);
     await openImageEncodingGate(page);
     await page.waitForTimeout(NO_SECOND_COPY_WAIT_MS);
 
     expect(await getImageWrites(page)).toHaveLength(0);
     expect((await reactGrab.getClipboardContent()).startsWith(`${PROMPT_TEXT}\n`)).toBe(true);
-    await expect(getCompletion(reactGrab)).toHaveText(/^Copied with prompt/);
+    await expect(getCompletion(reactGrab)).toHaveText(/^Copied prompt/);
   });
 
-  test("the empty prompt is as wide as its placeholder and grows before it wraps", async ({
+  test("the empty prompt is as wide as its placeholder and grows, then scrolls on one line", async ({
     reactGrab,
     page,
   }) => {
@@ -1057,7 +1101,7 @@ test.describe("Copied pill prompt", () => {
 
     await page.keyboard.type(` ${LONG_PROMPT_TEXT}`);
     const longPrompt = await measurePillPrompt(reactGrab);
-    expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
+    expect(longPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
     expect(longPrompt.pillWidth).toBeCloseTo(PILL_MAX_WIDTH_PX, 0);
     expect(longPrompt.isStatusTextClipped).toBe(false);
   });
@@ -1070,7 +1114,7 @@ test.describe("Copied pill prompt", () => {
     await reactGrab.activate();
     await switchOnScreenshotToggle(page);
     await clickCopy(reactGrab, page, SECOND_TODO_SELECTOR);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab)).toContainText("Copied prompt & image");
     await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
 
     const emptyPrompt = await measurePillPrompt(reactGrab);
@@ -1082,26 +1126,26 @@ test.describe("Copied pill prompt", () => {
     await getPillPrompt(reactGrab).click();
     await page.keyboard.type(LONG_PROMPT_TEXT);
     const longPrompt = await measurePillPrompt(reactGrab);
-    expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
+    expect(longPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
     expect(longPrompt.pillWidth).toBeCloseTo(PILL_WITH_THUMBNAIL_MAX_WIDTH_PX, 0);
     expect(longPrompt.isStatusTextClipped).toBe(false);
   });
 
   for (const { status, fontFamily } of [
     { status: "Copied" },
-    { status: "Copied with image" },
-    { status: "Copied, image saved" },
-    { status: "Copied, image saved", fontFamily: "monospace" },
+    { status: "Copied prompt & image" },
+    { status: "Copied prompt, saved image" },
+    { status: "Copied prompt, saved image", fontFamily: "monospace" },
   ]) {
     test(`the ${status} pill at the right edge keeps the whole placeholder inside the viewport${fontFamily ? ` with ${fontFamily}` : ""}`, async ({
       reactGrab,
       page,
     }) => {
-      if (status === "Copied, image saved") {
+      if (status === "Copied prompt, saved image") {
         await page.evaluate(() => {
           Object.defineProperty(navigator.clipboard, "write", { value: undefined });
         });
-      } else if (status === "Copied with image") {
+      } else if (status === "Copied prompt & image") {
         await installClipboardRecorder(page);
       }
       await addEdgeTarget(page);
@@ -1133,7 +1177,7 @@ test.describe("Copied pill prompt", () => {
         status === "Copied" ? PILL_MAX_WIDTH_PX : PILL_WITH_THUMBNAIL_MAX_WIDTH_PX,
         0,
       );
-      expect(longPrompt.textareaHeight).toBeGreaterThan(SINGLE_LINE_HEIGHT_PX);
+      expect(longPrompt.textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
       expect(longPrompt.isStatusTextClipped).toBe(false);
       await expectPillWithinMargins(reactGrab);
     });
@@ -1217,12 +1261,12 @@ const TOOLTIP_PLACEMENT_CASES: TooltipPlacementCase[] = [
     viewport: SHORT_TOOLTIP_VIEWPORT_PX,
   },
   {
-    name: "with a wrapped context field",
+    name: "with a long context field",
     targetStyle: { top: "300px", left: "200px" },
     isWrapped: true,
   },
   {
-    name: "with a wrapped context field filling a very short viewport",
+    name: "with a long context field filling a very short viewport",
     targetStyle: { top: "0px", left: "200px", height: "8px" },
     viewport: CRAMPED_TOOLTIP_VIEWPORT_PX,
     isWrapped: true,
@@ -1310,7 +1354,7 @@ test.describe("Copied pill chrome", () => {
     heights.capturing = (await measurePill(reactGrab)).height;
 
     await openImageEncodingGate(page);
-    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await expect(getCompletion(reactGrab)).toContainText("Copied image");
     await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
     await expect(getCompletion(reactGrab).locator(CAMERA_BUTTON_SELECTOR)).toHaveCount(0);
     await expectSingleSeparatorBeforeActions(reactGrab);
@@ -1326,7 +1370,7 @@ test.describe("Copied pill chrome", () => {
     await getCompletion(reactGrab).locator(DISMISS_BUTTON_SELECTOR).click();
     await expect(getCompletion(reactGrab)).toHaveCount(0);
     await shiftDragScreenshot(page);
-    await expect(getCompletion(reactGrab)).toContainText("Image copied");
+    await expect(getCompletion(reactGrab)).toContainText("Copied image");
     await expectSingleSeparatorBeforeActions(reactGrab);
     heights.imageCopied = (await measurePill(reactGrab)).height;
 
@@ -1345,7 +1389,7 @@ test.describe("Copied pill chrome", () => {
 
     await openImageEncodingGate(page);
     await expect(getCompletion(reactGrab).locator(THUMBNAIL_SELECTOR)).toHaveCount(1);
-    await expect(getCompletion(reactGrab)).toContainText("Copied with image");
+    await expect(getCompletion(reactGrab)).toContainText("Copied prompt & image");
     await expectSingleSeparatorBeforeActions(reactGrab);
     const withImage = await measurePill(reactGrab);
     expect(withImage.height).toBe(beforeImage.height);
@@ -1355,13 +1399,13 @@ test.describe("Copied pill chrome", () => {
     expect((await measurePill(reactGrab)).height).toBe(beforeImage.height);
   });
 
-  test("a Copied, image saved pill has the same height", async ({ reactGrab, page }) => {
+  test("a Copied prompt, saved image pill has the same height", async ({ reactGrab, page }) => {
     await page.evaluate(() => {
       Object.defineProperty(navigator.clipboard, "write", { value: undefined });
     });
     await switchOnScreenshotToggle(page);
     await clickCopy(reactGrab, page, FIRST_TODO_SELECTOR);
-    await expect(getCompletion(reactGrab)).toContainText("Copied, image saved");
+    await expect(getCompletion(reactGrab)).toContainText("Copied prompt, saved image");
     await expectSingleSeparatorBeforeActions(reactGrab);
     expect((await measurePill(reactGrab)).height).toBe(COMPLETION_STATUS_ROW_HEIGHT_PX);
   });
@@ -1421,9 +1465,7 @@ test.describe("Copied pill chrome", () => {
       const completion = getCompletion(reactGrab);
       if (placement.isWrapped) {
         await getPillPrompt(reactGrab).fill(LONG_PROMPT_TEXT);
-        expect((await measurePillPrompt(reactGrab)).textareaHeight).toBeGreaterThan(
-          SINGLE_LINE_HEIGHT_PX,
-        );
+        expect((await measurePillPrompt(reactGrab)).textareaHeight).toBe(SINGLE_LINE_HEIGHT_PX);
       }
       if (placement.hasScreenshotError) {
         await installClipboardRecorder(page, { shouldReject: true });

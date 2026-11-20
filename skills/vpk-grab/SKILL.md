@@ -102,8 +102,10 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold ⌘C / Ctrl+C** over an element: activate. Click to copy it. Esc clears
   context or dismisses the pill before leaving.
 - The **Copied** pill’s **Optional context** field adds a follow-up: type, then
-  press Enter to copy the same elements with that context; "Copied with
-  prompt" shows briefly, then the field returns empty. Its camera (Copy image,
+  press Enter to copy the same elements with that context; "Copied prompt"
+  shows briefly, then the field returns empty. The field stays on one line and scrolls
+  sideways, fading at the edge with more text. With Screenshot on, the pill
+  reads "Copied prompt & image". Its camera (Copy image,
   or Cmd+Enter / Ctrl+Enter) replaces the clipboard with the image alone; the
   pill then offers Copy element (Grab icon, same shortcut) to put the element
   text back. The pill holds the selection until you click elsewhere, click its
