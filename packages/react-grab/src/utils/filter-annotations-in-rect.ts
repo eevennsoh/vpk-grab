@@ -1,7 +1,8 @@
-import { ANNOTATION_STROKE_WIDTH_PX, ANNOTATION_TEXT_LINE_HEIGHT_PX } from "../constants.js";
+import { ANNOTATION_STROKE_WIDTH_PX } from "../constants.js";
 import type { AnnotationSnapshotForCapture, AnnotationText, Rect } from "../types.js";
-import { getAnnotationStrokeBounds } from "./get-annotation-stroke-bounds.js";
-import { getAnnotationTextLines } from "./get-annotation-text-lines.js";
+import { getAnnotationStrokeFrame } from "./get-annotation-stroke-frame.js";
+import { getAnnotationTextFrame } from "./get-annotation-text-frame.js";
+import { getRotatedBounds } from "./get-rotated-bounds.js";
 import { isRectOverlapping } from "./is-rect-overlapping.js";
 
 export const filterAnnotationsInRect = (
@@ -9,21 +10,17 @@ export const filterAnnotationsInRect = (
   pageRect: Rect,
   measureTextWidth: (annotationText: AnnotationText) => number,
 ): AnnotationSnapshotForCapture => ({
-  strokes: annotations.strokes.filter((stroke) => {
-    const strokeBounds = getAnnotationStrokeBounds(stroke.points, ANNOTATION_STROKE_WIDTH_PX);
-    return strokeBounds !== null && isRectOverlapping(strokeBounds, pageRect);
-  }),
+  strokes: annotations.strokes.filter(
+    (stroke) =>
+      stroke.points.length > 0 &&
+      isRectOverlapping(
+        getRotatedBounds(getAnnotationStrokeFrame(stroke), ANNOTATION_STROKE_WIDTH_PX),
+        pageRect,
+      ),
+  ),
   texts: annotations.texts.filter((annotationText) =>
     isRectOverlapping(
-      {
-        left: annotationText.x,
-        top: annotationText.y - ANNOTATION_TEXT_LINE_HEIGHT_PX / 2,
-        right: annotationText.x + measureTextWidth(annotationText),
-        bottom:
-          annotationText.y +
-          getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX -
-          ANNOTATION_TEXT_LINE_HEIGHT_PX / 2,
-      },
+      getRotatedBounds(getAnnotationTextFrame(annotationText, measureTextWidth(annotationText)), 0),
       pageRect,
     ),
   ),

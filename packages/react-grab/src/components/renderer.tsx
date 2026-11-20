@@ -70,7 +70,11 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             textDraftPosition={inspect().textDraftPosition()}
             annotationColor={inspect().annotationColor()}
             isEditing={inspect().annotationTool() === "edit"}
-            isEditPressing={inspect().isEditPressing()}
+            editCursor={inspect().annotationEditCursor()}
+            isTransforming={inspect().isTransformingAnnotations()}
+            selectionFrame={inspect().annotationSelectionFrame()}
+            selectedAnnotationFrames={inspect().selectedAnnotationFrames()}
+            transformLabel={inspect().annotationTransformLabel()}
             selectedAnnotationIds={inspect().selectedAnnotationIds()}
             marqueeRect={inspect().annotationMarqueeRect()}
             onTextDraftChange={inspect().onTextDraftChange}

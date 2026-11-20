@@ -79,8 +79,6 @@ import { isHorizontallyGrabbable } from "../utils/is-horizontally-grabbable.js";
 import {
   ANNOTATION_ID_ATTRIBUTE,
   ANNOTATION_INPUT_ATTRIBUTE,
-  MOVE_TOOL_CURSOR,
-  MOVE_TOOL_PRESSED_CURSOR,
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
@@ -468,7 +466,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         case "text":
           return TEXT_TOOL_CURSOR;
         case "edit":
-          return inspect.isEditPressing() ? MOVE_TOOL_PRESSED_CURSOR : MOVE_TOOL_CURSOR;
+          return inspect.editCursor();
         default: {
           const unhandledTool: never = tool;
           return unhandledTool;
@@ -1987,7 +1985,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             isCopying(),
             isPromptMode(),
             inspect.annotationTool(),
-            inspect.isEditPressing(),
+            inspect.editCursor(),
             isScreenshotMode(),
           ] as const,
         ([activated, copying, promptMode, annotationTool, , screenshotMode]) => {
@@ -3239,6 +3237,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
         if (dismissPopoverOnEscape(event)) return;
+        // Escape calls off a resize or rotate mid-drag and keeps the session.
+        if (event.key === "Escape" && inspect.isTransforming()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          inspect.cancelPointerGesture();
+          return;
+        }
         if (
           event.code === "Escape" &&
           !isActivated() &&
@@ -4236,7 +4241,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       hasAnnotations: inspect.hasAnnotations,
       selectedAnnotationIds: inspect.selectedAnnotationIds,
       annotationMarqueeRect: inspect.marqueeRect,
-      isEditPressing: inspect.isEditPressing,
+      annotationEditCursor: inspect.editCursor,
+      isTransformingAnnotations: inspect.isTransforming,
+      annotationSelectionFrame: inspect.selectionFrame,
+      selectedAnnotationFrames: inspect.selectedAnnotationFrames,
+      annotationTransformLabel: inspect.transformLabel,
       isSpecsPinned: () => inspect.pinnedSpecsElement() !== null,
       isSpecsPinLocked: inspect.isSpecsPinLocked,
       styleOverridesVersion: inspect.styleOverridesVersion,

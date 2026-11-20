@@ -5,27 +5,53 @@ import {
   ANNOTATION_MIN_SAMPLE_DISTANCE_PX,
   ANNOTATION_MIN_STROKE_LENGTH_PX,
   ANNOTATION_RECTANGLE_POINT_COUNT,
+  ANNOTATION_RESIZE_HANDLE_ATTRIBUTE,
+  ANNOTATION_ROTATE_HANDLE_ATTRIBUTE,
+  ANNOTATION_ROTATE_SNAP_DEG,
+  ANNOTATION_TRANSFORM_HANDLES,
+  ANNOTATION_TRANSFORM_LABEL_OFFSET_PX,
+  ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX,
   EDIT_HISTORY_MAX_ENTRIES,
   ELEMENT_DETECTION_THROTTLE_MS,
+  MOVE_TOOL_CURSOR,
+  MOVE_TOOL_PRESSED_CURSOR,
 } from "../constants.js";
 import type {
+  AnnotationFrame,
+  AnnotationFrameTransform,
   AnnotationPoint,
+  AnnotationSelectionFrame,
   AnnotationSnapshot,
   AnnotationStroke,
   AnnotationText,
   AnnotationTool,
+  AnnotationTransformHandle,
+  AnnotationTransformKind,
+  AnnotationTransformLabel,
   EditHistoryEntry,
   Position,
   Rect,
   StyleChangeRunner,
 } from "../types.js";
+import { applyFrameResize } from "../utils/apply-frame-resize.js";
 import { areStyleOverrideSnapshotsEqual } from "../utils/are-style-override-snapshots-equal.js";
 import { createEditHistory } from "../utils/create-edit-history.js";
 import { createRectFromCorners } from "../utils/create-rect-from-corners.js";
 import { generateId } from "../utils/generate-id.js";
+import { getAnnotationSelectionFrame } from "../utils/get-annotation-selection-frame.js";
+import { getAnnotationStrokeFrame } from "../utils/get-annotation-stroke-frame.js";
+import { getAnnotationTextFrame } from "../utils/get-annotation-text-frame.js";
+import { getResizeCursor } from "../utils/get-resize-cursor.js";
+import { getRotateCursor } from "../utils/get-rotate-cursor.js";
+import { getSign } from "../utils/get-sign.js";
 import { getNextInkWeight, INK_NEUTRAL_WEIGHT } from "../utils/ink-path.js";
 import { loadInspectSettings, saveInspectSettings } from "../utils/inspect-settings.js";
 import { isRectOverlapping } from "../utils/is-rect-overlapping.js";
+import { measureAnnotationTextWidth } from "../utils/measure-annotation-text-width.js";
+import { normalizeAngle } from "../utils/normalize-angle.js";
+import { resolveHeldModifier } from "../utils/resolve-held-modifier.js";
+import { transformAnnotationStroke } from "../utils/transform-annotation-stroke.js";
+import { transformAnnotationText } from "../utils/transform-annotation-text.js";
 import { updateRectanglePoints } from "../utils/update-rectangle-points.js";
 import { snapStraightLineEnd } from "../utils/snap-straight-line-end.js";
 import { getAllStyleOverrides, restoreStyleOverrides } from "../utils/style-override-store.js";
@@ -57,6 +83,41 @@ interface ActiveMove {
   didMove: boolean;
 }
 
+interface TransformPointer {
+  pageX: number;
+  pageY: number;
+  isShiftHeldInEvent: boolean;
+  isAltHeldInEvent: boolean;
+  wasShiftTrackedAtEvent: boolean;
+  wasAltTrackedAtEvent: boolean;
+}
+
+interface ActiveTransform {
+  pointerId: number;
+  kind: AnnotationTransformKind;
+  handle: AnnotationTransformHandle;
+  startFrame: AnnotationFrame;
+  isUniformOnly: boolean;
+  pressPoint: Position;
+  startSnapshot: AnnotationSnapshot;
+  transformedIds: Set<string>;
+  didTransform: boolean;
+  pointer: TransformPointer;
+  frameTransform: AnnotationFrameTransform;
+}
+
+interface PressedTransformHandle {
+  kind: AnnotationTransformKind;
+  handle: AnnotationTransformHandle;
+}
+
+interface TransformPreview {
+  strokes: AnnotationStroke[];
+  texts: AnnotationText[];
+  frame: AnnotationFrame;
+  label: AnnotationTransformLabel;
+}
+
 interface AnnotationHitBox {
   annotationId: string;
   pageRect: Rect;
@@ -70,6 +131,11 @@ interface ActiveMarquee {
 }
 
 const DRAFT_STROKE_ID = "draft";
+const DEGREES_TO_RADIANS = Math.PI / 180;
+const ROTATE_SNAP_RAD = ANNOTATION_ROTATE_SNAP_DEG * DEGREES_TO_RADIANS;
+const CORNER_HANDLES = ANNOTATION_TRANSFORM_HANDLES.filter(
+  (handle) => handle.directionX !== 0 && handle.directionY !== 0,
+);
 
 // Annotations live in page coordinates so they stay on what they point at
 // while the page scrolls.
@@ -89,8 +155,32 @@ const getPressedAnnotationId = (event: PointerEvent): string | null => {
   return null;
 };
 
+const getPressedTransformHandle = (event: PointerEvent): PressedTransformHandle | null => {
+  for (const target of event.composedPath()) {
+    if (!(target instanceof Element)) continue;
+    const resizeHandleName = target.getAttribute(ANNOTATION_RESIZE_HANDLE_ATTRIBUTE);
+    const rotateHandleName = target.getAttribute(ANNOTATION_ROTATE_HANDLE_ATTRIBUTE);
+    const handleName = resizeHandleName ?? rotateHandleName;
+    if (!handleName) continue;
+    const handle = ANNOTATION_TRANSFORM_HANDLES.find(
+      (transformHandle) => transformHandle.name === handleName,
+    );
+    if (handle) return { kind: resizeHandleName ? "resize" : "rotate", handle };
+  }
+  return null;
+};
+
+const formatTransformSize = (widthPx: number, heightPx: number): string =>
+  `${Math.round(widthPx)} × ${Math.round(heightPx)}`;
+
+const formatTransformAngle = (angle: number): string => {
+  const degrees = Math.round(normalizeAngle(angle) / DEGREES_TO_RADIANS);
+  return `${degrees === -180 ? 180 : degrees}°`;
+};
+
 // Measured once when the marquee starts: nothing moves while it is drawn, and
-// the browser's own boxes cover notes, whose width depends on the font.
+// the browser's own boxes cover notes, whose width depends on the font, and
+// every shape's turn and scale.
 const measureAnnotationHitBoxes = (elements: Iterable<Element>): AnnotationHitBox[] => {
   const hitBoxes: AnnotationHitBox[] = [];
   for (const element of elements) {
@@ -131,8 +221,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
   );
   const [annotationColor, setAnnotationColor] = createSignal(initialSettings.annotationColor);
   const [annotationTool, setAnnotationTool] = createSignal<AnnotationTool>("grab");
-  const [strokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
-  const [texts, setTexts] = createSignal<AnnotationText[]>([]);
+  const [committedStrokes, setStrokes] = createSignal<AnnotationStroke[]>([]);
+  const [committedTexts, setTexts] = createSignal<AnnotationText[]>([]);
+  const [transformPointer, setTransformPointer] = createSignal<TransformPointer | null>(null, {
+    equals: false,
+  });
   const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([], { equals: false });
   const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
@@ -151,6 +244,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   let activeDrawing: ActiveDrawing | null = null;
   let activeMove: ActiveMove | null = null;
   let activeMarquee: ActiveMarquee | null = null;
+  let activeTransform: ActiveTransform | null = null;
   let textDraftValue = "";
 
   const draftStroke = createMemo(
@@ -169,6 +263,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
             isStraight: true,
             isRectangle: false,
             color: annotationColor(),
+            rotation: 0,
           }
         : {
             id: DRAFT_STROKE_ID,
@@ -176,11 +271,167 @@ export const createInspectController = (options: InspectControllerOptions) => {
             isStraight: false,
             isRectangle: false,
             color: annotationColor(),
+            rotation: 0,
           };
     },
     undefined,
     { equals: false },
   );
+
+  // While a resize or rotate is dragged, what shows is derived from where the
+  // annotations started and where the pointer and modifiers are now, so Shift
+  // or Alt pressed mid-drag takes effect at once, and Escape only has to stop
+  // deriving to put everything back.
+  const transformPreview = createMemo((): TransformPreview | null => {
+    const pointer = transformPointer();
+    const transform = activeTransform;
+    if (!pointer || !transform || !transform.didTransform) return null;
+    const isShiftHeld = resolveHeldModifier(
+      options.isShiftKeyHeld(),
+      pointer.wasShiftTrackedAtEvent,
+      pointer.isShiftHeldInEvent,
+    );
+    const isAltHeld = resolveHeldModifier(
+      options.isAltKeyHeld(),
+      pointer.wasAltTrackedAtEvent,
+      pointer.isAltHeldInEvent,
+    );
+    const { startFrame, frameTransform } = transform;
+    let labelText: string;
+    if (transform.kind === "resize") {
+      applyFrameResize(
+        startFrame,
+        transform.handle.directionX,
+        transform.handle.directionY,
+        pointer.pageX - transform.pressPoint.x,
+        pointer.pageY - transform.pressPoint.y,
+        isShiftHeld || transform.isUniformOnly,
+        isAltHeld,
+        frameTransform,
+      );
+      labelText = formatTransformSize(
+        startFrame.width * Math.abs(frameTransform.scaleX),
+        startFrame.height * Math.abs(frameTransform.scaleY),
+      );
+    } else {
+      const pressAngle = Math.atan2(
+        transform.pressPoint.y - startFrame.centerY,
+        transform.pressPoint.x - startFrame.centerX,
+      );
+      const pointerAngle = Math.atan2(
+        pointer.pageY - startFrame.centerY,
+        pointer.pageX - startFrame.centerX,
+      );
+      const freeRotation = startFrame.rotation + normalizeAngle(pointerAngle - pressAngle);
+      const frameRotation = isShiftHeld
+        ? Math.round(freeRotation / ROTATE_SNAP_RAD) * ROTATE_SNAP_RAD
+        : freeRotation;
+      frameTransform.originX = startFrame.centerX;
+      frameTransform.originY = startFrame.centerY;
+      frameTransform.targetX = startFrame.centerX;
+      frameTransform.targetY = startFrame.centerY;
+      frameTransform.rotation = startFrame.rotation;
+      frameTransform.scaleX = 1;
+      frameTransform.scaleY = 1;
+      frameTransform.angle = frameRotation - startFrame.rotation;
+      labelText = formatTransformAngle(frameRotation);
+    }
+    const { transformedIds, startSnapshot } = transform;
+    return {
+      strokes: startSnapshot.strokes.map((stroke) =>
+        transformedIds.has(stroke.id) ? transformAnnotationStroke(stroke, frameTransform) : stroke,
+      ),
+      texts: startSnapshot.texts.map((annotationText) =>
+        transformedIds.has(annotationText.id)
+          ? transformAnnotationText(
+              annotationText,
+              measureAnnotationTextWidth(annotationText),
+              frameTransform,
+            )
+          : annotationText,
+      ),
+      frame: {
+        centerX: frameTransform.targetX,
+        centerY: frameTransform.targetY,
+        width: startFrame.width * Math.abs(frameTransform.scaleX),
+        height: startFrame.height * Math.abs(frameTransform.scaleY),
+        rotation: normalizeAngle(frameTransform.rotation + frameTransform.angle),
+      },
+      label: {
+        text: labelText,
+        pageX: pointer.pageX + ANNOTATION_TRANSFORM_LABEL_OFFSET_PX,
+        pageY: pointer.pageY + ANNOTATION_TRANSFORM_LABEL_OFFSET_PX,
+      },
+    };
+  });
+
+  const strokes = createMemo(() => transformPreview()?.strokes ?? committedStrokes());
+  const texts = createMemo(() => transformPreview()?.texts ?? committedTexts());
+  const isTransforming = () => transformPointer() !== null;
+
+  const selectedAnnotationFrames = createMemo((): AnnotationFrame[] => {
+    const selectedIds = new Set(selectedAnnotationIds());
+    if (selectedIds.size === 0) return [];
+    const frames: AnnotationFrame[] = [];
+    for (const stroke of strokes()) {
+      if (selectedIds.has(stroke.id)) frames.push(getAnnotationStrokeFrame(stroke));
+    }
+    for (const annotationText of texts()) {
+      if (selectedIds.has(annotationText.id)) {
+        frames.push(
+          getAnnotationTextFrame(annotationText, measureAnnotationTextWidth(annotationText)),
+        );
+      }
+    }
+    return frames;
+  });
+
+  const isSelectionTextOnly = createMemo(() => {
+    const selectedIds = new Set(selectedAnnotationIds());
+    return selectedIds.size > 0 && !strokes().some((stroke) => selectedIds.has(stroke.id));
+  });
+
+  // Edge handles are left off an axis with nothing to stretch (a straight
+  // line's height) and off notes, which only scale evenly from a corner.
+  const selectionFrame = createMemo((): AnnotationSelectionFrame | null => {
+    if (annotationTool() !== "edit") return null;
+    const frame =
+      transformPreview()?.frame ?? getAnnotationSelectionFrame(selectedAnnotationFrames());
+    if (!frame) return null;
+    const isTextOnly = isSelectionTextOnly();
+    const isWidthScalable = frame.width >= ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX;
+    const isHeightScalable = frame.height >= ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX;
+    return {
+      ...frame,
+      resizeHandles: ANNOTATION_TRANSFORM_HANDLES.filter((handle) => {
+        if (handle.directionX !== 0 && handle.directionY !== 0) return true;
+        if (isTextOnly) return false;
+        return handle.directionX !== 0 ? isWidthScalable : isHeightScalable;
+      }),
+      rotateHandles: CORNER_HANDLES,
+    };
+  });
+
+  const transformLabel = () => transformPreview()?.label ?? null;
+
+  // The cursor follows the gesture rather than whatever is under the pointer,
+  // which leaves the handle as soon as the drag starts.
+  const editCursor = createMemo((): string => {
+    const transform = isTransforming() ? activeTransform : null;
+    if (!transform) return isEditPressing() ? MOVE_TOOL_PRESSED_CURSOR : MOVE_TOOL_CURSOR;
+    const preview = transformPreview();
+    const rotation = preview?.frame.rotation ?? transform.startFrame.rotation;
+    if (transform.kind === "rotate") {
+      return getRotateCursor(transform.handle.directionX, transform.handle.directionY, rotation);
+    }
+    const flipX = preview ? getSign(transform.frameTransform.scaleX) : 1;
+    const flipY = preview ? getSign(transform.frameTransform.scaleY) : 1;
+    return getResizeCursor(
+      transform.handle.directionX * flipX,
+      transform.handle.directionY * flipY,
+      rotation,
+    );
+  });
 
   const hasAnnotations = createMemo(() => strokes().length > 0 || texts().length > 0);
 
@@ -356,13 +607,21 @@ export const createInspectController = (options: InspectControllerOptions) => {
     return entry;
   };
 
+  const discardTransform = () => {
+    activeTransform = null;
+    setTransformPointer(null);
+  };
+
+  // A move cut short (the tool changed mid-move) still leaves the annotations
+  // where it took them, so it is still a change to take back. A resize or
+  // rotate cut short (Escape) is called off and puts them back, as in a
+  // design tool.
   const cancelPointerGesture = () => {
-    // A drag cut short (the tool changed mid-move) still leaves the
-    // annotations where it took them, so it is still a change to take back.
     if (activeMove?.didMove) recordAnnotationChange(activeMove.startSnapshot);
     activeDrawing = null;
     activeMove = null;
     activeMarquee = null;
+    discardTransform();
     setIsEditPressing(false);
     setDrawingPoints([]);
     setMarqueeRect(null);
@@ -391,6 +650,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
           y: currentPosition.y,
           text,
           color: annotationColor(),
+          rotation: 0,
+          scale: 1,
         },
       ]);
       recordAnnotationChange(before);
@@ -429,6 +690,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     const removedIds = new Set(selectedAnnotationIds());
     if (removedIds.size === 0) return;
     activeMove = null;
+    discardTransform();
     setIsEditPressing(false);
     const before = captureAnnotations();
     setSelectedAnnotationIds([]);
@@ -481,6 +743,75 @@ export const createInspectController = (options: InspectControllerOptions) => {
       didMove: false,
     };
     setIsEditPressing(true);
+  };
+
+  const startTransform = (event: PointerEvent, pressedHandle: PressedTransformHandle) => {
+    const frame = selectionFrame();
+    if (!frame) return;
+    const pressPoint = toPagePoint(event);
+    activeTransform = {
+      pointerId: event.pointerId,
+      kind: pressedHandle.kind,
+      handle: pressedHandle.handle,
+      startFrame: {
+        centerX: frame.centerX,
+        centerY: frame.centerY,
+        width: frame.width,
+        height: frame.height,
+        rotation: frame.rotation,
+      },
+      isUniformOnly: isSelectionTextOnly(),
+      pressPoint,
+      startSnapshot: captureAnnotations(),
+      transformedIds: new Set(selectedAnnotationIds()),
+      didTransform: false,
+      pointer: {
+        pageX: pressPoint.x,
+        pageY: pressPoint.y,
+        isShiftHeldInEvent: event.shiftKey,
+        isAltHeldInEvent: event.altKey,
+        wasShiftTrackedAtEvent: options.isShiftKeyHeld(),
+        wasAltTrackedAtEvent: options.isAltKeyHeld(),
+      },
+      frameTransform: {
+        originX: frame.centerX,
+        originY: frame.centerY,
+        targetX: frame.centerX,
+        targetY: frame.centerY,
+        rotation: frame.rotation,
+        scaleX: 1,
+        scaleY: 1,
+        angle: 0,
+      },
+    };
+    setTransformPointer(activeTransform.pointer);
+  };
+
+  const updateTransform = (transform: ActiveTransform, event: PointerEvent) => {
+    const pointer = transform.pointer;
+    pointer.pageX = event.clientX + window.scrollX;
+    pointer.pageY = event.clientY + window.scrollY;
+    pointer.isShiftHeldInEvent = event.shiftKey;
+    pointer.isAltHeldInEvent = event.altKey;
+    pointer.wasShiftTrackedAtEvent = options.isShiftKeyHeld();
+    pointer.wasAltTrackedAtEvent = options.isAltKeyHeld();
+    if (pointer.pageX !== transform.pressPoint.x || pointer.pageY !== transform.pressPoint.y) {
+      transform.didTransform = true;
+    }
+    setTransformPointer(pointer);
+  };
+
+  const commitTransform = () => {
+    const preview = transformPreview();
+    const startSnapshot = activeTransform?.startSnapshot;
+    batch(() => {
+      if (preview) {
+        setStrokes(preview.strokes);
+        setTexts(preview.texts);
+      }
+      discardTransform();
+    });
+    if (preview && startSnapshot) recordAnnotationChange(startSnapshot);
   };
 
   // A press on empty page deselects, as it does in a design tool, and a drag
@@ -566,6 +897,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
                     isStraight: false,
                     isRectangle: true,
                     color: annotationColor(),
+                    rotation: 0,
                   },
                   squareStroke: {
                     id: DRAFT_STROKE_ID,
@@ -573,6 +905,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
                     isStraight: false,
                     isRectangle: true,
                     color: annotationColor(),
+                    rotation: 0,
                   },
                 }
               : null,
@@ -586,6 +919,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
         return;
       }
       case "edit": {
+        const pressedHandle = getPressedTransformHandle(event);
+        if (pressedHandle) {
+          startTransform(event, pressedHandle);
+          return;
+        }
         const annotationId = getPressedAnnotationId(event);
         if (annotationId) pressAnnotation(event, annotationId);
         else startMarquee(event);
@@ -599,6 +937,10 @@ export const createInspectController = (options: InspectControllerOptions) => {
   };
 
   const handlePointerMove = (event: PointerEvent) => {
+    if (activeTransform && activeTransform.pointerId === event.pointerId) {
+      updateTransform(activeTransform, event);
+      return;
+    }
     if (activeMove && activeMove.pointerId === event.pointerId) {
       const currentPoint = toPagePoint(event);
       const deltaX = currentPoint.x - activeMove.lastPoint.x;
@@ -635,6 +977,10 @@ export const createInspectController = (options: InspectControllerOptions) => {
   };
 
   const handlePointerUp = (event: PointerEvent) => {
+    if (activeTransform && activeTransform.pointerId === event.pointerId) {
+      commitTransform();
+      return;
+    }
     if (activeMove && activeMove.pointerId === event.pointerId) {
       if (activeMove.didMove) recordAnnotationChange(activeMove.startSnapshot);
       activeMove = null;
@@ -677,6 +1023,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
           isStraight,
           isRectangle,
           color: annotationColor(),
+          rotation: 0,
         },
       ]);
       recordAnnotationChange(before);
@@ -699,6 +1046,11 @@ export const createInspectController = (options: InspectControllerOptions) => {
     selectedAnnotationIds,
     marqueeRect,
     isEditPressing,
+    editCursor,
+    isTransforming,
+    selectionFrame,
+    selectedAnnotationFrames,
+    transformLabel,
     pinnedSpecsElement,
     pinSpecs: (element: Element, isPointerOverPanel: boolean) =>
       batch(() => {
