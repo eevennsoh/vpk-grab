@@ -159,11 +159,15 @@ example, in `<head>` before the app's own scripts, on development pages only.
   In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only
   ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
-  annotations together, and v picks it up or puts it down. **⌘⌫** (Ctrl+Backspace
+  annotations together, and v picks it up or puts it down. The selection frame's
+  handles resize (Shift keeps the proportions, Alt resizes from the centre,
+  dragging past the far side flips) and the area just outside a corner rotates
+  (Shift snaps to 15°); Escape mid-drag calls a resize or rotate off; notes scale
+  from their corners. **⌘⌫** (Ctrl+Backspace
   elsewhere) clears every drawing and note, or just the selection, even after Grab is
   switched off; ⌘Z undoes it.
 - **⌘Z / ⌘⇧Z** (Ctrl+Z / Ctrl+Shift+Z elsewhere) while active: undo and redo
-  drawings, notes, moves, removals and style changes.
+  drawings, notes, moves, resizes, rotations, removals and style changes.
 
 ## Acting on what the user brings back
 
