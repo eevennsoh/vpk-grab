@@ -726,6 +726,7 @@ export interface AnnotationStroke {
   isStraight: boolean;
   isRectangle: boolean;
   color: string;
+  rotation: number;
 }
 
 export interface AnnotationColorOption {
@@ -738,6 +739,56 @@ export interface AnnotationText extends Position {
   id: string;
   text: string;
   color: string;
+  rotation: number;
+  scale: number;
+}
+
+export interface AnnotationFrame {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  rotation: number;
+}
+
+export interface AnnotationFrameTransform {
+  originX: number;
+  originY: number;
+  targetX: number;
+  targetY: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  angle: number;
+}
+
+export type AnnotationTransformHandleName =
+  | "top-left"
+  | "top"
+  | "top-right"
+  | "right"
+  | "bottom-right"
+  | "bottom"
+  | "bottom-left"
+  | "left";
+
+export type AnnotationTransformKind = "resize" | "rotate";
+
+export interface AnnotationTransformHandle {
+  name: AnnotationTransformHandleName;
+  directionX: number;
+  directionY: number;
+}
+
+export interface AnnotationSelectionFrame extends AnnotationFrame {
+  resizeHandles: AnnotationTransformHandle[];
+  rotateHandles: AnnotationTransformHandle[];
+}
+
+export interface AnnotationTransformLabel {
+  text: string;
+  pageX: number;
+  pageY: number;
 }
 
 export interface InspectSettings {
@@ -886,7 +937,13 @@ export interface InspectRendererState {
   hasAnnotations: Accessor<boolean>;
   selectedAnnotationIds: Accessor<string[]>;
   annotationMarqueeRect: Accessor<Rect | null>;
-  isEditPressing: Accessor<boolean>;
+  annotationEditCursor: Accessor<string>;
+  isTransformingAnnotations: Accessor<boolean>;
+  annotationSelectionFrame: Accessor<AnnotationSelectionFrame | null>;
+  selectedAnnotationFrames: Accessor<AnnotationFrame[]>;
+  getPreviewAnnotationStroke: (stroke: AnnotationStroke) => AnnotationStroke;
+  getPreviewAnnotationText: (annotationText: AnnotationText) => AnnotationText;
+  annotationTransformLabel: Accessor<AnnotationTransformLabel | null>;
   isSpecsPinned: Accessor<boolean>;
   isSpecsPinLocked: Accessor<boolean>;
   styleOverridesVersion: Accessor<number>;

@@ -1,5 +1,6 @@
 import type {
   AnnotationColorOption,
+  AnnotationTransformHandle,
   SelectionTool,
   SpecBoxSide,
   ToolCycleDirection,
@@ -468,6 +469,7 @@ export const ANNOTATION_TEXT_FONT_WEIGHT = 600;
 export const ANNOTATION_TEXT_FONT_FAMILY = '"Geist", ui-sans-serif, system-ui, sans-serif';
 // Three stacked glows in the contrast colour keep a note legible on any page.
 export const ANNOTATION_TEXT_HALO_BLURS_PX: readonly number[] = [2, 2, 1];
+export const ANNOTATION_TEXT_CANVAS_FONT = `${ANNOTATION_TEXT_FONT_WEIGHT} ${ANNOTATION_TEXT_FONT_SIZE_PX}px ${ANNOTATION_TEXT_FONT_FAMILY}`;
 
 // Below this a gap is sub-pixel layout rounding rather than spacing.
 export const REDLINE_MIN_DISTANCE_PX = 0.5;
@@ -501,6 +503,40 @@ export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
 export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
+export const ANNOTATION_RESIZE_HANDLE_ATTRIBUTE = "data-react-grab-annotation-resize-handle";
+export const ANNOTATION_ROTATE_HANDLE_ATTRIBUTE = "data-react-grab-annotation-rotate-handle";
+export const ANNOTATION_TRANSFORM_HANDLES: readonly AnnotationTransformHandle[] = [
+  { name: "top-left", directionX: -1, directionY: -1 },
+  { name: "top", directionX: 0, directionY: -1 },
+  { name: "top-right", directionX: 1, directionY: -1 },
+  { name: "right", directionX: 1, directionY: 0 },
+  { name: "bottom-right", directionX: 1, directionY: 1 },
+  { name: "bottom", directionX: 0, directionY: 1 },
+  { name: "bottom-left", directionX: -1, directionY: 1 },
+  { name: "left", directionX: -1, directionY: 0 },
+];
+export const ANNOTATION_HANDLE_SIZE_PX = 8;
+export const ANNOTATION_ITEM_OUTLINE_PADDING_PX = 3;
+export const ANNOTATION_HANDLE_HIT_SIZE_PX = 14;
+export const ANNOTATION_ROTATE_ZONE_SIZE_PX = 16;
+export const ANNOTATION_TRANSFORM_MIN_SIZE_PX = 8;
+// A straight line has no height to scale, so that axis is left alone rather
+// than divided by zero.
+export const ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX = 1;
+// A turn this close to a quarter turn counts as one: a group can then scale
+// the item along its own axes exactly instead of evenly.
+export const ANNOTATION_RIGHT_ANGLE_EPSILON_RAD = 0.001;
+export const ANNOTATION_TRANSFORM_IDENTITY_EPSILON = 0.0001;
+export const ANNOTATION_ROTATE_SNAP_DEG = 15;
+export const ANNOTATION_TRANSFORM_LABEL_OFFSET_PX = 14;
+export const ANNOTATION_CURSOR_DIRECTION_STEP_DEG = 45;
+// Indexed by direction in 45° steps from pointing right, modulo a half turn.
+export const ANNOTATION_RESIZE_CURSORS: readonly string[] = [
+  "ew-resize",
+  "nwse-resize",
+  "ns-resize",
+  "nesw-resize",
+];
 export const EDIT_HISTORY_MAX_ENTRIES = 100;
 export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
@@ -551,6 +587,22 @@ export const MOVE_TOOL_PRESSED_CURSOR = createSvgCursor(
   PAN_TOOL_ALT_ICON_PATHS.filled,
   { x: 12, y: 12 },
   "grabbing",
+);
+// A quarter arc with an arrowhead at each end, drawn in the Material icon grid
+// for the top-right corner and turned for the others.
+const ROTATE_CURSOR_PATH =
+  "M240-690A450 450 0 0 1 690-240L770-240L640-100L510-240L590-240A350 350 0 0 0 240-590L240-510L100-640L240-770Z";
+const ROTATE_CURSOR_DIRECTION_COUNT = 8;
+// Indexed by the corner's direction in 45° steps clockwise from top-right.
+export const ANNOTATION_ROTATE_CURSORS: readonly string[] = Array.from(
+  { length: ROTATE_CURSOR_DIRECTION_COUNT },
+  (_, directionIndex) =>
+    createSvgCursor(
+      ROTATE_CURSOR_PATH,
+      { x: 12, y: 12 },
+      "crosshair",
+      directionIndex * ANNOTATION_CURSOR_DIRECTION_STEP_DEG,
+    ),
 );
 // The hotspot sits on the top-left corner of the camera body (not the
 // viewfinder bump above it), which is where the capture rectangle starts.

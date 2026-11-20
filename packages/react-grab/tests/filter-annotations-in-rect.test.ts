@@ -5,20 +5,27 @@ import { filterAnnotationsInRect } from "../src/utils/filter-annotations-in-rect
 const CAPTURE_RECT: Rect = { left: 100, top: 100, right: 300, bottom: 200 };
 const TEXT_WIDTH_PX = 50;
 
-const createStroke = (id: string, points: Array<[number, number]>): AnnotationStroke => ({
+const createStroke = (
+  id: string,
+  points: Array<[number, number]>,
+  rotation = 0,
+): AnnotationStroke => ({
   id,
   points: points.map(([x, y]) => ({ x, y, weight: 0.5 })),
   isStraight: false,
   isRectangle: false,
   color: "#ff0000",
+  rotation,
 });
 
-const createText = (id: string, x: number, y: number): AnnotationText => ({
+const createText = (id: string, x: number, y: number, rotation = 0, scale = 1): AnnotationText => ({
   id,
   x,
   y,
   text: "note",
   color: "#ff0000",
+  rotation,
+  scale,
 });
 
 const measureTextWidth = () => TEXT_WIDTH_PX;
@@ -62,6 +69,29 @@ describe("filterAnnotationsInRect", () => {
     expect(result.strokes).toHaveLength(1);
   });
 
+  it("culls a turned stroke by where it shows, not where its points are kept", () => {
+    const upright = createStroke("upright", [
+      [340, 100],
+      [340, 200],
+    ]);
+    const turnedIntoRect = createStroke(
+      "turned",
+      [
+        [340, 100],
+        [340, 200],
+      ],
+      Math.PI / 2,
+    );
+
+    const result = filterAnnotationsInRect(
+      { strokes: [upright, turnedIntoRect], texts: [] },
+      CAPTURE_RECT,
+      measureTextWidth,
+    );
+
+    expect(result.strokes.map((stroke) => stroke.id)).toEqual(["turned"]);
+  });
+
   it("drops strokes without points", () => {
     const result = filterAnnotationsInRect(
       { strokes: [createStroke("empty", [])], texts: [] },
@@ -101,5 +131,18 @@ describe("filterAnnotationsInRect", () => {
     );
 
     expect(result.texts.map((annotationText) => annotationText.id)).toEqual(["three-lines"]);
+  });
+
+  it("culls a scaled note by its scaled box", () => {
+    const unscaled = createText("unscaled", 310, 150);
+    const scaledIntoRect = createText("scaled", 310, 150, 0, 2);
+
+    const result = filterAnnotationsInRect(
+      { strokes: [], texts: [unscaled, scaledIntoRect] },
+      CAPTURE_RECT,
+      measureTextWidth,
+    );
+
+    expect(result.texts.map((annotationText) => annotationText.id)).toEqual(["scaled"]);
   });
 });
