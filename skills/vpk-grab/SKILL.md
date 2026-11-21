@@ -133,7 +133,7 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Specs** (toolbar toggle, key 1 with Grab in hand): a panel of the hovered element's applied styles,
   with the design token under each value that came from one.
 - **Spacing** (toolbar toggle, key 2 with Grab in hand): the element's distance to neighbours and
-  container edges, with its size in the name tag.
+  container edges.
 - **Screenshot** (toolbar toggle, key 3 with Grab in hand, off by default and
   remembered): every grab copies its references at once, then a screenshot is
   taken by itself so the clipboard ends with the references and a PNG. Chromium sites
@@ -148,6 +148,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   property off and on, pick another token or keyword, or type a value.
 - **Changes** (toolbar, once something is edited): every style change on the
   page, by element, with remove, reopen and reset all.
+- **Hover label:** names the element and always shows its width × height; a
+  long name truncates before the size.
 - **Hold Alt** with Grab in hand: shows Spacing while held, even when it is
   toggled off, anchored on the hovered element; moving to another element
   shows the distances between the two. Letting go restores the toggle.
@@ -156,7 +158,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
   Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
   on either toolbar orientation; the tooltips show the arrows along the toolbar.
-  In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only
+  It works from an empty page field or a menu item too (a page field with text
+  keeps caret movement). In a hold session the modifier with an arrow still
+  navigates. 1, 2 and 3 only
   ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
   annotations together, and v picks it up or puts it down. The selection frame's
