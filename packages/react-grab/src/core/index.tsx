@@ -216,6 +216,7 @@ import { blurFocusedPillPrompt } from "../utils/blur-focused-pill-prompt.js";
 import { getConnectedPromptTarget } from "../utils/get-connected-prompt-target.js";
 import { isPillPromptEvent } from "../utils/is-pill-prompt-event.js";
 import { isTextFieldKeyEvent } from "../utils/is-text-field-key-event.js";
+import { isPageFieldHoldingText } from "../utils/is-page-field-holding-text.js";
 
 const builtInPlugins = [copyPlugin, commentPlugin, openPlugin];
 
@@ -3352,10 +3353,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         // focus traversal) and Enter. This one guard covers every navigation
         // path in this handler, including the overlay branch, and precedes
         // the active-mode preventDefault below.
+        // In a toggled session the tool chord only gives way to a page field
+        // that holds text, so a menu that focuses its empty search box on
+        // opening does not swallow it.
+        const isFieldKeyKept =
+          toolCycleDirection && isToggleSession() && !isPillPromptEvent(event)
+            ? isPageFieldHoldingText(event)
+            : isTextFieldKeyEvent(event);
         if (
           (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
           !isMenuItemChord &&
-          isTextFieldKeyEvent(event)
+          isFieldKeyKept
         )
           return;
 

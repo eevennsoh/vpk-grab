@@ -852,6 +852,46 @@ test.describe("Tool cycling with the platform modifier and an arrow", () => {
     await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
   });
 
+  test("an empty focused page field, like a menu's search box, gives the chord to the toolbar", async ({
+    reactGrab,
+    page,
+  }) => {
+    await page.locator("body").evaluate((body) => {
+      const menu = document.createElement("div");
+      menu.setAttribute("role", "menu");
+      const search = document.createElement("input");
+      search.type = "search";
+      search.dataset.testid = "menu-search";
+      const item = document.createElement("div");
+      item.setAttribute("role", "menuitem");
+      item.tabIndex = 0;
+      item.dataset.testid = "menu-item";
+      item.textContent = "Parent";
+      menu.append(search, item);
+      body.prepend(menu);
+      search.focus();
+    });
+    const search = page.getByTestId("menu-search");
+    await expect(search).toBeFocused();
+
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowRight");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByTestId("menu-item").focus();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowDown");
+    await expect(toolbarAction(page, "annotate-pen")).toHaveAttribute("aria-pressed", "true");
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowUp");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+
+    await search.fill("parent");
+    await expect(search).toBeFocused();
+    await reactGrab.pressKeyCombo([reactGrab.modifierKey], "ArrowLeft");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
+    await expect(search).toBeFocused();
+  });
+
   const observePageArrowRight = () => {
     window.addEventListener(
       "keydown",

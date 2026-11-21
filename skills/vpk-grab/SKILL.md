@@ -158,7 +158,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
   Down to step through Grab, Pen, Rectangle and Text, or Left or Up to step back,
   on either toolbar orientation; the tooltips show the arrows along the toolbar.
-  In a hold session the modifier with an arrow still navigates. 1, 2 and 3 only
+  It works from an empty page field or a menu item too (a page field with text
+  keeps caret movement). In a hold session the modifier with an arrow still
+  navigates. 1, 2 and 3 only
   ever toggle Specs, Spacing and Screenshot, with Grab in hand. **Move**
   and **Clear** appear once something is drawn. Move box-selects and drags
   annotations together, and v picks it up or puts it down. The selection frame's
