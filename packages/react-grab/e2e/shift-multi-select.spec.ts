@@ -1,3 +1,4 @@
+import { VIEWPORT_MARGIN_PX } from "../src/constants.js";
 import { test, expect } from "./fixtures.js";
 import {
   SHIFT_DRAG_PREVIEW_OUTSET_PX,
@@ -197,7 +198,13 @@ test.describe("Shift Multi-Select", () => {
     expect(Math.abs(movedLabelCenterX - initialLabelCenterX)).toBeLessThan(
       SHIFT_LABEL_POSITION_TOLERANCE_PX,
     );
-    expect(Math.abs(initialLabelCenterX - labelAnchorX)).toBeLessThan(
+    // The label centres on the anchor unless that would push it past the
+    // viewport's left margin, where it is held instead.
+    const expectedLabelCenterX = Math.max(
+      labelAnchorX,
+      VIEWPORT_MARGIN_PX + initialLabelBounds.label.width / 2,
+    );
+    expect(Math.abs(initialLabelCenterX - expectedLabelCenterX)).toBeLessThan(
       SHIFT_LABEL_POSITION_TOLERANCE_PX,
     );
 

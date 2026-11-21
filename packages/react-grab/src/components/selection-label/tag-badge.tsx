@@ -19,25 +19,28 @@ export const TagBadge: Component<TagBadgeProps> = (props) => {
   // branches is unsafe in SolidJS: a DOM node can only have one parent, so
   // toggling isClickable can make the label vanish (see solidjs/solid#2216,
   // solidjs/solid#2357).
+  // Only the name truncates, so the size always stays readable beside it.
   const renderTagLabel = () => (
-    <span class="text-[var(--rg-text-primary)] text-[13px] leading-4 h-fit font-medium overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
-      <Show when={props.componentName}>
-        <span textContent={props.componentName} />
-        <span class="text-[var(--rg-text-secondary)]" textContent={`.${props.tagName}`} />
-      </Show>
-      <Show when={!props.componentName}>
-        <span class="text-[var(--rg-text-primary)]" textContent={props.tagName} />
-      </Show>
+    <>
+      <span class="text-[var(--rg-text-primary)] text-[13px] leading-4 h-fit font-medium overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
+        <Show when={props.componentName}>
+          <span textContent={props.componentName} />
+          <span class="text-[var(--rg-text-secondary)]" textContent={`.${props.tagName}`} />
+        </Show>
+        <Show when={!props.componentName}>
+          <span class="text-[var(--rg-text-primary)]" textContent={props.tagName} />
+        </Show>
+      </span>
       <Show when={props.sizeText}>
         {(sizeText) => (
           <span
             data-react-grab-tag-size
-            class="ml-1.5 text-[var(--rg-text-secondary)] tabular-nums"
+            class="shrink-0 ml-0.5 text-[var(--rg-text-secondary)] text-[13px] leading-4 h-fit font-medium whitespace-nowrap tabular-nums"
             textContent={sizeText()}
           />
         )}
       </Show>
-    </span>
+    </>
   );
 
   return (

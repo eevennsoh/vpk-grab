@@ -979,7 +979,9 @@ const createReactGrabPageObject = (
         let componentName: string | null = null;
         let elementsCount: number | null = null;
 
-        const allSpans = Array.from(label.querySelectorAll("span"));
+        const allSpans = Array.from(label.querySelectorAll("span")).filter(
+          (span) => !span.closest("[data-react-grab-tag-size]"),
+        );
         for (const span of allSpans) {
           const spanText = span.textContent?.trim() ?? "";
           if (spanText.includes("elements")) {
