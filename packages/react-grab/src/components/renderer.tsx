@@ -41,7 +41,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
     );
   const selectionSizeText = () => {
     const bounds = props.selectionBounds;
-    if (!bounds || !redlines() || !isSelectionLabelShown()) return undefined;
+    if (!bounds || !isSelectionLabelShown()) return undefined;
     return formatElementSize(bounds.width, bounds.height);
   };
 
