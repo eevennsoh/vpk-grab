@@ -1,13 +1,13 @@
 // Holding Space pauses vpk-grab without switching it off: the page takes the
 // pointer and keyboard as if Grab were off, and letting go resumes the same
 // session with its tool, toggles, pill and drawings untouched.
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   PAUSED_ANNOUNCEMENT,
   PAUSED_PAGE_LAYER_OPACITY,
   RESUMED_ANNOUNCEMENT,
-  TOOLBAR_PAUSED_OPACITY,
 } from "../src/constants.js";
+import { PAUSE_ICON_PATHS } from "../src/material-icon-paths.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 
 const FIRST_TODO_SELECTOR = "[data-testid='todo-list'] li:first-child span";
@@ -18,7 +18,11 @@ const COMPLETION_SELECTOR = "[data-react-grab-completion]";
 const PILL_PROMPT_SELECTOR = "[data-react-grab-pill-prompt] textarea";
 const DISMISS_BUTTON_SELECTOR = 'button[aria-label="Dismiss"]';
 const TOOLBAR_SELECTOR = "[data-react-grab-toolbar]";
-const PAUSE_CHIP_SELECTOR = "[data-react-grab-pause-chip]";
+const TOOLBAR_PANEL_SELECTOR = "[data-react-grab-toolbar-panel]";
+const PAUSED_CONTENT_SELECTOR = "[data-react-grab-toolbar-paused-content]";
+const PAUSED_LABEL_SELECTOR = "[data-react-grab-toolbar-paused-label]";
+const COLLAPSE_BUTTON_SELECTOR = "[data-react-grab-toolbar-collapse]";
+const GRAB_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="copy"]';
 const PAUSE_STATUS_SELECTOR = "[data-react-grab-pause-status]";
 const SPACING_TOGGLE_SELECTOR = '[data-react-grab-toolbar-action="inspect-redlines"]';
 const STROKE_SELECTOR = "[data-react-grab-annotation-stroke]";
@@ -44,6 +48,31 @@ const FRAME_INPUT_ID = "pause-frame-input";
 const SECOND_TODO_SELECTOR = "[data-testid='todo-list'] li:nth-child(2) span";
 const ANNOTATION_SELECTION_SELECTOR = "[data-react-grab-annotation-selection]";
 const ANNOTATION_FRAME_SELECTOR = "[data-react-grab-annotation-frame]";
+const BOX_TOLERANCE_PX = 0.5;
+const PAUSE_HOLD_SAMPLE_MS = 250;
+const RELEASE_SAMPLE_MS = 400;
+const MIN_TOOLBAR_SAMPLE_COUNT = 20;
+const TOOLBAR_SIDE_EDGE_DRAG_PX = { x: 1500, y: -500 };
+const HIDDEN_LABEL_MAX_SIZE_PX = 1;
+const ICON_CENTER_TOLERANCE_PX = 1;
+
+interface ToolbarSample {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  transform: string;
+  scale: string;
+  animationName: string;
+  panelTransform: string;
+}
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 declare global {
   interface Window {
@@ -51,6 +80,8 @@ declare global {
     __pagePointerEvents?: string[];
     __bodyStyleHistory?: (string | null)[];
     __pauseAnnouncements?: string[];
+    __toolbarSamples?: ToolbarSample[];
+    __isSamplingToolbar?: boolean;
   }
 }
 
@@ -117,18 +148,109 @@ const injectPageFixtures = (page: Page) =>
 const getPauseStatus = (reactGrab: ReactGrabPageObject) =>
   reactGrab.getOverlayHost().locator(PAUSE_STATUS_SELECTOR);
 
-const getPauseChip = (reactGrab: ReactGrabPageObject) =>
-  reactGrab.getOverlayHost().locator(PAUSE_CHIP_SELECTOR);
+const getPausedContent = (reactGrab: ReactGrabPageObject) =>
+  reactGrab.getOverlayHost().locator(PAUSED_CONTENT_SELECTOR);
+
+const expectPausedContentHidden = async (reactGrab: ReactGrabPageObject) => {
+  await expect(getPausedContent(reactGrab)).toHaveCSS("opacity", "0");
+  await expect(getPausedContent(reactGrab)).toHaveCSS("visibility", "hidden");
+};
 
 const expectPaused = async (reactGrab: ReactGrabPageObject) => {
   await expect(getPauseStatus(reactGrab)).toHaveText(PAUSED_ANNOUNCEMENT);
-  await expect(getPauseChip(reactGrab)).toHaveAttribute("data-visible", "");
+  await expect(getPausedContent(reactGrab)).toHaveCSS("opacity", "1");
 };
 
 const expectNotPaused = async (reactGrab: ReactGrabPageObject) => {
   await expect(getPauseStatus(reactGrab)).not.toHaveText(PAUSED_ANNOUNCEMENT);
-  await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+  await expectPausedContentHidden(reactGrab);
 };
+
+const getBox = async (locator: Locator): Promise<Box> => {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error("Missing bounding box");
+  return box;
+};
+
+const getMaxBoxDeviation = (boxes: Box[]): number => {
+  const [baseline] = boxes;
+  return Math.max(
+    ...boxes.map((box) =>
+      Math.max(
+        Math.abs(box.x - baseline.x),
+        Math.abs(box.y - baseline.y),
+        Math.abs(box.width - baseline.width),
+        Math.abs(box.height - baseline.height),
+      ),
+    ),
+  );
+};
+
+const getBoxCenter = (box: Box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+const waitForToolbarToSettle = (toolbar: Locator) =>
+  expect
+    .poll(() => toolbar.evaluate((element) => element.getAnimations({ subtree: true }).length))
+    .toBe(0);
+
+const startToolbarSampling = (page: Page) =>
+  page.evaluate(
+    ({ toolbarSelector, panelSelector }) => {
+      const shadowRoot = document.querySelector("[data-react-grab]")?.shadowRoot;
+      const toolbar = shadowRoot?.querySelector(toolbarSelector);
+      const panel = shadowRoot?.querySelector(panelSelector);
+      if (!toolbar || !panel) throw new Error("Missing toolbar");
+      const samples: ToolbarSample[] = [];
+      window.__toolbarSamples = samples;
+      window.__isSamplingToolbar = true;
+      const recordSample = () => {
+        if (!window.__isSamplingToolbar) return;
+        const rect = toolbar.getBoundingClientRect();
+        const style = getComputedStyle(toolbar);
+        samples.push({
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          transform: style.transform,
+          scale: style.scale,
+          animationName: style.animationName,
+          panelTransform: getComputedStyle(panel).transform,
+        });
+        // Grab holds callbacks that reschedule themselves, so each frame
+        // schedules a fresh one.
+        requestAnimationFrame(() => recordSample());
+      };
+      recordSample();
+    },
+    { toolbarSelector: TOOLBAR_SELECTOR, panelSelector: TOOLBAR_PANEL_SELECTOR },
+  );
+
+const stopToolbarSampling = (page: Page) =>
+  page.evaluate(() => {
+    window.__isSamplingToolbar = false;
+    return window.__toolbarSamples ?? [];
+  });
+
+const getHitTargetAt = (page: Page, point: { x: number; y: number }) =>
+  page.evaluate(
+    ({ x, y, pausedContentSelector }) => {
+      const hitElement = document
+        .querySelector("[data-react-grab]")
+        ?.shadowRoot?.elementFromPoint(x, y);
+      if (!hitElement) return null;
+      if (hitElement.closest(pausedContentSelector)) return "paused-content";
+      return (
+        hitElement
+          .closest("[data-react-grab-toolbar-action]")
+          ?.getAttribute("data-react-grab-toolbar-action") ?? hitElement.tagName
+      );
+    },
+    { ...point, pausedContentSelector: PAUSED_CONTENT_SELECTOR },
+  );
+
+const isInsideInertSubtree = (locator: Locator) =>
+  locator.evaluate((element) => Boolean(element.closest("[inert]")));
 
 const clickCenter = async (page: Page, selector: string) => {
   const box = await page.locator(selector).boundingBox();
@@ -203,7 +325,7 @@ test.describe("Hold Space to pause", () => {
 
     await page.keyboard.up("Space");
     await expect(getPauseStatus(reactGrab)).toHaveText(RESUMED_ANNOUNCEMENT);
-    await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+    await expectPausedContentHidden(reactGrab);
     await expect.poll(() => getTargetId(page)).toBe("pause-button");
     await expect.poll(() => reactGrab.isSelectionBoxVisible()).toBe(true);
     expect(
@@ -244,23 +366,47 @@ test.describe("Hold Space to pause", () => {
     expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
   });
 
-  test("toolbar controls work while paused and do not end the pause", async ({
+  test("a click on the paused toolbar neither triggers a tool nor ends the pause", async ({
     reactGrab,
     page,
   }) => {
     await reactGrab.activate();
+    await page.mouse.move(0, 0);
+    const host = reactGrab.getOverlayHost();
+    const toolbar = host.locator(TOOLBAR_SELECTOR);
+    await waitForToolbarToSettle(toolbar);
+    const toolbarBoxBefore = await getBox(toolbar);
+    const spacingCenter = getBoxCenter(await getBox(host.locator(SPACING_TOGGLE_SELECTOR)));
+    const collapseCenter = getBoxCenter(await getBox(host.locator(COLLAPSE_BUTTON_SELECTOR)));
+
     await page.keyboard.down("Space");
     await expectPaused(reactGrab);
+    expect(await getHitTargetAt(page, spacingCenter)).toBe("paused-content");
+    await page.mouse.click(spacingCenter.x, spacingCenter.y);
+    await page.mouse.click(collapseCenter.x, collapseCenter.y);
+    await page.mouse.move(spacingCenter.x, spacingCenter.y);
+    await page.mouse.down();
+    await page.mouse.move(
+      spacingCenter.x - DRAG_REPOSITION_OFFSET_PX.x,
+      spacingCenter.y - DRAG_REPOSITION_OFFSET_PX.y,
+      { steps: DRAG_STEPS },
+    );
+    await page.mouse.up();
 
-    await reactGrab.getOverlayHost().locator(SPACING_TOGGLE_SELECTOR).click();
-    await expect.poll(() => reactGrab.getToolbarActionPressed("inspect-redlines")).toBe(true);
     await expect(getPauseStatus(reactGrab)).toHaveText(PAUSED_ANNOUNCEMENT);
+    expect(await reactGrab.getToolbarActionPressed("inspect-redlines")).toBe(false);
+    expect(await reactGrab.isToolbarCollapsed()).toBe(false);
+    expect(getMaxBoxDeviation([toolbarBoxBefore, await getBox(toolbar)])).toBeLessThanOrEqual(
+      BOX_TOLERANCE_PX,
+    );
+    await expect(host.locator("[data-react-grab-tooltip]")).toHaveCount(0);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
 
     await page.mouse.move(0, 0);
     await page.keyboard.up("Space");
     await expectNotPaused(reactGrab);
-    expect(await reactGrab.getToolbarActionPressed("inspect-redlines")).toBe(true);
+    expect(await reactGrab.getToolbarActionPressed("inspect-redlines")).toBe(false);
+    expect(await getHitTargetAt(page, spacingCenter)).toBe("inspect-redlines");
   });
 
   // Grab already holds back keys typed into a page field while it is on; the
@@ -281,7 +427,7 @@ test.describe("Hold Space to pause", () => {
       "keyup:Space",
     ]);
     await expect(getPauseStatus(reactGrab)).toHaveText("");
-    await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+    await expectPausedContentHidden(reactGrab);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
   });
 
@@ -465,7 +611,7 @@ test.describe("Hold Space to pause", () => {
     await page.evaluate(() => window.dispatchEvent(new FocusEvent("blur")));
 
     await expect(getPauseStatus(reactGrab)).toHaveText(RESUMED_ANNOUNCEMENT);
-    await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+    await expectPausedContentHidden(reactGrab);
     expect(await reactGrab.isOverlayVisible()).toBe(true);
     await reactGrab.hoverUntilSelected(FIRST_TODO_SELECTOR);
     expect(await reactGrab.isSelectionBoxVisible()).toBe(true);
@@ -526,7 +672,7 @@ test.describe("Hold Space to pause", () => {
     }
 
     await expect(getPauseStatus(reactGrab)).toHaveText(RESUMED_ANNOUNCEMENT);
-    await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+    await expectPausedContentHidden(reactGrab);
     const announcements = await page.evaluate(() => window.__pauseAnnouncements ?? []);
     expect(announcements.length).toBeGreaterThanOrEqual(2);
     expect(announcements.length).toBeLessThanOrEqual(RAPID_TAP_COUNT * 2);
@@ -537,6 +683,13 @@ test.describe("Hold Space to pause", () => {
       ),
     ).toBe(true);
     expect(announcements.at(-1)).toBe(RESUMED_ANNOUNCEMENT);
+    const grabCenter = getBoxCenter(
+      await getBox(reactGrab.getOverlayHost().locator(GRAB_TOGGLE_SELECTOR)),
+    );
+    expect(await getHitTargetAt(page, grabCenter)).toBe("copy");
+    expect(
+      await isInsideInertSubtree(reactGrab.getOverlayHost().locator(SPACING_TOGGLE_SELECTOR)),
+    ).toBe(false);
     expect(await page.evaluate(() => document.body.style.touchAction)).toBe("none");
     expect(
       await page.evaluate(() => Boolean(document.querySelector("style[data-react-grab-cursor]"))),
@@ -618,51 +771,108 @@ test.describe("Hold Space to pause", () => {
     await page.keyboard.up(reactGrab.modifierKey);
 
     await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
-    await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+    await expectPausedContentHidden(reactGrab);
     await expect(getPauseStatus(reactGrab)).not.toHaveText(PAUSED_ANNOUNCEMENT);
     await page.keyboard.up("Space");
     expect(await reactGrab.isOverlayVisible()).toBe(false);
   });
 
-  test("the toolbar steps back with a status chip above it while paused", async ({
+  test("the toolbar itself shows the pause icon and Paused, with no chip and no key hint", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await page.mouse.move(0, 0);
+    const host = reactGrab.getOverlayHost();
+    const toolbar = host.locator(TOOLBAR_SELECTOR);
+    const pausedContent = getPausedContent(reactGrab);
+    const status = host.getByRole("status");
+    await expect(status).toHaveAttribute("aria-live", "polite");
+    await expect(status).toHaveText("");
+    await expectPausedContentHidden(reactGrab);
+    await expect(pausedContent).toHaveAttribute("aria-hidden", "true");
+
+    await page.keyboard.down("Space");
+    await expectPaused(reactGrab);
+    await expect(host.locator("[data-react-grab-pause-chip]")).toHaveCount(0);
+    await expect(pausedContent).toHaveCSS("visibility", "visible");
+    await expect(pausedContent).not.toHaveAttribute("aria-hidden", "true");
+    await expect(pausedContent.locator("svg path")).toHaveAttribute("d", PAUSE_ICON_PATHS.outline);
+    await expect(pausedContent).toHaveText("Paused");
+    await expect(toolbar).not.toContainText("Space");
+    const labelBox = await getBox(host.locator(PAUSED_LABEL_SELECTOR));
+    expect(labelBox.width).toBeGreaterThan(HIDDEN_LABEL_MAX_SIZE_PX);
+    expect(
+      getMaxBoxDeviation([
+        await getBox(host.locator(TOOLBAR_PANEL_SELECTOR)),
+        await getBox(pausedContent),
+      ]),
+    ).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
+    expect(await isInsideInertSubtree(host.locator(SPACING_TOGGLE_SELECTOR))).toBe(true);
+
+    await page.keyboard.up("Space");
+    await expect(status).toHaveText(RESUMED_ANNOUNCEMENT);
+    await expectPausedContentHidden(reactGrab);
+  });
+
+  test("the toolbar keeps its box and scale through a pause and its release", async ({
     reactGrab,
     page,
   }) => {
     await reactGrab.activate();
     await page.mouse.move(0, 0);
     const toolbar = reactGrab.getOverlayHost().locator(TOOLBAR_SELECTOR);
-    const status = reactGrab.getOverlayHost().getByRole("status");
-    await expect(status).toHaveAttribute("aria-live", "polite");
-    await expect(status).toHaveText("");
+    await waitForToolbarToSettle(toolbar);
+
+    await startToolbarSampling(page);
+    await page.keyboard.down("Space");
+    await expect(getPauseStatus(reactGrab)).toHaveText(PAUSED_ANNOUNCEMENT);
+    await page.waitForTimeout(PAUSE_HOLD_SAMPLE_MS);
+    await page.keyboard.up("Space");
+    await expect(getPauseStatus(reactGrab)).toHaveText(RESUMED_ANNOUNCEMENT);
+    await page.waitForTimeout(RELEASE_SAMPLE_MS);
+    const samples = await stopToolbarSampling(page);
+
+    expect(samples.length).toBeGreaterThan(MIN_TOOLBAR_SAMPLE_COUNT);
+    expect(getMaxBoxDeviation(samples)).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
+    expect([...new Set(samples.map((sample) => sample.transform))]).toEqual([samples[0].transform]);
+    expect([...new Set(samples.map((sample) => sample.scale))]).toEqual(["none"]);
+    expect([...new Set(samples.map((sample) => sample.animationName))]).toEqual(["none"]);
+    expect([...new Set(samples.map((sample) => sample.panelTransform))]).toEqual(["none"]);
+  });
+
+  test("a vertical toolbar shows the pause icon alone, centred, in the same box", async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activate();
+    await reactGrab.dragToolbar(TOOLBAR_SIDE_EDGE_DRAG_PX.x, TOOLBAR_SIDE_EDGE_DRAG_PX.y);
+    await expect.poll(async () => (await reactGrab.getToolbarInfo()).isVertical).toBe(true);
+    await page.mouse.move(0, 0);
+    const host = reactGrab.getOverlayHost();
+    const toolbar = host.locator(TOOLBAR_SELECTOR);
+    await waitForToolbarToSettle(toolbar);
+    const toolbarBoxBefore = await getBox(toolbar);
 
     await page.keyboard.down("Space");
-    await expect(status).toHaveText(PAUSED_ANNOUNCEMENT);
-    const chip = getPauseChip(reactGrab);
-    await expect(chip).toHaveAttribute("data-visible", "");
-    await expect(chip).toContainText("Paused");
-    await expect(chip).toContainText("Space");
-    await expect(toolbar).toHaveAttribute("data-react-grab-toolbar-paused", "");
-    await expect
-      .poll(() => toolbar.evaluate((element) => Number(getComputedStyle(element).opacity)))
-      .toBeCloseTo(TOOLBAR_PAUSED_OPACITY, 2);
-    await expect
-      .poll(() => toolbar.evaluate((element) => getComputedStyle(element).filter))
-      .toBe("saturate(0)");
-    await expect
-      .poll(() => chip.evaluate((element) => getComputedStyle(element).opacity))
-      .toBe("1");
-    const toolbarBox = await toolbar.boundingBox();
-    const chipBox = await chip.boundingBox();
-    if (!toolbarBox || !chipBox) throw new Error("Missing toolbar or chip");
-    expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(toolbarBox.y);
+    await expectPaused(reactGrab);
+    const pausedContent = getPausedContent(reactGrab);
+    await expect(pausedContent).toHaveText("Paused");
+    const labelBox = await getBox(host.locator(PAUSED_LABEL_SELECTOR));
+    expect(labelBox.width).toBeLessThanOrEqual(HIDDEN_LABEL_MAX_SIZE_PX);
+    const iconCenter = getBoxCenter(await getBox(pausedContent.locator("svg")));
+    const panelCenter = getBoxCenter(await getBox(host.locator(TOOLBAR_PANEL_SELECTOR)));
+    expect(Math.abs(iconCenter.x - panelCenter.x)).toBeLessThanOrEqual(ICON_CENTER_TOLERANCE_PX);
+    expect(Math.abs(iconCenter.y - panelCenter.y)).toBeLessThanOrEqual(ICON_CENTER_TOLERANCE_PX);
+    expect(getMaxBoxDeviation([toolbarBoxBefore, await getBox(toolbar)])).toBeLessThanOrEqual(
+      BOX_TOLERANCE_PX,
+    );
 
     await page.keyboard.up("Space");
-    await expect(status).toHaveText(RESUMED_ANNOUNCEMENT);
-    await expect(chip).not.toHaveAttribute("data-visible", "");
-    await expect(toolbar).not.toHaveAttribute("data-react-grab-toolbar-paused", "");
-    await expect
-      .poll(() => chip.evaluate((element) => getComputedStyle(element).opacity))
-      .toBe("0");
+    await expectNotPaused(reactGrab);
+    expect(getMaxBoxDeviation([toolbarBoxBefore, await getBox(toolbar)])).toBeLessThanOrEqual(
+      BOX_TOLERANCE_PX,
+    );
   });
 
   test("drawings dim while paused", async ({ reactGrab, page }) => {
@@ -684,29 +894,33 @@ test.describe("Hold Space to pause", () => {
     await expect(reactGrab.getOverlayHost().locator(STROKE_SELECTOR)).toHaveCount(1);
   });
 
-  test("reduced motion steps back by opacity alone", async ({ reactGrab, page }) => {
+  test("reduced motion swaps the tools and Paused instantly", async ({ reactGrab, page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await reactGrab.activate();
     await page.mouse.move(0, 0);
-    const toolbar = reactGrab.getOverlayHost().locator(TOOLBAR_SELECTOR);
-    const transformBefore = await toolbar.evaluate((element) => element.style.transform);
+    const pausedContent = getPausedContent(reactGrab);
+    const readCrossfade = () =>
+      pausedContent.evaluate((element) => ({
+        opacity: getComputedStyle(element).opacity,
+        visibility: getComputedStyle(element).visibility,
+        runningAnimations: element.getAnimations().length,
+      }));
 
     await page.keyboard.down("Space");
-    await expectPaused(reactGrab);
-    await expect
-      .poll(() => toolbar.evaluate((element) => Number(getComputedStyle(element).opacity)))
-      .toBeCloseTo(TOOLBAR_PAUSED_OPACITY, 2);
-    expect(await toolbar.evaluate((element) => getComputedStyle(element).scale)).toBe("none");
-    expect(await toolbar.evaluate((element) => element.style.transform)).toBe(transformBefore);
-    expect(
-      await getPauseChip(reactGrab).evaluate((element) => getComputedStyle(element).transform),
-    ).toBe("none");
+    await expect(getPauseStatus(reactGrab)).toHaveText(PAUSED_ANNOUNCEMENT);
+    expect(await readCrossfade()).toEqual({
+      opacity: "1",
+      visibility: "visible",
+      runningAnimations: 0,
+    });
 
     await page.keyboard.up("Space");
-    await expectNotPaused(reactGrab);
-    expect(await toolbar.evaluate((element) => getComputedStyle(element).animationName)).toBe(
-      "none",
-    );
+    await expect(getPauseStatus(reactGrab)).toHaveText(RESUMED_ANNOUNCEMENT);
+    expect(await readCrossfade()).toEqual({
+      opacity: "0",
+      visibility: "hidden",
+      runningAnimations: 0,
+    });
   });
 
   test("a selected drawing and its handles let clicks through to the page while paused", async ({
@@ -900,7 +1114,7 @@ test.describe("Hold Space to pause", () => {
       await page.keyboard.down("Space");
       await page.keyboard.up("Space");
       await expect(getPauseStatus(reactGrab)).toHaveText("");
-      await expect(getPauseChip(reactGrab)).not.toHaveAttribute("data-visible", "");
+      await expectPausedContentHidden(reactGrab);
     });
 
     test("the window losing focus from inside the frame ends the pause", async ({

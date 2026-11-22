@@ -968,17 +968,3 @@ export interface InspectRendererState {
   onTextDraftCommit: (draftPosition: Position) => void;
   onTextDraftCancel: () => void;
 }
-
-export interface PauseChipAnchor {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface PauseChipPlacement {
-  left: number;
-  top: number;
-  translate: string;
-  hiddenTransform: string;
-}

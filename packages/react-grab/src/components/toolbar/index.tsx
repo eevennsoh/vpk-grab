@@ -22,7 +22,7 @@ import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
 import { IconText } from "../icons/icon-text.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
-import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { PAUSE_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { ToolbarActionButton } from "./toolbar-action-button.jsx";
 import {
   TOOLBAR_ACTION_ICON_SIZE_PX,
@@ -48,18 +48,7 @@ import {
   RESUMED_ANNOUNCEMENT,
   TOOLBAR_DIMMED_OPACITY,
   TOOLBAR_DIMMED_SCALE,
-  TOOLBAR_PAUSED_OPACITY,
-  TOOLBAR_PAUSED_SCALE,
-  PAUSE_TRANSITION_DURATION_MS,
-  PAUSE_TRANSITION_EASING,
-  RESUME_SPRING_DURATION_MS,
-  RESUME_SPRING_EASING,
-  RESUME_SPRING_OVERSHOOT_SCALE,
-  PAUSED_TOOL_OUTLINE_OFFSET_PX,
-  PAUSED_TOOL_OUTLINE_RADIUS_PX,
-  PAUSED_TOOL_OUTLINE_WIDTH_PX,
 } from "../../constants.js";
-import { PauseChip } from "./pause-chip.jsx";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
   freezeGlobalInteractions,
@@ -205,7 +194,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     Boolean(props.isActive) && (props.activeActionId ?? DEFAULT_ACTION_ID) === currentActionId();
 
   const isActionHovered = (actionId: string) =>
-    hoveredActionId() === actionId && !isCollapsed() && !drag.isDragging() && !drag.isSnapping();
+    hoveredActionId() === actionId &&
+    !isCollapsed() &&
+    !props.isPaused &&
+    !drag.isDragging() &&
+    !drag.isSnapping();
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
   // Specs, Spacing and Screenshot serve what Grab hovers and copies, so they
   // join the toolbar only while Grab is the tool in hand.
@@ -844,37 +837,20 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   // Drawing and writing keep the toolbar at full strength: its colors and
   // tools are what the pen and text work from.
-  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting() && !isColorTool();
-  // Paused, the toolbar steps further back than Grab's usual dim, whatever the
-  // tool, until the pointer comes to it to change something.
-  const isPausedLook = (): boolean => Boolean(props.isPaused) && !isInteracting();
-  const baseScale = () => (shouldDim() ? TOOLBAR_DIMMED_SCALE : 1);
-  const getPausedScaleFactor = () => String(TOOLBAR_PAUSED_SCALE / baseScale());
+  // A pause holds the dim it started with, so the pointer crossing the paused
+  // toolbar never rescales it.
+  const shouldDim = createMemo<boolean>((wasDimmed) => {
+    if (props.isPaused) return wasDimmed;
+    return Boolean(props.isActive) && !isInteracting() && !isColorTool();
+  }, false);
   const getOpacity = (): number => {
     if (!isVisible()) return 0;
-    if (isPausedLook()) return TOOLBAR_PAUSED_OPACITY;
     return shouldDim() ? TOOLBAR_DIMMED_OPACITY : 1;
   };
   const pauseAnnouncement = createMemo<string>((previousAnnouncement) => {
     if (props.isPaused) return PAUSED_ANNOUNCEMENT;
     return previousAnnouncement ? RESUMED_ANNOUNCEMENT : "";
   }, "");
-  // The spring runs when the animation name appears, so swapping it in on
-  // release replays it once per pause without a timer.
-  const getResumeAnimation = (): string | undefined => {
-    if (props.isPaused) return "none";
-    if (pauseAnnouncement() !== RESUMED_ANNOUNCEMENT) return undefined;
-    return `toolbar-resume-spring ${RESUME_SPRING_DURATION_MS}ms ${RESUME_SPRING_EASING}`;
-  };
-  const getPauseTransition = (): string | undefined => {
-    if (!props.isPaused || isResizing() || drag.isDragging()) return undefined;
-    const timing = `${PAUSE_TRANSITION_DURATION_MS}ms ${PAUSE_TRANSITION_EASING}`;
-    return `opacity ${timing}, scale ${timing}, filter ${timing}, transform ${timing}`;
-  };
-  const getPauseChipAnchor = () => {
-    const { x, y } = currentPosition();
-    return { x, y, width: expandedDimensions.width, height: expandedDimensions.height };
-  };
 
   const getTransitionClass = (): string => {
     // Drag must follow the pointer frame-to-frame; any transform transition
@@ -894,7 +870,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       const duration = groupMotion === "revealing" ? "duration-220" : "duration-140";
       return `transition-[transform,opacity] ${duration} ease-drawer`;
     }
-    return "transition-[transform,opacity,scale,filter] duration-400 ease-drawer";
+    return "transition-[transform,opacity] duration-400 ease-drawer";
   };
 
   const getTransformOrigin = (): string => {
@@ -919,7 +895,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         ref={containerRef}
         data-react-grab-ignore-events
         data-react-grab-toolbar
-        data-react-grab-toolbar-paused={isPausedLook() ? "" : undefined}
         class={cn(
           "fixed left-0 top-0 font-sans text-[13px] antialiased select-none",
           getCursorClass(),
@@ -930,22 +905,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         )}
         style={{
           "z-index": String(Z_INDEX_OVERLAY),
-          transform: `translate(${currentPosition().x}px, ${currentPosition().y}px) scale(${baseScale()})`,
+          transform: `translate(${currentPosition().x}px, ${currentPosition().y}px) scale(${shouldDim() ? TOOLBAR_DIMMED_SCALE : 1})`,
           "transform-origin": getTransformOrigin(),
           opacity: getOpacity(),
-          scale: isPausedLook() ? getPausedScaleFactor() : undefined,
-          filter: isPausedLook() ? "saturate(0)" : undefined,
-          transition: getPauseTransition(),
-          animation: getResumeAnimation(),
-          "--rg-toolbar-resume-from-scale": getPausedScaleFactor(),
-          "--rg-toolbar-resume-overshoot-scale": String(RESUME_SPRING_OVERSHOOT_SCALE),
-          "--rg-paused-tool-outline-offset": `${PAUSED_TOOL_OUTLINE_OFFSET_PX}px`,
-          "--rg-paused-tool-outline-radius": `${PAUSED_TOOL_OUTLINE_RADIUS_PX}px`,
-          "--rg-paused-tool-outline-width": `${PAUSED_TOOL_OUTLINE_WIDTH_PX}px`,
         }}
         on:pointerdown={(event) => {
           stopEventPropagation(event);
-          drag.handlePointerDown(event);
+          if (!props.isPaused) drag.handlePointerDown(event);
         }}
         on:mousedown={stopEventPropagation}
         onMouseEnter={() => {
@@ -960,13 +926,33 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           isShaking={isShaking()}
           isChevronPressed={isChevronPressed()}
           transformOrigin={getTransformOrigin()}
+          isPaused={Boolean(props.isPaused)}
+          pausedContent={
+            <>
+              <MaterialIcon
+                paths={PAUSE_ICON_PATHS}
+                size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                class="shrink-0 text-[var(--rg-text-primary)]"
+              />
+              <span
+                data-react-grab-toolbar-paused-label
+                class={
+                  isVertical() || isCollapsed()
+                    ? "sr-only"
+                    : "text-[13px] leading-4 font-medium text-[var(--rg-text-primary)]"
+                }
+              >
+                Paused
+              </span>
+            </>
+          }
           onAnimationEnd={() => setIsShaking(false)}
           onCollapseClick={handleToggleCollapse}
           onCollapsePointerDown={() => setIsChevronPressed(true)}
           onCollapsePointerUp={() => setIsChevronPressed(false)}
           onCollapsePointerLeave={() => setIsChevronPressed(false)}
           onPanelClick={(event) => {
-            if (isCollapsed()) {
+            if (isCollapsed() && !props.isPaused) {
               event.stopPropagation();
               expandToolbarFromCollapsed();
             }
@@ -1267,12 +1253,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           }
         />
       </div>
-      <PauseChip
-        isVisible={Boolean(props.isPaused) && isVisible() && hoveredActionId() === null}
-        snapEdge={snapEdge()}
-        anchor={getPauseChipAnchor()}
-        keyLabel={PAUSE_HOLD_KEY_LABEL}
-      />
       <span
         data-react-grab-pause-status
         role="status"
