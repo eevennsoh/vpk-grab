@@ -554,6 +554,9 @@ export const PAUSE_TRANSITION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 export const PAUSED_LAYER_TRANSITION = `opacity ${PAUSE_TRANSITION_DURATION_MS}ms ${PAUSE_TRANSITION_EASING}`;
 export const PAUSED_CROSSFADE_DURATION_MS = 140;
 export const PAUSED_CROSSFADE_EASING = "cubic-bezier(0, 0, 0.2, 1)";
+export const PAUSED_MORPH_DURATION_MS = 280;
+export const PAUSED_MORPH_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+export const PAUSED_CONTENT_ENTER_DELAY_MS = 90;
 export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 export const TOOL_CYCLE_DIRECTION_BY_KEY: ReadonlyMap<string, ToolCycleDirection> = new Map([
   ["ArrowRight", "forward"],

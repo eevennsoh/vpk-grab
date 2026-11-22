@@ -1,8 +1,14 @@
-import type { Component, JSX } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, type Component, type JSX } from "solid-js";
 import { cn } from "../../utils/cn.js";
 import { isHorizontalEdge } from "../../utils/toolbar-position.js";
 import { IconChevron } from "../icons/icon-chevron.jsx";
-import { PAUSED_CROSSFADE_DURATION_MS, PAUSED_CROSSFADE_EASING } from "../../constants.js";
+import {
+  PAUSED_CONTENT_ENTER_DELAY_MS,
+  PAUSED_CROSSFADE_DURATION_MS,
+  PAUSED_CROSSFADE_EASING,
+  PAUSED_MORPH_DURATION_MS,
+  PAUSED_MORPH_EASING,
+} from "../../constants.js";
 
 interface ToolbarContentProps {
   isCollapsed?: boolean;
@@ -74,8 +80,57 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
   // replaces the collapse's size transition or a button's press scale.
   const pausedFadeStyle = () => ({
     opacity: props.isPaused ? 0 : 1,
-    transition: `opacity ${pausedCrossfadeTiming}`,
+    transition: props.isPaused
+      ? `opacity ${pausedCrossfadeTiming}`
+      : `opacity ${pausedCrossfadeTiming} ${PAUSED_CONTENT_ENTER_DELAY_MS}ms`,
   });
+
+  // The surface slides its sides in until it hugs the Paused content, then
+  // back out on release, so the toolbar's own box never changes size.
+  let panelRef: HTMLDivElement | undefined;
+  let pausedContentRef: HTMLDivElement | undefined;
+  const [surfaceInsetPx, setSurfaceInsetPx] = createSignal(0);
+  let surfaceMeasureFrameId: number | undefined;
+  const measureSurfaceInset = () => {
+    surfaceMeasureFrameId = undefined;
+    if (!props.isPaused || !panelRef || !pausedContentRef) return;
+    // Layout sizes ignore the toolbar's own scale, so the inset is in the
+    // panel's unscaled pixels.
+    const freeSpacePx = isVertical()
+      ? panelRef.offsetHeight - pausedContentRef.offsetHeight
+      : panelRef.offsetWidth - pausedContentRef.offsetWidth;
+    setSurfaceInsetPx(Math.max(0, freeSpacePx / 2));
+  };
+  createEffect(
+    on(
+      () => props.isPaused,
+      (isPaused) => {
+        if (surfaceMeasureFrameId !== undefined) cancelAnimationFrame(surfaceMeasureFrameId);
+        surfaceMeasureFrameId = undefined;
+        if (!isPaused) {
+          setSurfaceInsetPx(0);
+          return;
+        }
+        surfaceMeasureFrameId = requestAnimationFrame(measureSurfaceInset);
+      },
+    ),
+  );
+  // The Paused content can still be settling (fonts, the label's layout)
+  // when the pause starts, so the inset follows its size while paused.
+  const surfaceResizeObserver = new ResizeObserver(() => {
+    if (props.isPaused) measureSurfaceInset();
+  });
+  onCleanup(() => {
+    if (surfaceMeasureFrameId !== undefined) cancelAnimationFrame(surfaceMeasureFrameId);
+    surfaceResizeObserver.disconnect();
+  });
+  const surfaceStyle = (): JSX.CSSProperties => {
+    const insetPx = `${surfaceInsetPx()}px`;
+    const morphTiming = `${PAUSED_MORPH_DURATION_MS}ms ${PAUSED_MORPH_EASING}`;
+    return isVertical()
+      ? { top: insetPx, bottom: insetPx, transition: `top ${morphTiming}, bottom ${morphTiming}` }
+      : { left: insetPx, right: insetPx, transition: `left ${morphTiming}, right ${morphTiming}` };
+  };
 
   const outerTransitionClass = () =>
     props.isChevronPressed
@@ -98,21 +153,19 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
         collapsedEdgeClasses(),
         props.isShaking && (isVertical() ? "animate-shake-vertical" : "animate-shake"),
       )}
+      ref={(element) => {
+        panelRef = element;
+        surfaceResizeObserver.observe(element);
+      }}
       style={{ "transform-origin": props.transformOrigin, transform: pressSquishTransform() }}
       onAnimationEnd={props.onAnimationEnd}
       onClick={props.onPanelClick}
     >
-      {/* The surface is its own layer so a pause can fade it away and leave
-          only the Paused pill, which hugs its content, without resizing the
-          toolbar's box. */}
       <div
         data-react-grab-toolbar-surface
         aria-hidden="true"
         class="absolute inset-0 -z-10 rounded-[inherit] bg-[var(--rg-panel-bg)] [box-shadow:var(--rg-shadow)] pointer-events-none"
-        style={{
-          opacity: props.isPaused ? 0 : 1,
-          transition: `opacity ${pausedCrossfadeTiming}`,
-        }}
+        style={surfaceStyle()}
       />
       <div
         inert={props.isPaused}
@@ -175,15 +228,21 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
       <div
         data-react-grab-toolbar-paused-content
         aria-hidden={props.isPaused ? undefined : "true"}
+        ref={(element) => {
+          pausedContentRef = element;
+          surfaceResizeObserver.observe(element);
+        }}
         class={cn(
-          "absolute inset-0 m-auto flex items-center justify-center gap-1 rounded-[13px] bg-[var(--rg-panel-bg)] [box-shadow:var(--rg-shadow)]",
+          "absolute inset-0 m-auto flex items-center justify-center gap-1 rounded-[13px]",
           isVertical() ? "w-full h-fit py-2" : "h-full w-fit px-2.5",
         )}
         style={{
           opacity: props.isPaused ? 1 : 0,
           visibility: props.isPaused ? "visible" : "hidden",
           "pointer-events": props.isPaused ? "auto" : "none",
-          transition: `opacity ${pausedCrossfadeTiming}, visibility ${pausedCrossfadeTiming}`,
+          transition: props.isPaused
+            ? `opacity ${pausedCrossfadeTiming} ${PAUSED_CONTENT_ENTER_DELAY_MS}ms, visibility 0ms`
+            : `opacity ${pausedCrossfadeTiming}, visibility ${pausedCrossfadeTiming}`,
         }}
       >
         {props.pausedContent}
