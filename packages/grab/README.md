@@ -31,6 +31,8 @@ Holding a key changes what the pointer does:
 
 While drawing either marquee, hold **Space** to move the rectangle without changing its size. Release **Space** to resize it again.
 
+Hold **Space** at any other time while vpk-grab is on, with any tool, to pause it: the page takes clicks, hovers, scrolling and keys as if vpk-grab were off, so you can follow a link or open a menu to reach the next element. Release **Space** to carry on with the same tool, toggles, pill and drawings, and the element under the pointer is picked up straight away. While paused the toolbar steps back with a **Paused** chip beside it, the pill and drawings dim and stay put, the toolbar still works, **Esc** goes to the page, and the activation shortcut still switches vpk-grab off. Space typed into a field, the pill's **Optional context** once it has text, a note or the Specs panel stays a space. Switching windows ends the pause.
+
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
 While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).
