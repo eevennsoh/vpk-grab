@@ -1,8 +1,4 @@
-import {
-  DEFAULT_KEY_HOLD_DURATION_MS,
-  INPUT_FOCUS_ACTIVATION_DELAY_MS,
-  TOGGLE_OFF_TAP_MAX_MS,
-} from "../src/constants.js";
+import { DEFAULT_KEY_HOLD_DURATION_MS, INPUT_FOCUS_ACTIVATION_DELAY_MS } from "../src/constants.js";
 
 export { REACT_GRAB_ATTRIBUTE_NAME as ATTRIBUTE_NAME } from "../src/utils/react-grab-attribute-name.js";
 export { Z_INDEX_OVERLAY } from "../src/constants.js";
@@ -12,7 +8,7 @@ export const KEYBOARD_ACTIVATION_SETTLE_DELAY_MS =
   DEFAULT_KEY_HOLD_DURATION_MS +
   INPUT_FOCUS_ACTIVATION_DELAY_MS +
   KEYBOARD_ACTIVATION_TIMER_BUFFER_MS;
-export const TEXT_SELECTION_SHORTCUT_PRESS_MS = TOGGLE_OFF_TAP_MAX_MS + 200;
+export const TEXT_SELECTION_SHORTCUT_PRESS_MS = 800;
 export const NON_NATIVE_ACTIVATION_KEY = "F8";
 export const OUTSIDE_WINDOW_POSITION_PX = { x: -1, y: -1 };
 export const MOTIONLESS_SPECS_VIEWPORT_PX = { width: 500, height: 600 };

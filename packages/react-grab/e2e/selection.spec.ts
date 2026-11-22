@@ -1,4 +1,3 @@
-import { TOGGLE_OFF_TAP_MAX_MS } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   ATTRIBUTE_NAME,
@@ -491,19 +490,52 @@ for (const tapDurationMs of [180, 400]) {
   });
 }
 
-test("a long deliberate hold of the shortcut leaves a toggled session on", async ({
+test("a held, auto-repeating shortcut leaves a toggled session on", async ({ reactGrab, page }) => {
+  await reactGrab.activateViaKeyboard();
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+  await page.keyboard.down(reactGrab.modifierKey);
+  await page.keyboard.down("c");
+  await page.waitForTimeout(500);
+  await page.keyboard.down("c");
+  await page.keyboard.up("c");
+  await page.keyboard.up(reactGrab.modifierKey);
+  await page.waitForTimeout(200);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+});
+
+test("a tap switches a toggled session off even when the modifier stays down for a while", async ({
   reactGrab,
   page,
 }) => {
   await reactGrab.activateViaKeyboard();
   await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+  // macOS sends no keyup for C while Cmd is held, so only the modifier's
+  // release arrives, well after the tap.
   await page.keyboard.down(reactGrab.modifierKey);
   await page.keyboard.down("c");
-  await page.waitForTimeout(TOGGLE_OFF_TAP_MAX_MS + 200);
+  await page.waitForTimeout(1200);
+  await page.keyboard.up(reactGrab.modifierKey);
+  await page.keyboard.up("c");
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+});
+
+test("a tap switches a toggled session off with focus on a toolbar button", async ({
+  reactGrab,
+  page,
+}) => {
+  await reactGrab.activateViaKeyboard();
+  await page.locator('[data-react-grab-toolbar-action="annotate-pen"]').click();
+  await page.locator('[data-react-grab-toolbar-action="copy"]').click();
+  await expect(page.locator('[data-react-grab-toolbar-action="copy"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.keyboard.down(reactGrab.modifierKey);
+  await page.keyboard.down("c");
+  await page.waitForTimeout(150);
   await page.keyboard.up("c");
   await page.keyboard.up(reactGrab.modifierKey);
-  await page.waitForTimeout(200);
-  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
 });
 
 test.describe("Space marquee movement", () => {

@@ -117,7 +117,6 @@ import {
   INPUT_FOCUS_ACTIVATION_DELAY_MS,
   INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS,
   DEFAULT_KEY_HOLD_DURATION_MS,
-  TOGGLE_OFF_TAP_MAX_MS,
   MIN_HOLD_FOR_ACTIVATION_AFTER_COPY_MS,
   ZOOM_DETECTION_THRESHOLD,
   WINDOW_REFOCUS_GRACE_PERIOD_MS,
@@ -686,7 +685,8 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       void dragPreviewElements();
     };
     let keydownSpamTimerId: number | null = null;
-    let toggleShortcutPressTimestampMs: number | null = null;
+    let isToggleShortcutPressed = false;
+    let didToggleShortcutRepeat = false;
     const activationHoldState = {
       timerId: null as number | null,
       startTimestamp: null as number | null,
@@ -2051,7 +2051,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const deactivateRenderer = (shouldPreservePillPromptFocus = false) => {
       clearCopyFeedbackCooldown();
       cancelPendingCopies();
-      toggleShortcutPressTimestampMs = null;
+      isToggleShortcutPressed = false;
       const wasDragging = isDragging();
       const previousFocused = store.previouslyFocusedElement;
       if (shouldPreservePillPromptFocus) preservedPillPromptFocusTarget = previousFocused;
@@ -2383,7 +2383,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const shouldPreserveKeyboardSelection = keyboardSelection.selectedElement() !== null;
       actions.startDrag({ x: clientX, y: clientY }, isShiftHeld || shouldPreserveKeyboardSelection);
       dragStartTimestampMs = performance.now();
-      toggleShortcutPressTimestampMs = null;
+      isToggleShortcutPressed = false;
       actions.setPointer({ x: clientX, y: clientY });
       setHostBodyStyle("userSelect", "none");
 
@@ -3308,8 +3308,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
+        // macOS sends no keyup for C while Cmd is held, so a toggled session
+        // can't time the tap; only C auto-repeating marks a deliberate hold.
         if (isToggleSession()) {
-          if (!event.repeat) toggleShortcutPressTimestampMs = performance.now();
+          if (event.repeat) {
+            didToggleShortcutRepeat = true;
+          } else {
+            isToggleShortcutPressed = true;
+            didToggleShortcutRepeat = false;
+          }
           return;
         }
         if (event.repeat) return;
@@ -3556,6 +3563,16 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             if (tryHandleNavigationKey(event)) return;
           }
           if (isFromOverlay && tryHandleEnterCopy(event)) return;
+          // Focus left on a toolbar button must not stop the shortcut from
+          // switching a toggled session off.
+          if (
+            isFromOverlay &&
+            !isPromptMode() &&
+            isToggleSession() &&
+            isTargetKeyCombination(event, pluginRegistry.store.options)
+          ) {
+            handleActivationKeys(event);
+          }
 
           return;
         }
@@ -3616,12 +3633,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           return;
         }
 
-        if (
-          isEventFromOverlay(event, "data-react-grab-ignore-events") &&
-          !isPillPromptEvent(event)
-        ) {
-          return;
-        }
+        const isFromOverlayControl =
+          isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event);
+        if (isFromOverlayControl && !isToggleShortcutPressed) return;
 
         const requiredModifiers = getModifiersFromActivationKey(
           pluginRegistry.store.options.activationKey,
@@ -3637,21 +3651,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           : isCLikeKey(event.key, event.code);
         if (isOwnedByPillPrompt && !isReleasingActivationKey && !isReleasingModifier) return;
 
-        if (
-          toggleShortcutPressTimestampMs !== null &&
-          (isReleasingActivationKey || isReleasingModifier)
-        ) {
-          const shortcutPressDurationMs = performance.now() - toggleShortcutPressTimestampMs;
-          toggleShortcutPressTimestampMs = null;
-          const configuredKeyHoldDurationMs =
-            pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS;
-          if (
-            shortcutPressDurationMs < Math.max(configuredKeyHoldDurationMs, TOGGLE_OFF_TAP_MAX_MS)
-          ) {
+        if (isToggleShortcutPressed && (isReleasingActivationKey || isReleasingModifier)) {
+          isToggleShortcutPressed = false;
+          if (!didToggleShortcutRepeat) {
             deactivateRenderer();
             return;
           }
         }
+        if (isFromOverlayControl) return;
 
         if ((didJustCopy() || isCopyFeedbackCooldownActive) && !isToggleSession()) {
           if (isReleasingActivationKey || isReleasingModifier) {
