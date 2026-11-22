@@ -157,7 +157,8 @@ example, in `<head>` before the app's own scripts, on development pages only.
   pauses it so the page's own clicks, hovers and keys work, for example to
   navigate to the next element. Releasing Space resumes the same session (tool,
   toggles, pill, drawings) and picks up the element under the pointer. The
-  toolbar shows a Paused chip; Esc goes to the page; the activation shortcut
+  toolbar shows Paused in place of its tools and can't be used until you let
+  go; Esc goes to the page; the activation shortcut
   still switches Grab off. Space doesn't pause from a page field (also inside a
   same-origin frame); in a note, the Specs panel or Optional context with text it
   types a space.
