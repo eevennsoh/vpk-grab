@@ -1,3 +1,4 @@
+import { TOGGLE_OFF_TAP_MAX_MS } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   ATTRIBUTE_NAME,
@@ -472,6 +473,37 @@ test("tapping the shortcut again after a copy switches Grab off", async ({ react
   await expect.poll(async () => (await reactGrab.getState()).isCopying).toBe(false);
   await page.keyboard.press(`${reactGrab.modifierKey}+c`);
   await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+});
+
+for (const tapDurationMs of [180, 400]) {
+  test(`a ${tapDurationMs}ms human-length tap of the shortcut switches a toggled session off`, async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activateViaKeyboard();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    await page.waitForTimeout(tapDurationMs);
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+  });
+}
+
+test("a long deliberate hold of the shortcut leaves a toggled session on", async ({
+  reactGrab,
+  page,
+}) => {
+  await reactGrab.activateViaKeyboard();
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+  await page.keyboard.down(reactGrab.modifierKey);
+  await page.keyboard.down("c");
+  await page.waitForTimeout(TOGGLE_OFF_TAP_MAX_MS + 200);
+  await page.keyboard.up("c");
+  await page.keyboard.up(reactGrab.modifierKey);
+  await page.waitForTimeout(200);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
 });
 
 test.describe("Space marquee movement", () => {
