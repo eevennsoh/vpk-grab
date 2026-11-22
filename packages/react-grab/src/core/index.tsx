@@ -115,6 +115,7 @@ import {
   INPUT_FOCUS_ACTIVATION_DELAY_MS,
   INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS,
   DEFAULT_KEY_HOLD_DURATION_MS,
+  TOGGLE_OFF_TAP_MAX_MS,
   MIN_HOLD_FOR_ACTIVATION_AFTER_COPY_MS,
   ZOOM_DETECTION_THRESHOLD,
   WINDOW_REFOCUS_GRACE_PERIOD_MS,
@@ -3511,8 +3512,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           const configuredKeyHoldDurationMs =
             pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS;
           if (
-            shortcutPressDurationMs <
-            Math.max(configuredKeyHoldDurationMs, DEFAULT_KEY_HOLD_DURATION_MS)
+            shortcutPressDurationMs < Math.max(configuredKeyHoldDurationMs, TOGGLE_OFF_TAP_MAX_MS)
           ) {
             deactivateRenderer();
             return;
