@@ -70,6 +70,12 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
   };
 
   const pausedCrossfadeTiming = `${PAUSED_CROSSFADE_DURATION_MS}ms ${PAUSED_CROSSFADE_EASING}`;
+  // Set on elements with no transition of their own, so the fade never
+  // replaces the collapse's size transition or a button's press scale.
+  const pausedFadeStyle = () => ({
+    opacity: props.isPaused ? 0 : 1,
+    transition: `opacity ${pausedCrossfadeTiming}`,
+  });
 
   const outerTransitionClass = () =>
     props.isChevronPressed
@@ -85,10 +91,9 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
         // shaped for the whole duration and snaps on the last frame. 13px is
         // half the expanded 26px thickness, so it renders identically to
         // rounded-full but interpolates visibly in sync with the collapse.
-        "flex items-center justify-center rounded-[13px] antialiased relative overflow-visible [font-synthesis:none]",
+        "flex items-center justify-center rounded-[13px] antialiased relative isolate overflow-visible [font-synthesis:none]",
         outerTransitionClass(),
         isVertical() && "flex-col",
-        "bg-[var(--rg-panel-bg)] [box-shadow:var(--rg-shadow)]",
         !props.isCollapsed && (isVertical() ? "px-1.5 gap-0 py-2" : "py-1.5 gap-0 px-2"),
         collapsedEdgeClasses(),
         props.isShaking && (isVertical() ? "animate-shake-vertical" : "animate-shake"),
@@ -97,6 +102,18 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
       onAnimationEnd={props.onAnimationEnd}
       onClick={props.onPanelClick}
     >
+      {/* The surface is its own layer so a pause can fade it away and leave
+          only the Paused pill, which hugs its content, without resizing the
+          toolbar's box. */}
+      <div
+        data-react-grab-toolbar-surface
+        aria-hidden="true"
+        class="absolute inset-0 -z-10 rounded-[inherit] bg-[var(--rg-panel-bg)] [box-shadow:var(--rg-shadow)] pointer-events-none"
+        style={{
+          opacity: props.isPaused ? 0 : 1,
+          transition: `opacity ${pausedCrossfadeTiming}`,
+        }}
+      />
       <div
         inert={props.isPaused}
         class={cn(
@@ -125,6 +142,7 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
               isVertical() ? "flex-col items-center" : "items-center",
               minDimensionClass(),
             )}
+            style={pausedFadeStyle()}
           >
             {props.actionButtons}
           </div>
@@ -144,18 +162,23 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
         onPointerLeave={props.onCollapsePointerLeave}
         onPointerCancel={props.onCollapsePointerLeave}
       >
-        <IconChevron
-          size={18}
-          class={cn(
-            "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)] transition-[transform,color] duration-150 ease-drawer -m-0.5",
-            chevronRotation(),
-          )}
-        />
+        <span class="flex" style={pausedFadeStyle()}>
+          <IconChevron
+            size={18}
+            class={cn(
+              "text-[var(--rg-text-secondary)] group-hover:text-[var(--rg-text-primary)] transition-[transform,color] duration-150 ease-drawer -m-0.5",
+              chevronRotation(),
+            )}
+          />
+        </span>
       </button>
       <div
         data-react-grab-toolbar-paused-content
         aria-hidden={props.isPaused ? undefined : "true"}
-        class="absolute inset-0 flex items-center justify-center gap-1 rounded-[inherit] bg-[var(--rg-panel-bg)]"
+        class={cn(
+          "absolute inset-0 m-auto flex items-center justify-center gap-1 rounded-[13px] bg-[var(--rg-panel-bg)] [box-shadow:var(--rg-shadow)]",
+          isVertical() ? "w-full h-fit py-2" : "h-full w-fit px-2.5",
+        )}
         style={{
           opacity: props.isPaused ? 1 : 0,
           visibility: props.isPaused ? "visible" : "hidden",

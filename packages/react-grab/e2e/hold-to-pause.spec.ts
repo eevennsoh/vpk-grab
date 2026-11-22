@@ -777,7 +777,7 @@ test.describe("Hold Space to pause", () => {
     expect(await reactGrab.isOverlayVisible()).toBe(false);
   });
 
-  test("the toolbar itself shows the pause icon and Paused, with no chip and no key hint", async ({
+  test("the toolbar shows a Paused pill that hugs its content, with no chip and no key hint", async ({
     reactGrab,
     page,
   }) => {
@@ -802,12 +802,16 @@ test.describe("Hold Space to pause", () => {
     await expect(toolbar).not.toContainText("Space");
     const labelBox = await getBox(host.locator(PAUSED_LABEL_SELECTOR));
     expect(labelBox.width).toBeGreaterThan(HIDDEN_LABEL_MAX_SIZE_PX);
+    // The Paused pill hugs its content: narrower than the toolbar, the same
+    // height and centred on it, with the toolbar's own surface faded away.
+    const panelBox = await getBox(host.locator(TOOLBAR_PANEL_SELECTOR));
+    const pillBox = await getBox(pausedContent);
+    expect(pillBox.width).toBeLessThan(panelBox.width - BOX_TOLERANCE_PX);
+    expect(Math.abs(pillBox.height - panelBox.height)).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
     expect(
-      getMaxBoxDeviation([
-        await getBox(host.locator(TOOLBAR_PANEL_SELECTOR)),
-        await getBox(pausedContent),
-      ]),
+      Math.abs(pillBox.x + pillBox.width / 2 - (panelBox.x + panelBox.width / 2)),
     ).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
+    await expect(host.locator("[data-react-grab-toolbar-surface]")).toHaveCSS("opacity", "0");
     expect(await isInsideInertSubtree(host.locator(SPACING_TOGGLE_SELECTOR))).toBe(true);
 
     await page.keyboard.up("Space");

@@ -35,10 +35,6 @@ export const WINDOW_REFOCUS_GRACE_PERIOD_MS = 200;
 export const INPUT_FOCUS_ACTIVATION_DELAY_MS = 400;
 export const INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS = 600;
 export const DEFAULT_KEY_HOLD_DURATION_MS = 100;
-// A tap of the shortcut switches a toggled session off. A hold means nothing
-// there, so a normal human tap (often well over the 100ms activation hold)
-// must count; only a press long enough to be a deliberate hold is ignored.
-export const TOGGLE_OFF_TAP_MAX_MS = 600;
 export const DEFAULT_MAX_CONTEXT_LINES = 3;
 export const MAX_TRACE_CONTEXT_LINES = 20;
 // Path segments marking app-owned reusable UI directories (shadcn's
