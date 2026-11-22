@@ -158,8 +158,9 @@ example, in `<head>` before the app's own scripts, on development pages only.
   navigate to the next element. Releasing Space resumes the same session (tool,
   toggles, pill, drawings) and picks up the element under the pointer. The
   toolbar shows a Paused chip; Esc goes to the page; the activation shortcut
-  still switches Grab off. Space in a field, a note, the Specs panel or Optional
-  context with text stays a space.
+  still switches Grab off. Space doesn't pause from a page field (also inside a
+  same-origin frame); in a note, the Specs panel or Optional context with text it
+  types a space.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
   square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or
