@@ -103,3 +103,13 @@ export const CLOSE_SMALL_ICON_PATHS: MaterialIconPaths = {
   outline: CLOSE_SMALL_PATH,
   filled: CLOSE_SMALL_PATH,
 };
+
+// Weight 200, not the file's usual 300: the paused toolbar's icon is specified
+// lighter than the tools.
+const PAUSE_PATH =
+  "M578.15-244.92q-14.8 0-25.86-11.06-11.06-11.06-11.06-25.87v-396.3q0-14.81 11.06-25.87t25.86-11.06h100q14.81 0 25.87 11.06t11.06 25.87v396.3q0 14.81-11.06 25.87t-25.87 11.06h-100Zm-296.3 0q-14.81 0-25.87-11.06t-11.06-25.87v-396.3q0-14.81 11.06-25.87t25.87-11.06h100q14.8 0 25.86 11.06 11.06 11.06 11.06 25.87v396.3q0 14.81-11.06 25.87t-25.87 11.06h-100Zm296.3-36.93h100v-396.3h-100v396.3Zm-296.3 0h100v-396.3h-100v396.3Zm0-396.3v396.3-396.3Zm296.3 0v396.3-396.3Z";
+
+export const PAUSE_ICON_PATHS: MaterialIconPaths = {
+  outline: PAUSE_PATH,
+  filled: PAUSE_PATH,
+};

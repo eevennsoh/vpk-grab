@@ -31,6 +31,8 @@ Holding a key changes what the pointer does:
 
 While drawing either marquee, hold **Space** to move the rectangle without changing its size. Release **Space** to resize it again.
 
+Hold **Space** at any other time while vpk-grab is on, with any tool, to pause it: the page takes clicks, hovers, scrolling and keys as if vpk-grab were off, so you can follow a link or open a menu to reach the next element. Release **Space** to carry on with the same tool, toggles, pill and drawings, and the element under the pointer is picked up straight away. While paused the toolbar itself shows **Paused** in place of its tools (just the pause icon when it's docked to a side) without moving, the pill and drawings dim and stay put, **Esc** goes to the page, and the activation shortcut still switches vpk-grab off. Space doesn't pause from a page field, including one inside a same-origin frame, and in a note, the Specs panel or the pill's **Optional context** once it has text it types a space. Switching windows ends the pause.
+
 Every change in the panel (switching a property off, picking a token, typing a value) is a temporary inline override in the browser. It never touches source files and is gone on reload.
 
 While vpk-grab is active, **⌘Z** undoes the last drawing, note, move, removal or style change, and **⌘⇧Z** redoes it (**Ctrl+Z** and **Ctrl+Shift+Z** or **Ctrl+Y** on Windows and Linux).
@@ -43,7 +45,7 @@ The pill also has an **Optional context** field for a quick follow-up. When Grab
 
 ## Install
 
-Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.18`.
+Install it for development only. Releases are listed at [github.com/eevennsoh/vpk-grab/releases](https://github.com/eevennsoh/vpk-grab/releases); the examples use `v0.2.0-vpk.19`.
 
 ### Let your agent do it
 
@@ -59,7 +61,7 @@ Works in any React app, and is the right choice for Next.js because the script m
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.18/dist/vpk-grab.global.js"
+  src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.19/dist/vpk-grab.global.js"
   crossorigin="anonymous"
 ></script>
 ```
@@ -75,7 +77,7 @@ export default function RootLayout({ children }) {
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.18/dist/vpk-grab.global.js"
+            src="https://cdn.jsdelivr.net/gh/eevennsoh/vpk-grab@v0.2.0-vpk.19/dist/vpk-grab.global.js"
             crossOrigin="anonymous"
             strategy="beforeInteractive"
           />
@@ -92,7 +94,7 @@ export default function RootLayout({ children }) {
 For Vite, webpack and other bundled apps. This also replaces an existing `react-grab` dependency in place.
 
 ```bash
-npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.18/react-grab-0.2.0-vpk.18.tgz
+npm install --save-dev https://github.com/eevennsoh/vpk-grab/releases/download/v0.2.0-vpk.19/react-grab-0.2.0-vpk.19.tgz
 ```
 
 Then load it at the top of the entry file:

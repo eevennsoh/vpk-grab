@@ -35,6 +35,10 @@ export const WINDOW_REFOCUS_GRACE_PERIOD_MS = 200;
 export const INPUT_FOCUS_ACTIVATION_DELAY_MS = 400;
 export const INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS = 600;
 export const DEFAULT_KEY_HOLD_DURATION_MS = 100;
+// A tap of the shortcut switches a toggled session off. A hold means nothing
+// there, so a normal human tap (often well over the 100ms activation hold)
+// must count; only a press long enough to be a deliberate hold is ignored.
+export const TOGGLE_OFF_TAP_MAX_MS = 600;
 export const DEFAULT_MAX_CONTEXT_LINES = 3;
 export const MAX_TRACE_CONTEXT_LINES = 20;
 // Path segments marking app-owned reusable UI directories (shadcn's
@@ -542,6 +546,18 @@ export const MOVE_TOOL_KEY = "v";
 export const SPECS_TOOL_KEY = "1";
 export const SPACING_TOOL_KEY = "2";
 export const AUTO_SCREENSHOT_TOOL_KEY = "3";
+export const PAUSE_HOLD_KEY_CODE = "Space";
+export const PAUSE_HOLD_KEY_LABEL = "Space";
+export const PAUSED_ANNOUNCEMENT = "vpk-grab paused";
+export const RESUMED_ANNOUNCEMENT = "vpk-grab resumed";
+export const TOOLBAR_DIMMED_OPACITY = 0.55;
+export const TOOLBAR_DIMMED_SCALE = 0.97;
+export const PAUSED_PAGE_LAYER_OPACITY = 0.55;
+export const PAUSE_TRANSITION_DURATION_MS = 180;
+export const PAUSE_TRANSITION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+export const PAUSED_LAYER_TRANSITION = `opacity ${PAUSE_TRANSITION_DURATION_MS}ms ${PAUSE_TRANSITION_EASING}`;
+export const PAUSED_CROSSFADE_DURATION_MS = 140;
+export const PAUSED_CROSSFADE_EASING = "cubic-bezier(0, 0, 0.2, 1)";
 export const SELECTION_TOOL_CYCLE: readonly SelectionTool[] = ["grab", "pen", "rectangle", "text"];
 export const TOOL_CYCLE_DIRECTION_BY_KEY: ReadonlyMap<string, ToolCycleDirection> = new Map([
   ["ArrowRight", "forward"],

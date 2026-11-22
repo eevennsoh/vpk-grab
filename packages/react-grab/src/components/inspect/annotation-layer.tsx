@@ -25,6 +25,8 @@ import {
   INSPECT_ACCENT_CONTRAST_COLOR,
   Z_INDEX_OVERLAY,
   Z_INDEX_OVERLAY_CANVAS,
+  PAUSED_LAYER_TRANSITION,
+  PAUSED_PAGE_LAYER_OPACITY,
 } from "../../constants.js";
 import type {
   AnnotationFrame,
@@ -65,6 +67,7 @@ interface AnnotationLayerProps {
   onTextDraftChange: (text: string) => void;
   onTextDraftCommit: (draftPosition: Position) => void;
   onTextDraftCancel: () => void;
+  isPaused: boolean;
 }
 
 const TEXT_DRAFT_PADDING_X_PX = 4;
@@ -166,16 +169,20 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
   // They sit in the shadow root, out of reach of the page's cursor override,
   // so they carry the Move tool's cursor themselves.
   const editingStyle = (hitArea: "all" | "auto" | "stroke"): JSX.CSSProperties =>
-    props.isEditing
+    props.isEditing && !props.isPaused
       ? { "pointer-events": hitArea, cursor: props.editCursor }
       : { "pointer-events": "none" };
 
-  const handleStyle = (handleCursor: string): JSX.CSSProperties => ({
-    "pointer-events": "all",
-    cursor: props.isTransforming ? props.editCursor : handleCursor,
-  });
+  const handleStyle = (handleCursor: string): JSX.CSSProperties =>
+    props.isPaused
+      ? { "pointer-events": "none" }
+      : {
+          "pointer-events": "all",
+          cursor: props.isTransforming ? props.editCursor : handleCursor,
+        };
 
   const pageTransform = () => `translate(${-scrollOffset().x}px, ${-scrollOffset().y}px)`;
+  const layerOpacity = () => (props.isPaused ? PAUSED_PAGE_LAYER_OPACITY : 1);
   const textTop = (pageY: number) => `${pageY - ANNOTATION_TEXT_LINE_HEIGHT_PX / 2}px`;
 
   return (
@@ -186,7 +193,11 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         class="fixed top-0 left-0 pointer-events-none overflow-visible"
         width="1"
         height="1"
-        style={{ "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
+        style={{
+          "z-index": String(Z_INDEX_OVERLAY_CANVAS),
+          opacity: layerOpacity(),
+          transition: PAUSED_LAYER_TRANSITION,
+        }}
       >
         <g style={{ transform: pageTransform() }}>
           <For each={props.strokes}>
@@ -265,7 +276,12 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
       </svg>
       <div
         class="fixed top-0 left-0 font-sans pointer-events-none select-none"
-        style={{ transform: pageTransform(), "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
+        style={{
+          transform: pageTransform(),
+          "z-index": String(Z_INDEX_OVERLAY_CANVAS),
+          opacity: layerOpacity(),
+          transition: PAUSED_LAYER_TRANSITION,
+        }}
       >
         <For each={props.texts}>
           {(annotationText) => {
@@ -307,7 +323,10 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         class="fixed top-0 left-0 pointer-events-none overflow-visible"
         width="1"
         height="1"
-        style={{ "z-index": String(Z_INDEX_OVERLAY_CANVAS) }}
+        style={{
+          "z-index": String(Z_INDEX_OVERLAY_CANVAS),
+          visibility: props.isPaused ? "hidden" : undefined,
+        }}
       >
         <g style={{ transform: pageTransform() }}>
           <For each={itemOutlineFrames()}>

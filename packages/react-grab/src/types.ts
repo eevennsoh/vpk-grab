@@ -504,6 +504,7 @@ export interface ReactGrabRendererProps {
   discardPrompt?: SelectionDiscardPrompt;
   toolbarVisible?: boolean;
   isActive?: boolean;
+  isPaused?: boolean;
   onToggleActive?: () => void;
   activeActionId?: string | null;
   enabled?: boolean;
@@ -686,6 +687,7 @@ export interface SelectionLabelProps {
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
   isGrabActive?: boolean;
+  isDimmed?: boolean;
   onPromptFocusRelease?: () => void;
 }
 

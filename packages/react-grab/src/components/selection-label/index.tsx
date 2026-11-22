@@ -11,6 +11,7 @@ import {
 import type { ArrowPosition, SelectionLabelProps } from "../../types.js";
 import {
   FADE_DURATION_MS,
+  PAUSED_PAGE_LAYER_OPACITY,
   PANEL_SHADOW,
   VIEWPORT_MARGIN_PX,
   ARROW_CENTER_PERCENT,
@@ -378,7 +379,12 @@ export const SelectionLabel: Component<SelectionLabelProps> = (props) => {
           "z-index": `${Z_INDEX_OVERLAY}`,
           "pointer-events": shouldEnablePointerEvents() ? "auto" : "none",
           transition: `opacity ${FADE_DURATION_MS}ms ease-out, filter ${FADE_DURATION_MS}ms ease-out`,
-          opacity: props.status === "fading" || isInternalFading() ? 0 : 1,
+          opacity:
+            props.status === "fading" || isInternalFading()
+              ? 0
+              : props.isDimmed
+                ? PAUSED_PAGE_LAYER_OPACITY
+                : 1,
           filter: `drop-shadow(${PANEL_SHADOW}) blur(${props.status === "fading" || isInternalFading() ? "3px" : "0"})`,
         }}
         onPointerDown={handleContainerPointerDown}

@@ -2,6 +2,7 @@ import type { Component, JSX } from "solid-js";
 import { cn } from "../../utils/cn.js";
 import { isHorizontalEdge } from "../../utils/toolbar-position.js";
 import { IconChevron } from "../icons/icon-chevron.jsx";
+import { PAUSED_CROSSFADE_DURATION_MS, PAUSED_CROSSFADE_EASING } from "../../constants.js";
 
 interface ToolbarContentProps {
   isCollapsed?: boolean;
@@ -16,6 +17,8 @@ interface ToolbarContentProps {
   onCollapsePointerLeave?: (event: PointerEvent) => void;
   actionButtons?: JSX.Element;
   transformOrigin?: string;
+  isPaused?: boolean;
+  pausedContent?: JSX.Element;
 }
 
 export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
@@ -66,6 +69,8 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
     return isVertical() ? "scale(0.97, 1)" : "scale(1, 0.97)";
   };
 
+  const pausedCrossfadeTiming = `${PAUSED_CROSSFADE_DURATION_MS}ms ${PAUSED_CROSSFADE_EASING}`;
+
   const outerTransitionClass = () =>
     props.isChevronPressed
       ? `transition-[padding,border-radius,transform] duration-60 ease-[cubic-bezier(0,0,0.2,1)]`
@@ -93,6 +98,7 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
       onClick={props.onPanelClick}
     >
       <div
+        inert={props.isPaused}
         class={cn(
           "grid relative overflow-visible",
           gridSizeTransitionClass(),
@@ -125,6 +131,7 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
         </div>
       </div>
       <button
+        inert={props.isPaused}
         data-react-grab-ignore-events
         data-react-grab-toolbar-collapse
         aria-label={props.isCollapsed ? "Expand toolbar" : "Collapse toolbar"}
@@ -145,6 +152,19 @@ export const ToolbarContent: Component<ToolbarContentProps> = (props) => {
           )}
         />
       </button>
+      <div
+        data-react-grab-toolbar-paused-content
+        aria-hidden={props.isPaused ? undefined : "true"}
+        class="absolute inset-0 flex items-center justify-center gap-1 rounded-[inherit] bg-[var(--rg-panel-bg)]"
+        style={{
+          opacity: props.isPaused ? 1 : 0,
+          visibility: props.isPaused ? "visible" : "hidden",
+          "pointer-events": props.isPaused ? "auto" : "none",
+          transition: `opacity ${pausedCrossfadeTiming}, visibility ${pausedCrossfadeTiming}`,
+        }}
+      >
+        {props.pausedContent}
+      </div>
     </div>
   );
 };

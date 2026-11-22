@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures.js";
 import { NON_NATIVE_ACTIVATION_KEY, TEXT_SELECTION_SHORTCUT_PRESS_MS } from "./constants.js";
 
 test.describe("Keyboard Shortcuts", () => {
-  test("a press longer than the configured hold keeps Grab on after activating with page text selected", async ({
+  test("a press longer than the toggle-off tap keeps Grab on after activating with page text selected", async ({
     reactGrab,
   }) => {
     const { page } = reactGrab;

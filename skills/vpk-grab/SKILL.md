@@ -153,6 +153,15 @@ example, in `<head>` before the app's own scripts, on development pages only.
 - **Hold Alt** with Grab in hand: shows Spacing while held, even when it is
   toggled off, anchored on the hovered element; moving to another element
   shows the distances between the two. Letting go restores the toggle.
+- **Hold Space** while vpk-grab is on (any tool, outside a marquee drag):
+  pauses it so the page's own clicks, hovers and keys work, for example to
+  navigate to the next element. Releasing Space resumes the same session (tool,
+  toggles, pill, drawings) and picks up the element under the pointer. The
+  toolbar shows Paused in place of its tools and can't be used until you let
+  go; Esc goes to the page; the activation shortcut
+  still switches Grab off. Space doesn't pause from a page field (also inside a
+  same-origin frame); in a note, the Specs panel or Optional context with text it
+  types a space.
 - **Pen**, **Rectangle**, **Text**: draw, outline a rectangle or write on the page
   in Red, Orange, Yellow, Green or Black. Hold Shift for a straight pen line or a
   square. In a note, Shift+Enter starts a new line and Enter places it. With Grab toggled on, hold Cmd (Ctrl off the Mac) and press Right or

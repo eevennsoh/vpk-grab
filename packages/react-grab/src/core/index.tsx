@@ -9,6 +9,7 @@ import {
   on,
   mapArray,
   untrack,
+  batch,
 } from "solid-js";
 import { render } from "solid-js/web";
 import { createGrabStore } from "./store.js";
@@ -82,6 +83,7 @@ import {
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
+  PAUSE_HOLD_KEY_CODE,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
   PROMPT_COPIED_FEEDBACK_MS,
@@ -115,6 +117,7 @@ import {
   INPUT_FOCUS_ACTIVATION_DELAY_MS,
   INPUT_TEXT_SELECTION_ACTIVATION_DELAY_MS,
   DEFAULT_KEY_HOLD_DURATION_MS,
+  TOGGLE_OFF_TAP_MAX_MS,
   MIN_HOLD_FOR_ACTIVATION_AFTER_COPY_MS,
   ZOOM_DETECTION_THRESHOLD,
   WINDOW_REFOCUS_GRACE_PERIOD_MS,
@@ -205,7 +208,11 @@ import { executeContextMenuAction } from "../utils/execute-context-menu-action.j
 import { executeActionOrCopy } from "../utils/execute-action-or-copy.js";
 import { resolveActionEnabled } from "../utils/resolve-action-enabled.js";
 import { notifyToolbarStateChangeSubscribers } from "../utils/notify-toolbar-state-change-subscribers.js";
-import { forwardSameOriginFrameEvents } from "../utils/forward-same-origin-frame-events.js";
+import {
+  forwardSameOriginFrameEvents,
+  isForwardedFrameEvent,
+} from "../utils/forward-same-origin-frame-events.js";
+import { getFocusedDocument } from "../utils/get-focused-document.js";
 import { isHtmlElement } from "../utils/is-html-element.js";
 import { isDocumentAncestorOfElement } from "../utils/is-document-ancestor-of-element.js";
 import { clearGlobalApi } from "../global-api.js";
@@ -331,6 +338,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isActivated = createMemo(() => current().state === "active");
     const isToggleSession = () =>
       store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold";
+    const [isPauseKeyHeld, setIsPauseKeyHeld] = createSignal(false);
+    let isShiftCommitDeferredByPause = false;
+    const isPaused = createMemo(() => isPauseKeyHeld() && isActivated());
+    const isInterceptingPage = createMemo(() => isActivated() && !isPaused());
     const isFrozenPhase = createMemo(() => {
       const currentState = current();
       return currentState.state === "active" && currentState.phase === "frozen";
@@ -396,13 +407,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     createEffect(
-      on(isActivated, (activated, previousActivated) => {
-        if (activated && !previousActivated) {
+      on(isInterceptingPage, (intercepting, previousIntercepting) => {
+        if (intercepting && !previousIntercepting) {
           // Demo-safe: the collect/apply phases inside are gated on IS_DEMO at
           // the util level, so this never freezes the host page in demo builds.
           freezeGlobalInteractions(pointer().x, pointer().y);
           setHostBodyStyle("touchAction", "none");
-        } else if (!activated && previousActivated) {
+        } else if (!intercepting && previousIntercepting) {
           unfreezeGlobalInteractions();
           restoreHostBodyStyle("touchAction");
         }
@@ -495,6 +506,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isSelectionHeldByPill = () => isActivated() && Boolean(copiedPill());
 
     const isElementDetectionBlocked = () =>
+      isPaused() ||
       !isEnabled() ||
       isSelectionHeldByPill() ||
       isPromptMode() ||
@@ -759,7 +771,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       },
     );
 
-    const isRendererActive = createMemo(() => isActivated() && !isCopying());
+    const isRendererActive = createMemo(() => isInterceptingPage() && !isCopying());
 
     const grabbedBoxTimeouts = new Map<string, number>();
 
@@ -849,6 +861,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         pillDismissPointerId = null;
         isPillDismissalShiftPress = false;
       }
+      if (isPaused()) return false;
       if (!copiedPill() || isEventFromOverlay(event, "data-react-grab-completion")) return false;
       const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
@@ -1506,14 +1519,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     });
 
     createEffect(() => {
-      const elements = store.frozenElements;
+      const elements = isPaused() ? [] : store.frozenElements;
       const cleanup = freezeAnimations(elements);
       onCleanup(cleanup);
     });
 
     createEffect(
-      on(isActivated, (activated) => {
-        if (!activated) return;
+      on(isInterceptingPage, (intercepting) => {
+        if (!intercepting) return;
         if (!pluginRegistry.store.options.freezeReactUpdates) return;
         const unfreezeUpdates = freezeUpdates();
         onCleanup(unfreezeUpdates);
@@ -1988,9 +2001,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             inspect.annotationTool(),
             inspect.editCursor(),
             isScreenshotMode(),
+            isPaused(),
           ] as const,
-        ([activated, copying, promptMode, annotationTool, , screenshotMode]) => {
-          if (copying) {
+        ([activated, copying, promptMode, annotationTool, , screenshotMode, paused]) => {
+          if (paused) {
+            setCursorOverride(null);
+          } else if (copying) {
             setCursorOverride("progress");
           } else if (screenshotMode) {
             setCursorOverride(SCREENSHOT_TOOL_CURSOR);
@@ -2040,7 +2056,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const previousFocused = store.previouslyFocusedElement;
       if (shouldPreservePillPromptFocus) preservedPillPromptFocusTarget = previousFocused;
       stopSpaceDragRepositioning();
-      actions.deactivate();
+      isShiftCommitDeferredByPause = false;
+      batch(() => {
+        setIsPauseKeyHeld(false);
+        actions.deactivate();
+      });
       dismissToolbarMenu();
       stopShiftMultiSelecting();
       clearKeyboardNavigation();
@@ -2784,20 +2804,29 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: (event) =>
-        isActivated() ||
-        isHoldingKeys() ||
-        isDragging() ||
-        isSelectionInteractionLocked() ||
-        (pillDismissPointerId !== null &&
-          (event.type === "pointerup" || event.type === "pointercancel" || event.type === "click")),
+        !isPaused() &&
+        (isActivated() ||
+          isHoldingKeys() ||
+          isDragging() ||
+          isSelectionInteractionLocked() ||
+          (pillDismissPointerId !== null &&
+            (event.type === "pointerup" ||
+              event.type === "pointercancel" ||
+              event.type === "click"))),
       shouldForwardKeyboardEvent: (event) =>
         isTargetKeyCombination(event, pluginRegistry.store.options) ||
         (isCopying() && event.type === "keydown" && Boolean(getToolCycleDirection(event))),
       onInactiveFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
+        if (handlePauseHoldKey(event)) return true;
+        if (isPaused()) return false;
         if (getToolCycleDirection(event) && isKeyboardEventTriggeredByInput(event)) return true;
         return dismissPopoverOnEscape(event) || dismissCompletedLabelsOnEscape(event);
+      },
+      onFrameKeyUp: (event) => !(IS_DEMO && event.isTrusted) && handlePauseHoldKey(event),
+      onFrameBlur: (frameDocument) => {
+        if (!IS_DEMO) endPauseIfFocusLeftWindow(frameDocument);
       },
       shouldForwardViewportEvent: (frameDocument) => {
         const activeElement = store.frozenElement ?? targetElement();
@@ -2829,6 +2858,101 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       capture: true,
     });
 
+    const isAnnotationGestureActive = () =>
+      inspect.draftStroke() !== null ||
+      inspect.marqueeRect() !== null ||
+      inspect.isTransforming() ||
+      inspect.isEditPressing();
+
+    // An empty pill prompt takes focus after every toggled copy, and a
+    // leading space is never a prompt, so Space pauses from there. A focused
+    // control in a pill, menu or panel keeps Space; the toolbar's buttons do
+    // not, since clicking one leaves focus there just before a pause.
+    const isPauseKeyOwnedByTarget = (event: KeyboardEvent) => {
+      if (isPillPromptEvent(event)) return isPageFieldHoldingText(event);
+      if (isEventFromOverlay(event, "data-react-grab-ignore-events"))
+        return !isEventFromOverlay(event, "data-react-grab-toolbar");
+      return isKeyboardEventTriggeredByInput(event);
+    };
+
+    const canStartPause = (event: KeyboardEvent) =>
+      !event.repeat &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      isActivated() &&
+      !isPromptMode() &&
+      !isDragging() &&
+      !isAnnotationGestureActive() &&
+      !isKeyboardEventComposing(event) &&
+      !isTargetKeyCombination(event, pluginRegistry.store.options) &&
+      !isPauseKeyOwnedByTarget(event);
+
+    const startPause = () => {
+      setIsPauseKeyHeld(true);
+      if (!getFocusedPillPrompt()) return;
+      blurFocusedPillPrompt();
+      returnFocusToPage();
+    };
+
+    // Resuming picks up the element under the pointer, which may have moved
+    // while paused, so a frozen hover such as an arrow-key selection lets go
+    // as it would on a pointer move. A copied pill or pinned Specs blocks
+    // detection and keeps its element.
+    const endPause = () => {
+      if (!isPauseKeyHeld()) return;
+      const pointerPosition = getPointerPosition();
+      const shouldCommitShiftSelection =
+        isShiftCommitDeferredByPause && isShiftMultiSelecting() && !isShiftKeyHeld();
+      isShiftCommitDeferredByPause = false;
+      batch(() => {
+        if (pointerPosition) actions.setPointer({ x: pointerPosition.x, y: pointerPosition.y });
+        setIsPauseKeyHeld(false);
+      });
+      if (shouldCommitShiftSelection) {
+        commitShiftMultiSelection();
+        return;
+      }
+      if (!isElementDetectionBlocked() && isFrozenPhase() && !isShiftMultiSelecting()) {
+        actions.unfreeze();
+        clearKeyboardNavigation();
+      }
+      resumeHoverAtPointer();
+    };
+
+    // Focus moving into a same-origin frame blurs the window it left, yet
+    // the frame still sends its keys here; only a blur that leaves focus
+    // where it was means the browser window itself lost focus.
+    const endPauseIfFocusLeftWindow = (blurredDocument: Document) => {
+      if (getFocusedDocument(document) === blurredDocument) endPause();
+    };
+
+    // Frames hand their own Space events in here, so the copy forwarded to
+    // the window is skipped: it has lost the target that decides ownership.
+    const handlePauseHoldKey = (event: KeyboardEvent): boolean => {
+      if (event.code !== PAUSE_HOLD_KEY_CODE || isForwardedFrameEvent(event)) return false;
+      if (event.type === "keyup") {
+        if (!isPauseKeyHeld()) return false;
+        event.preventDefault();
+        endPause();
+        return true;
+      }
+      if (!isPauseKeyHeld()) {
+        if (!canStartPause(event)) return false;
+        startPause();
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return true;
+    };
+
+    eventListenerManager.addWindowListener("keydown", ignoreRealInput(handlePauseHoldKey), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keyup", ignoreRealInput(handlePauseHoldKey), {
+      capture: true,
+    });
+
     const blockEnterIfNeeded = (event: KeyboardEvent) => {
       if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return false;
       let originalKey: string;
@@ -2840,7 +2964,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return false;
       }
       const isEnterKey = originalKey === "Enter" || isEnterCode(event.code);
-      const isOverlayActive = isActivated() || isHoldingKeys() || isCopying();
+      const isOverlayActive = isInterceptingPage() || isHoldingKeys() || isCopying();
       const shouldBlockEnter =
         isEnterKey &&
         isOverlayActive &&
@@ -3237,6 +3361,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (isPaused()) {
+          if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
+            event.preventDefault();
+            deactivateRenderer();
+          }
+          return;
+        }
         if (dismissPopoverOnEscape(event)) return;
         // Escape calls off a resize or rotate mid-drag and keeps the session.
         if (event.key === "Escape" && inspect.isTransforming()) {
@@ -3477,6 +3608,10 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           if (isDragging()) {
             cancelActiveDrag();
           }
+          if (isPaused()) {
+            isShiftCommitDeferredByPause = true;
+            return;
+          }
           commitShiftMultiSelection();
           return;
         }
@@ -3511,8 +3646,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           const configuredKeyHoldDurationMs =
             pluginRegistry.store.options.keyHoldDuration ?? DEFAULT_KEY_HOLD_DURATION_MS;
           if (
-            shortcutPressDurationMs <
-            Math.max(configuredKeyHoldDurationMs, DEFAULT_KEY_HOLD_DURATION_MS)
+            shortcutPressDurationMs < Math.max(configuredKeyHoldDurationMs, TOGGLE_OFF_TAP_MAX_MS)
           ) {
             deactivateRenderer();
             return;
@@ -3602,7 +3736,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "pointermove",
       ignoreRealInput((event: PointerEvent) => {
-        if (!event.isPrimary) return;
+        if (isPaused() || !event.isPrimary) return;
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
         if (isAnnotating()) {
@@ -3665,7 +3799,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           event.stopImmediatePropagation();
           return;
         }
-        if (event.button !== 0) return;
+        if (isPaused() || event.button !== 0) return;
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
         if (!isDragging() && isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
@@ -3751,6 +3885,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           event.stopImmediatePropagation();
           return;
         }
+        if (isPaused()) return;
         if (isAnnotating()) {
           // A stroke can end over the toolbar, so the release always finishes
           // it; a release that belongs to the toolbar is then left for the
@@ -3785,6 +3920,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "contextmenu",
       ignoreRealInput((event: MouseEvent) => {
+        if (isPaused()) return;
         if (isHoldingKeys()) {
           clearHoldTimer();
           actions.releaseHold();
@@ -3845,6 +3981,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     if (!IS_DEMO) {
       eventListenerManager.addDocumentListener("visibilitychange", () => {
         if (document.hidden) {
+          endPause();
           actions.clearGrabbedBoxes();
           const storeActivationTimestamp = store.activationTimestamp;
           if (
@@ -3862,6 +3999,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // the window loses focus) but do not deactivate if already active, since
       // the user may alt-tab back.
       eventListenerManager.addWindowListener("blur", () => {
+        endPauseIfFocusLeftWindow(document);
         cancelActiveDrag();
         if (isHoldingKeys()) {
           clearHoldTimer();
@@ -4176,7 +4314,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
 
     createEffect(() => {
-      if (inspectElement() !== null) return;
+      if (isPaused() || inspectElement() !== null) return;
       if (inspect.pinnedSpecsElement() !== null) inspect.unpinSpecs();
       if (inspect.measureAnchorElement() !== null) inspect.stopMeasuring();
     });
@@ -4895,7 +5033,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     ? undefined
                     : (shiftSelectionLabelMouseX() ?? cursorPosition().x)
                 }
-                isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
+                isFrozen={isInterceptingPage() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
                 onCopyScreenshotInstance={(instanceId) => copyLabelScreenshot(instanceId, true)}
@@ -4926,6 +5064,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 }
                 toolbarVisible={pluginRegistry.store.theme.toolbar.enabled}
                 isActive={isActivated()}
+                isPaused={isPaused()}
                 onToggleActive={handleToggleActive}
                 activeActionId={toolbarActiveActionId()}
                 enabled={isEnabled()}

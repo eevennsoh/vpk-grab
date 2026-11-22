@@ -1,3 +1,4 @@
+import { TOGGLE_OFF_TAP_MAX_MS } from "../src/constants.js";
 import { test, expect, type ReactGrabPageObject } from "./fixtures.js";
 import {
   ATTRIBUTE_NAME,
@@ -474,6 +475,37 @@ test("tapping the shortcut again after a copy switches Grab off", async ({ react
   await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
 });
 
+for (const tapDurationMs of [180, 400]) {
+  test(`a ${tapDurationMs}ms human-length tap of the shortcut switches a toggled session off`, async ({
+    reactGrab,
+    page,
+  }) => {
+    await reactGrab.activateViaKeyboard();
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    await page.waitForTimeout(tapDurationMs);
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+  });
+}
+
+test("a long deliberate hold of the shortcut leaves a toggled session on", async ({
+  reactGrab,
+  page,
+}) => {
+  await reactGrab.activateViaKeyboard();
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+  await page.keyboard.down(reactGrab.modifierKey);
+  await page.keyboard.down("c");
+  await page.waitForTimeout(TOGGLE_OFF_TAP_MAX_MS + 200);
+  await page.keyboard.up("c");
+  await page.keyboard.up(reactGrab.modifierKey);
+  await page.waitForTimeout(200);
+  expect(await reactGrab.isOverlayVisible()).toBe(true);
+});
+
 test.describe("Space marquee movement", () => {
   test("normal marquee moves, resizes, and copies the moved targets", async ({
     reactGrab,
@@ -622,27 +654,29 @@ test.describe("Space marquee movement", () => {
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBefore);
   });
 
-  test("Space held before drawing does not move the fixed corner", async ({ reactGrab, page }) => {
+  test("Space held before drawing pauses instead of starting a marquee", async ({
+    reactGrab,
+    page,
+  }) => {
     await reactGrab.activate();
     await page.keyboard.down("Space");
     await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
     await page.mouse.down();
     await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
-    await page.keyboard.down("Space");
-    await page.mouse.move(
-      MARQUEE_END_PX.x + MARQUEE_RESIZE_PX.x,
-      MARQUEE_END_PX.y + MARQUEE_RESIZE_PX.y,
-      { steps: MARQUEE_MOVE_STEP_COUNT },
-    );
+    expect(await reactGrab.getDragBoxBounds()).toBeNull();
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
     await expect
       .poll(() => reactGrab.getDragBoxBounds())
       .toMatchObject({
         x: MARQUEE_START_PX.x,
         y: MARQUEE_START_PX.y,
-        width: MARQUEE_END_PX.x - MARQUEE_START_PX.x + MARQUEE_RESIZE_PX.x,
-        height: MARQUEE_END_PX.y - MARQUEE_START_PX.y + MARQUEE_RESIZE_PX.y,
+        width: MARQUEE_END_PX.x - MARQUEE_START_PX.x,
+        height: MARQUEE_END_PX.y - MARQUEE_START_PX.y,
       });
-    await page.keyboard.up("Space");
     await page.keyboard.press("Escape");
     await page.mouse.up();
   });

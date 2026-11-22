@@ -22,7 +22,7 @@ import { IconRedlines } from "../icons/icon-redlines.jsx";
 import { IconSpecs } from "../icons/icon-specs.jsx";
 import { IconText } from "../icons/icon-text.jsx";
 import { MaterialIcon } from "../icons/material-icon.jsx";
-import { PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
+import { PAUSE_ICON_PATHS, PHOTO_CAMERA_ICON_PATHS } from "../../material-icon-paths.js";
 import { ToolbarActionButton } from "./toolbar-action-button.jsx";
 import {
   TOOLBAR_ACTION_ICON_SIZE_PX,
@@ -43,6 +43,11 @@ import {
   AUTO_SCREENSHOT_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
+  PAUSE_HOLD_KEY_LABEL,
+  PAUSED_ANNOUNCEMENT,
+  RESUMED_ANNOUNCEMENT,
+  TOOLBAR_DIMMED_OPACITY,
+  TOOLBAR_DIMMED_SCALE,
 } from "../../constants.js";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
 import {
@@ -67,6 +72,7 @@ import { accumulateRotationDeg } from "../../utils/accumulate-rotation.js";
 
 interface ToolbarProps {
   isActive?: boolean;
+  isPaused?: boolean;
   onToggle?: () => void;
   activeActionId?: string | null;
   defaultActionId?: string;
@@ -133,12 +139,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const [selectIconRotationDeg, setSelectIconRotationDeg] = createSignal(0);
   const [hoveredActionId, setHoveredActionId] = createSignal<string | null>(null);
 
+  const isPageFrozenByCore = () => Boolean(props.isActive) && !props.isPaused;
+
   const releaseInteractionFreeze = () => {
     unfreezeUpdatesCallback?.();
     unfreezeUpdatesCallback = null;
     // While grab mode is active, core owns the global freeze and releases it
     // on deactivation; only release it when this hover latch is the sole owner.
-    if (!props.isActive) unfreezeGlobalInteractions();
+    if (!isPageFrozenByCore()) unfreezeGlobalInteractions();
   };
 
   const drag = createToolbarDrag({
@@ -186,7 +194,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     Boolean(props.isActive) && (props.activeActionId ?? DEFAULT_ACTION_ID) === currentActionId();
 
   const isActionHovered = (actionId: string) =>
-    hoveredActionId() === actionId && !isCollapsed() && !drag.isDragging() && !drag.isSnapping();
+    hoveredActionId() === actionId &&
+    !isCollapsed() &&
+    !props.isPaused &&
+    !drag.isDragging() &&
+    !drag.isSnapping();
   const isGrabTool = () => (props.annotationTool ?? "grab") === "grab";
   // Specs, Spacing and Screenshot serve what Grab hovers and copies, so they
   // join the toolbar only while Grab is the tool in hand.
@@ -230,7 +242,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     onMouseLeave: () => {
       const actionId = getActionId();
       setHoveredActionId((current) => (current === actionId ? null : current));
-      if (!props.isActive) {
+      if (!isPageFrozenByCore()) {
         releaseInteractionFreeze();
       }
     },
@@ -248,14 +260,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   );
 
   createEffect(
-    on(
-      () => props.isActive,
-      (isActive) => {
-        if (!isActive && unfreezeUpdatesCallback) {
-          releaseInteractionFreeze();
-        }
-      },
-    ),
+    on(isPageFrozenByCore, (isFrozenByCore) => {
+      if (!isFrozenByCore && unfreezeUpdatesCallback) {
+        releaseInteractionFreeze();
+      }
+    }),
   );
 
   createEffect(
@@ -828,7 +837,20 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   // Drawing and writing keep the toolbar at full strength: its colors and
   // tools are what the pen and text work from.
-  const shouldDim = (): boolean => Boolean(props.isActive) && !isInteracting() && !isColorTool();
+  // A pause holds the dim it started with, so the pointer crossing the paused
+  // toolbar never rescales it.
+  const shouldDim = createMemo<boolean>((wasDimmed) => {
+    if (props.isPaused) return wasDimmed;
+    return Boolean(props.isActive) && !isInteracting() && !isColorTool();
+  }, false);
+  const getOpacity = (): number => {
+    if (!isVisible()) return 0;
+    return shouldDim() ? TOOLBAR_DIMMED_OPACITY : 1;
+  };
+  const pauseAnnouncement = createMemo<string>((previousAnnouncement) => {
+    if (props.isPaused) return PAUSED_ANNOUNCEMENT;
+    return previousAnnouncement ? RESUMED_ANNOUNCEMENT : "";
+  }, "");
 
   const getTransitionClass = (): string => {
     // Drag must follow the pointer frame-to-frame; any transform transition
@@ -868,346 +890,376 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   };
 
   return (
-    <div
-      ref={containerRef}
-      data-react-grab-ignore-events
-      data-react-grab-toolbar
-      class={cn(
-        "fixed left-0 top-0 font-sans text-[13px] antialiased select-none",
-        getCursorClass(),
-        getTransitionClass(),
-        // freeze-pseudo-states sets `html { pointer-events: none !important }`
-        // during grab; the toolbar must opt back in to stay clickable.
-        isVisible() ? "pointer-events-auto" : "pointer-events-none",
-      )}
-      style={{
-        "z-index": String(Z_INDEX_OVERLAY),
-        transform: `translate(${currentPosition().x}px, ${currentPosition().y}px) scale(${shouldDim() ? 0.97 : 1})`,
-        "transform-origin": getTransformOrigin(),
-        opacity: !isVisible() ? 0 : shouldDim() ? 0.55 : 1,
-      }}
-      on:pointerdown={(event) => {
-        stopEventPropagation(event);
-        drag.handlePointerDown(event);
-      }}
-      on:mousedown={stopEventPropagation}
-      onMouseEnter={() => {
-        setIsToolbarHovered(true);
-        if (!isCollapsed()) props.onSelectHoverChange?.(true);
-      }}
-      onMouseLeave={endToolbarHover}
-    >
-      <ToolbarContent
-        isCollapsed={isCollapsed()}
-        snapEdge={snapEdge()}
-        isShaking={isShaking()}
-        isChevronPressed={isChevronPressed()}
-        transformOrigin={getTransformOrigin()}
-        onAnimationEnd={() => setIsShaking(false)}
-        onCollapseClick={handleToggleCollapse}
-        onCollapsePointerDown={() => setIsChevronPressed(true)}
-        onCollapsePointerUp={() => setIsChevronPressed(false)}
-        onCollapsePointerLeave={() => setIsChevronPressed(false)}
-        onPanelClick={(event) => {
-          if (isCollapsed()) {
-            event.stopPropagation();
-            expandToolbarFromCollapsed();
-          }
+    <>
+      <div
+        ref={containerRef}
+        data-react-grab-ignore-events
+        data-react-grab-toolbar
+        class={cn(
+          "fixed left-0 top-0 font-sans text-[13px] antialiased select-none",
+          getCursorClass(),
+          getTransitionClass(),
+          // freeze-pseudo-states sets `html { pointer-events: none !important }`
+          // during grab; the toolbar must opt back in to stay clickable.
+          isVisible() ? "pointer-events-auto" : "pointer-events-none",
+        )}
+        style={{
+          "z-index": String(Z_INDEX_OVERLAY),
+          transform: `translate(${currentPosition().x}px, ${currentPosition().y}px) scale(${shouldDim() ? TOOLBAR_DIMMED_SCALE : 1})`,
+          "transform-origin": getTransformOrigin(),
+          opacity: getOpacity(),
         }}
-        actionButtons={
-          <>
-            <ToolbarActionButton
-              actionId={currentActionId()}
-              isToggle
-              ref={(element) => (selectButtonRef = element)}
-              label={
-                isCurrentActionActive()
-                  ? "Stop selecting element"
-                  : `${currentActionLabel()} element`
-              }
-              isActive={isGrabToolOn()}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleToggle}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setHoveredActionId(null);
-                props.onToggleToolbarMenu?.();
-              }}
-              {...createFreezeHandlers(currentActionId)}
-              icon={
-                <IconSelect
-                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                  rotationDeg={selectIconRotationDeg()}
-                  isFilled={isGrabToolOn()}
-                  class={actionIconClass(isGrabToolOn())}
-                />
-              }
-              tooltipVisible={isActionHovered(currentActionId())}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Grab"
-              tooltipShortcut={getSelectionToolTooltipShortcut("grab")}
-            />
-            <ToolbarActionButton
-              actionId={PEN_ACTION_ID}
-              keepsPageFocus
-              label="Draw on the page"
-              isActive={props.annotationTool === "pen"}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleSelectPen}
-              {...createFreezeHandlers(() => PEN_ACTION_ID)}
-              icon={
-                <IconPen
-                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                  isFilled={props.annotationTool === "pen"}
-                  class={actionIconClass(props.annotationTool === "pen")}
-                />
-              }
-              tooltipVisible={isActionHovered(PEN_ACTION_ID)}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Pen"
-              tooltipShortcut={getSelectionToolTooltipShortcut("pen")}
-            />
-            <ToolbarActionButton
-              actionId={RECTANGLE_ACTION_ID}
-              keepsPageFocus
-              label="Draw a rectangle on the page"
-              isActive={props.annotationTool === "rectangle"}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleSelectRectangle}
-              {...createFreezeHandlers(() => RECTANGLE_ACTION_ID)}
-              icon={
-                <IconRectangle
-                  isFilled={props.annotationTool === "rectangle"}
-                  class={actionIconClass(props.annotationTool === "rectangle")}
-                />
-              }
-              tooltipVisible={isActionHovered(RECTANGLE_ACTION_ID)}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Rectangle"
-              tooltipShortcut={getSelectionToolTooltipShortcut("rectangle")}
-            />
-            <ToolbarActionButton
-              actionId={TEXT_ACTION_ID}
-              keepsPageFocus
-              label="Add text to the page"
-              isActive={props.annotationTool === "text"}
-              class={actionButtonClass}
-              wrapperClass={actionButtonWrapperClass()}
-              onClick={handleSelectText}
-              {...createFreezeHandlers(() => TEXT_ACTION_ID)}
-              icon={
-                <IconText
-                  size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                  isFilled={props.annotationTool === "text"}
-                  class={actionIconClass(props.annotationTool === "text")}
-                />
-              }
-              tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
-              tooltipPosition={tooltipPosition()}
-              tooltip="Text"
-              tooltipShortcut={getSelectionToolTooltipShortcut("text")}
-            />
-            <ToolbarRevealGroup
-              ref={(element) => (inspectToolsRef = element)}
-              dataAttribute="data-react-grab-toolbar-inspect-tools"
-              isRevealed={isGrabToolOn()}
-              isVertical={isVertical()}
-            >
-              <span aria-hidden="true" class={separatorClass()} />
-              <ToolbarActionButton
-                actionId={SPECS_ACTION_ID}
-                keepsPageFocus
-                label="Show design specs on hover"
-                isActive={Boolean(props.isSpecsEnabled)}
-                class={actionButtonClass}
-                wrapperClass={actionButtonWrapperClass()}
-                onClick={handleToggleSpecs}
-                {...createFreezeHandlers(() => SPECS_ACTION_ID)}
-                icon={
-                  <IconSpecs
-                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                    isFilled={Boolean(props.isSpecsEnabled)}
-                    class={actionIconClass(Boolean(props.isSpecsEnabled))}
-                  />
-                }
-                tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
-                tooltipPosition={tooltipPosition()}
-                tooltip="Specs"
-                tooltipShortcut={SPECS_TOOL_KEY}
+        on:pointerdown={(event) => {
+          stopEventPropagation(event);
+          if (!props.isPaused) drag.handlePointerDown(event);
+        }}
+        on:mousedown={stopEventPropagation}
+        onMouseEnter={() => {
+          setIsToolbarHovered(true);
+          if (!isCollapsed()) props.onSelectHoverChange?.(true);
+        }}
+        onMouseLeave={endToolbarHover}
+      >
+        <ToolbarContent
+          isCollapsed={isCollapsed()}
+          snapEdge={snapEdge()}
+          isShaking={isShaking()}
+          isChevronPressed={isChevronPressed()}
+          transformOrigin={getTransformOrigin()}
+          isPaused={Boolean(props.isPaused)}
+          pausedContent={
+            <>
+              <MaterialIcon
+                paths={PAUSE_ICON_PATHS}
+                size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                class="shrink-0 text-[var(--rg-text-primary)]"
               />
-              <ToolbarActionButton
-                actionId={REDLINES_ACTION_ID}
-                keepsPageFocus
-                label="Show spacing on hover"
-                isActive={Boolean(props.isRedlinesEnabled)}
-                class={actionButtonClass}
-                wrapperClass={actionButtonWrapperClass()}
-                onClick={handleToggleRedlines}
-                {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
-                icon={
-                  <IconRedlines
-                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                    isFilled={Boolean(props.isRedlinesEnabled)}
-                    class={actionIconClass(Boolean(props.isRedlinesEnabled))}
-                  />
+              <span
+                data-react-grab-toolbar-paused-label
+                class={
+                  isVertical() || isCollapsed()
+                    ? "sr-only"
+                    : "text-[13px] leading-4 font-medium text-[var(--rg-text-primary)]"
                 }
-                tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
-                tooltipPosition={tooltipPosition()}
-                tooltip="Spacing"
-                tooltipShortcut={SPACING_TOOL_KEY}
-              />
+              >
+                Paused
+              </span>
+            </>
+          }
+          onAnimationEnd={() => setIsShaking(false)}
+          onCollapseClick={handleToggleCollapse}
+          onCollapsePointerDown={() => setIsChevronPressed(true)}
+          onCollapsePointerUp={() => setIsChevronPressed(false)}
+          onCollapsePointerLeave={() => setIsChevronPressed(false)}
+          onPanelClick={(event) => {
+            if (isCollapsed() && !props.isPaused) {
+              event.stopPropagation();
+              expandToolbarFromCollapsed();
+            }
+          }}
+          actionButtons={
+            <>
               <ToolbarActionButton
-                actionId={AUTO_SCREENSHOT_ACTION_ID}
-                keepsPageFocus
-                label="Copy a screenshot with every grab"
-                isActive={isScreenshotIconActive()}
-                class={actionButtonClass}
-                wrapperClass={actionButtonWrapperClass()}
-                onClick={handleToggleAutoScreenshot}
-                {...createFreezeHandlers(() => AUTO_SCREENSHOT_ACTION_ID)}
-                icon={
-                  <MaterialIcon
-                    paths={PHOTO_CAMERA_ICON_PATHS}
-                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                    isFilled={isScreenshotIconActive()}
-                    class={actionIconClass(isScreenshotIconActive())}
-                  />
-                }
-                tooltipVisible={isActionHovered(AUTO_SCREENSHOT_ACTION_ID)}
-                tooltipPosition={tooltipPosition()}
-                tooltip="Screenshot"
-                tooltipShortcut={AUTO_SCREENSHOT_TOOL_KEY}
-              />
-            </ToolbarRevealGroup>
-            <ToolbarRevealGroup
-              ref={(element) => (annotationColorsRef = element)}
-              dataAttribute="data-react-grab-toolbar-annotation-colors"
-              isRevealed={isColorTool()}
-              isVertical={isVertical()}
-            >
-              <span aria-hidden="true" class={separatorClass()} />
-              <For each={ANNOTATION_COLOR_OPTIONS}>
-                {(colorOption) => {
-                  const actionId = `${ANNOTATION_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
-                  const isSelected = () => props.annotationColor === colorOption.value;
-                  return (
-                    <ToolbarActionButton
-                      actionId={actionId}
-                      keepsPageFocus
-                      label={`${colorOption.label} annotation color`}
-                      isActive={isSelected()}
-                      class={actionButtonClass}
-                      wrapperClass={actionButtonWrapperClass()}
-                      onClick={drag.createDragAwareHandler(() =>
-                        props.onSelectAnnotationColor?.(colorOption.value),
-                      )}
-                      {...createFreezeHandlers(() => actionId)}
-                      icon={
-                        <span class="flex size-3.5 items-center justify-center">
-                          <span
-                            class={cn(
-                              "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
-                              getColorSwatchShadowClass(isSelected(), colorOption.hasInnerRing),
-                            )}
-                            style={{
-                              "background-color": colorOption.value,
-                            }}
-                          />
-                        </span>
-                      }
-                      tooltipVisible={isActionHovered(actionId)}
-                      tooltipPosition={tooltipPosition()}
-                      tooltip={colorOption.label}
-                    />
-                  );
-                }}
-              </For>
-            </ToolbarRevealGroup>
-            <ToolbarRevealGroup
-              ref={(element) => (annotationActionsRef = element)}
-              dataAttribute="data-react-grab-toolbar-annotation-actions"
-              isRevealed={hasAnnotationActions()}
-              isVertical={isVertical()}
-            >
-              <span aria-hidden="true" class={separatorClass()} />
-              <ToolbarActionButton
-                actionId={EDIT_ACTION_ID}
-                keepsPageFocus
-                label="Move or delete drawings and text"
-                isActive={props.annotationTool === "edit"}
-                class={actionButtonClass}
-                wrapperClass={actionButtonWrapperClass()}
-                onClick={handleSelectEdit}
-                {...createFreezeHandlers(() => EDIT_ACTION_ID)}
-                icon={
-                  <IconMove
-                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
-                    isFilled={props.annotationTool === "edit"}
-                    class={actionIconClass(props.annotationTool === "edit")}
-                  />
-                }
-                tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
-                tooltipPosition={tooltipPosition()}
-                tooltip="Move"
-                tooltipShortcut={MOVE_TOOL_KEY}
-              />
-              <ToolbarActionButton
-                actionId={CLEAR_ACTION_ID}
-                keepsPageFocus
+                actionId={currentActionId()}
+                isToggle
+                ref={(element) => (selectButtonRef = element)}
                 label={
-                  props.hasSelectedAnnotation
-                    ? "Delete the selected annotation"
-                    : "Clear drawings and text"
+                  isCurrentActionActive()
+                    ? "Stop selecting element"
+                    : `${currentActionLabel()} element`
                 }
-                hasPressedState={false}
+                isActive={isGrabToolOn()}
                 class={actionButtonClass}
                 wrapperClass={actionButtonWrapperClass()}
-                onClick={handleClearAnnotations}
-                {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
+                onClick={handleToggle}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setHoveredActionId(null);
+                  props.onToggleToolbarMenu?.();
+                }}
+                {...createFreezeHandlers(currentActionId)}
                 icon={
-                  <IconClear size={TOOLBAR_ACTION_ICON_SIZE_PX} class={actionIconClass(false)} />
-                }
-                tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
-                tooltipPosition={tooltipPosition()}
-                tooltip="Clear"
-                tooltipShortcut={getClearAnnotationsShortcutLabel()}
-              />
-            </ToolbarRevealGroup>
-            <ToolbarRevealGroup
-              ref={(element) => (changesActionsRef = element)}
-              dataAttribute="data-react-grab-toolbar-changes-actions"
-              isRevealed={hasStyleChanges()}
-              isVertical={isVertical()}
-            >
-              <span aria-hidden="true" class={separatorClass()} />
-              <ToolbarActionButton
-                actionId={CHANGES_ACTION_ID}
-                keepsPageFocus
-                label={`Style changes (${props.styleChangeCount ?? 0})`}
-                hasPressedState={false}
-                class={actionButtonClass}
-                wrapperClass={actionButtonWrapperClass()}
-                onClick={handleToggleChangesMenu}
-                {...createFreezeHandlers(() => CHANGES_ACTION_ID)}
-                icon={
-                  <span
-                    data-react-grab-changes-count
-                    class="min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[10px] leading-[16px] font-semibold tabular-nums text-center"
-                    textContent={String(props.styleChangeCount ?? 0)}
+                  <IconSelect
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                    rotationDeg={selectIconRotationDeg()}
+                    isFilled={isGrabToolOn()}
+                    class={actionIconClass(isGrabToolOn())}
                   />
                 }
-                tooltipVisible={isActionHovered(CHANGES_ACTION_ID)}
+                tooltipVisible={isActionHovered(currentActionId())}
                 tooltipPosition={tooltipPosition()}
-                tooltip="Style changes"
+                tooltip="Grab"
+                tooltipShortcut={getSelectionToolTooltipShortcut("grab")}
+                tooltipHint={`Hold ${PAUSE_HOLD_KEY_LABEL} to pause`}
               />
-            </ToolbarRevealGroup>
-          </>
-        }
+              <ToolbarActionButton
+                actionId={PEN_ACTION_ID}
+                keepsPageFocus
+                label="Draw on the page"
+                isActive={props.annotationTool === "pen"}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleSelectPen}
+                {...createFreezeHandlers(() => PEN_ACTION_ID)}
+                icon={
+                  <IconPen
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                    isFilled={props.annotationTool === "pen"}
+                    class={actionIconClass(props.annotationTool === "pen")}
+                  />
+                }
+                tooltipVisible={isActionHovered(PEN_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Pen"
+                tooltipShortcut={getSelectionToolTooltipShortcut("pen")}
+              />
+              <ToolbarActionButton
+                actionId={RECTANGLE_ACTION_ID}
+                keepsPageFocus
+                label="Draw a rectangle on the page"
+                isActive={props.annotationTool === "rectangle"}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleSelectRectangle}
+                {...createFreezeHandlers(() => RECTANGLE_ACTION_ID)}
+                icon={
+                  <IconRectangle
+                    isFilled={props.annotationTool === "rectangle"}
+                    class={actionIconClass(props.annotationTool === "rectangle")}
+                  />
+                }
+                tooltipVisible={isActionHovered(RECTANGLE_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Rectangle"
+                tooltipShortcut={getSelectionToolTooltipShortcut("rectangle")}
+              />
+              <ToolbarActionButton
+                actionId={TEXT_ACTION_ID}
+                keepsPageFocus
+                label="Add text to the page"
+                isActive={props.annotationTool === "text"}
+                class={actionButtonClass}
+                wrapperClass={actionButtonWrapperClass()}
+                onClick={handleSelectText}
+                {...createFreezeHandlers(() => TEXT_ACTION_ID)}
+                icon={
+                  <IconText
+                    size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                    isFilled={props.annotationTool === "text"}
+                    class={actionIconClass(props.annotationTool === "text")}
+                  />
+                }
+                tooltipVisible={isActionHovered(TEXT_ACTION_ID)}
+                tooltipPosition={tooltipPosition()}
+                tooltip="Text"
+                tooltipShortcut={getSelectionToolTooltipShortcut("text")}
+              />
+              <ToolbarRevealGroup
+                ref={(element) => (inspectToolsRef = element)}
+                dataAttribute="data-react-grab-toolbar-inspect-tools"
+                isRevealed={isGrabToolOn()}
+                isVertical={isVertical()}
+              >
+                <span aria-hidden="true" class={separatorClass()} />
+                <ToolbarActionButton
+                  actionId={SPECS_ACTION_ID}
+                  keepsPageFocus
+                  label="Show design specs on hover"
+                  isActive={Boolean(props.isSpecsEnabled)}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleToggleSpecs}
+                  {...createFreezeHandlers(() => SPECS_ACTION_ID)}
+                  icon={
+                    <IconSpecs
+                      size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                      isFilled={Boolean(props.isSpecsEnabled)}
+                      class={actionIconClass(Boolean(props.isSpecsEnabled))}
+                    />
+                  }
+                  tooltipVisible={isActionHovered(SPECS_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Specs"
+                  tooltipShortcut={SPECS_TOOL_KEY}
+                />
+                <ToolbarActionButton
+                  actionId={REDLINES_ACTION_ID}
+                  keepsPageFocus
+                  label="Show spacing on hover"
+                  isActive={Boolean(props.isRedlinesEnabled)}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleToggleRedlines}
+                  {...createFreezeHandlers(() => REDLINES_ACTION_ID)}
+                  icon={
+                    <IconRedlines
+                      size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                      isFilled={Boolean(props.isRedlinesEnabled)}
+                      class={actionIconClass(Boolean(props.isRedlinesEnabled))}
+                    />
+                  }
+                  tooltipVisible={isActionHovered(REDLINES_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Spacing"
+                  tooltipShortcut={SPACING_TOOL_KEY}
+                />
+                <ToolbarActionButton
+                  actionId={AUTO_SCREENSHOT_ACTION_ID}
+                  keepsPageFocus
+                  label="Copy a screenshot with every grab"
+                  isActive={isScreenshotIconActive()}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleToggleAutoScreenshot}
+                  {...createFreezeHandlers(() => AUTO_SCREENSHOT_ACTION_ID)}
+                  icon={
+                    <MaterialIcon
+                      paths={PHOTO_CAMERA_ICON_PATHS}
+                      size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                      isFilled={isScreenshotIconActive()}
+                      class={actionIconClass(isScreenshotIconActive())}
+                    />
+                  }
+                  tooltipVisible={isActionHovered(AUTO_SCREENSHOT_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Screenshot"
+                  tooltipShortcut={AUTO_SCREENSHOT_TOOL_KEY}
+                />
+              </ToolbarRevealGroup>
+              <ToolbarRevealGroup
+                ref={(element) => (annotationColorsRef = element)}
+                dataAttribute="data-react-grab-toolbar-annotation-colors"
+                isRevealed={isColorTool()}
+                isVertical={isVertical()}
+              >
+                <span aria-hidden="true" class={separatorClass()} />
+                <For each={ANNOTATION_COLOR_OPTIONS}>
+                  {(colorOption) => {
+                    const actionId = `${ANNOTATION_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
+                    const isSelected = () => props.annotationColor === colorOption.value;
+                    return (
+                      <ToolbarActionButton
+                        actionId={actionId}
+                        keepsPageFocus
+                        label={`${colorOption.label} annotation color`}
+                        isActive={isSelected()}
+                        class={actionButtonClass}
+                        wrapperClass={actionButtonWrapperClass()}
+                        onClick={drag.createDragAwareHandler(() =>
+                          props.onSelectAnnotationColor?.(colorOption.value),
+                        )}
+                        {...createFreezeHandlers(() => actionId)}
+                        icon={
+                          <span class="flex size-3.5 items-center justify-center">
+                            <span
+                              class={cn(
+                                "size-2.5 rounded-full transition-shadow duration-150 ease-drawer",
+                                getColorSwatchShadowClass(isSelected(), colorOption.hasInnerRing),
+                              )}
+                              style={{
+                                "background-color": colorOption.value,
+                              }}
+                            />
+                          </span>
+                        }
+                        tooltipVisible={isActionHovered(actionId)}
+                        tooltipPosition={tooltipPosition()}
+                        tooltip={colorOption.label}
+                      />
+                    );
+                  }}
+                </For>
+              </ToolbarRevealGroup>
+              <ToolbarRevealGroup
+                ref={(element) => (annotationActionsRef = element)}
+                dataAttribute="data-react-grab-toolbar-annotation-actions"
+                isRevealed={hasAnnotationActions()}
+                isVertical={isVertical()}
+              >
+                <span aria-hidden="true" class={separatorClass()} />
+                <ToolbarActionButton
+                  actionId={EDIT_ACTION_ID}
+                  keepsPageFocus
+                  label="Move or delete drawings and text"
+                  isActive={props.annotationTool === "edit"}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleSelectEdit}
+                  {...createFreezeHandlers(() => EDIT_ACTION_ID)}
+                  icon={
+                    <IconMove
+                      size={TOOLBAR_ACTION_ICON_SIZE_PX}
+                      isFilled={props.annotationTool === "edit"}
+                      class={actionIconClass(props.annotationTool === "edit")}
+                    />
+                  }
+                  tooltipVisible={isActionHovered(EDIT_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Move"
+                  tooltipShortcut={MOVE_TOOL_KEY}
+                />
+                <ToolbarActionButton
+                  actionId={CLEAR_ACTION_ID}
+                  keepsPageFocus
+                  label={
+                    props.hasSelectedAnnotation
+                      ? "Delete the selected annotation"
+                      : "Clear drawings and text"
+                  }
+                  hasPressedState={false}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleClearAnnotations}
+                  {...createFreezeHandlers(() => CLEAR_ACTION_ID)}
+                  icon={
+                    <IconClear size={TOOLBAR_ACTION_ICON_SIZE_PX} class={actionIconClass(false)} />
+                  }
+                  tooltipVisible={isActionHovered(CLEAR_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Clear"
+                  tooltipShortcut={getClearAnnotationsShortcutLabel()}
+                />
+              </ToolbarRevealGroup>
+              <ToolbarRevealGroup
+                ref={(element) => (changesActionsRef = element)}
+                dataAttribute="data-react-grab-toolbar-changes-actions"
+                isRevealed={hasStyleChanges()}
+                isVertical={isVertical()}
+              >
+                <span aria-hidden="true" class={separatorClass()} />
+                <ToolbarActionButton
+                  actionId={CHANGES_ACTION_ID}
+                  keepsPageFocus
+                  label={`Style changes (${props.styleChangeCount ?? 0})`}
+                  hasPressedState={false}
+                  class={actionButtonClass}
+                  wrapperClass={actionButtonWrapperClass()}
+                  onClick={handleToggleChangesMenu}
+                  {...createFreezeHandlers(() => CHANGES_ACTION_ID)}
+                  icon={
+                    <span
+                      data-react-grab-changes-count
+                      class="min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--rg-text-primary)] text-[var(--rg-panel-bg)] text-[10px] leading-[16px] font-semibold tabular-nums text-center"
+                      textContent={String(props.styleChangeCount ?? 0)}
+                    />
+                  }
+                  tooltipVisible={isActionHovered(CHANGES_ACTION_ID)}
+                  tooltipPosition={tooltipPosition()}
+                  tooltip="Style changes"
+                />
+              </ToolbarRevealGroup>
+            </>
+          }
+        />
+      </div>
+      <span
+        data-react-grab-pause-status
+        role="status"
+        aria-live="polite"
+        class="sr-only"
+        textContent={pauseAnnouncement()}
       />
-    </div>
+    </>
   );
 };
