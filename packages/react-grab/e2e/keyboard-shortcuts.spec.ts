@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures.js";
 import { NON_NATIVE_ACTIVATION_KEY, TEXT_SELECTION_SHORTCUT_PRESS_MS } from "./constants.js";
 
 test.describe("Keyboard Shortcuts", () => {
-  test("a held, auto-repeating press keeps Grab on after activating with page text selected", async ({
+  test("a second press of any length switches Grab off after activating with page text selected", async ({
     reactGrab,
   }) => {
     const { page } = reactGrab;
@@ -25,11 +25,10 @@ test.describe("Keyboard Shortcuts", () => {
 
     await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     await page.waitForTimeout(TEXT_SELECTION_SHORTCUT_PRESS_MS);
-    // A second down on a held key is an auto-repeat, which marks a hold.
     await page.keyboard.down(NON_NATIVE_ACTIVATION_KEY);
     await page.keyboard.up(NON_NATIVE_ACTIVATION_KEY);
 
-    expect(await reactGrab.isOverlayVisible()).toBe(true);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
   });
 
   test("should copy selected element when clicking", async ({ reactGrab }) => {
