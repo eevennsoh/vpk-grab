@@ -54,6 +54,10 @@ import {
   PAUSE_TRANSITION_EASING,
   RESUME_SPRING_DURATION_MS,
   RESUME_SPRING_EASING,
+  RESUME_SPRING_OVERSHOOT_SCALE,
+  PAUSED_TOOL_OUTLINE_OFFSET_PX,
+  PAUSED_TOOL_OUTLINE_RADIUS_PX,
+  PAUSED_TOOL_OUTLINE_WIDTH_PX,
 } from "../../constants.js";
 import { PauseChip } from "./pause-chip.jsx";
 import { freezeUpdates } from "../../utils/freeze-updates.js";
@@ -934,6 +938,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           transition: getPauseTransition(),
           animation: getResumeAnimation(),
           "--rg-toolbar-resume-from-scale": getPausedScaleFactor(),
+          "--rg-toolbar-resume-overshoot-scale": String(RESUME_SPRING_OVERSHOOT_SCALE),
+          "--rg-paused-tool-outline-offset": `${PAUSED_TOOL_OUTLINE_OFFSET_PX}px`,
+          "--rg-paused-tool-outline-radius": `${PAUSED_TOOL_OUTLINE_RADIUS_PX}px`,
+          "--rg-paused-tool-outline-width": `${PAUSED_TOOL_OUTLINE_WIDTH_PX}px`,
         }}
         on:pointerdown={(event) => {
           stopEventPropagation(event);

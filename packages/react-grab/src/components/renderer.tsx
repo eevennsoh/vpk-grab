@@ -83,7 +83,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             onTextDraftChange={inspect().onTextDraftChange}
             onTextDraftCommit={inspect().onTextDraftCommit}
             onTextDraftCancel={inspect().onTextDraftCancel}
-            isDimmed={Boolean(props.isPaused)}
+            isPaused={Boolean(props.isPaused)}
           />
         )}
       </Show>

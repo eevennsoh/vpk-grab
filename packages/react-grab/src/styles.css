@@ -262,7 +262,7 @@
     scale: var(--rg-toolbar-resume-from-scale, 1);
   }
   55% {
-    scale: 1.035;
+    scale: var(--rg-toolbar-resume-overshoot-scale);
   }
   100% {
     scale: 1;
@@ -274,8 +274,8 @@
 [data-react-grab-toolbar-paused] [data-react-grab-toolbar-action][aria-pressed="true"]::after {
   content: "";
   position: absolute;
-  inset: -3px;
-  border-radius: 6px;
-  border: 1px solid var(--rg-text-secondary);
+  inset: calc(var(--rg-paused-tool-outline-offset) * -1);
+  border-radius: var(--rg-paused-tool-outline-radius);
+  border: var(--rg-paused-tool-outline-width) solid var(--rg-text-secondary);
   pointer-events: none;
 }

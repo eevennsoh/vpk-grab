@@ -10,9 +10,16 @@ interface FrameEventForwardingOptions {
   shouldForwardViewportEvent: (frameDocument: Document) => boolean;
   onInactiveFramePointerDown: (event: PointerEvent) => void;
   onFrameKeyDown: (event: KeyboardEvent) => boolean;
+  onFrameKeyUp: (event: KeyboardEvent) => boolean;
+  onFrameBlur: (frameDocument: Document) => void;
 }
 
+const forwardedEvents = new WeakSet<Event>();
+
+export const isForwardedFrameEvent = (event: Event): boolean => forwardedEvents.has(event);
+
 const dispatchForwardedEvent = (sourceEvent: Event, forwardedEvent: Event): void => {
+  forwardedEvents.add(forwardedEvent);
   window.dispatchEvent(forwardedEvent);
   if (forwardedEvent.defaultPrevented) {
     sourceEvent.preventDefault();
@@ -111,6 +118,13 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
       if (options.onFrameKeyDown(event)) return;
       forwardKeyboardEventWhenActive(event);
     };
+    const handleFrameKeyUp = (event: KeyboardEvent): void => {
+      if (options.onFrameKeyUp(event)) return;
+      forwardKeyboardEventWhenActive(event);
+    };
+    const handleFrameBlur = (event: FocusEvent): void => {
+      if (event.target === frameWindow) options.onFrameBlur(frameDocument);
+    };
     const forwardViewportEventWhenActive = (event: Event): void => {
       if (
         options.shouldForwardInteraction(event) &&
@@ -131,7 +145,8 @@ export const forwardSameOriginFrameEvents = (options: FrameEventForwardingOption
     frameWindow.addEventListener("contextmenu", forwardMouseEventWhenActive, eventOptions);
     frameWindow.addEventListener("click", forwardMouseEventWhenActive, eventOptions);
     frameWindow.addEventListener("keydown", handleFrameKeyDown, eventOptions);
-    frameWindow.addEventListener("keyup", forwardKeyboardEventWhenActive, eventOptions);
+    frameWindow.addEventListener("keyup", handleFrameKeyUp, eventOptions);
+    frameWindow.addEventListener("blur", handleFrameBlur, eventOptions);
     frameWindow.addEventListener("keypress", forwardKeyboardEventWhenActive, eventOptions);
     frameWindow.addEventListener("scroll", forwardViewportEventWhenActive, eventOptions);
     frameWindow.addEventListener("resize", forwardViewportEventWhenActive, eventOptions);
