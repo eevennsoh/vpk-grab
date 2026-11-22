@@ -803,7 +803,7 @@ test.describe("Hold Space to pause", () => {
     const labelBox = await getBox(host.locator(PAUSED_LABEL_SELECTOR));
     expect(labelBox.width).toBeGreaterThan(HIDDEN_LABEL_MAX_SIZE_PX);
     // The Paused pill hugs its content: narrower than the toolbar, the same
-    // height and centred on it, with the toolbar's own surface faded away.
+    // height and centred on it.
     const panelBox = await getBox(host.locator(TOOLBAR_PANEL_SELECTOR));
     const pillBox = await getBox(pausedContent);
     expect(pillBox.width).toBeLessThan(panelBox.width - BOX_TOLERANCE_PX);
@@ -811,7 +811,15 @@ test.describe("Hold Space to pause", () => {
     expect(
       Math.abs(pillBox.x + pillBox.width / 2 - (panelBox.x + panelBox.width / 2)),
     ).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
-    await expect(host.locator("[data-react-grab-toolbar-surface]")).toHaveCSS("opacity", "0");
+    // The surface morphs: its sides slide in until it hugs the Paused content.
+    const surface = host.locator("[data-react-grab-toolbar-surface]");
+    await expect
+      .poll(async () => Math.abs((await getBox(surface)).width - pillBox.width))
+      .toBeLessThanOrEqual(BOX_TOLERANCE_PX + 0.5);
+    const surfaceBox = await getBox(surface);
+    expect(
+      Math.abs(surfaceBox.x + surfaceBox.width / 2 - (panelBox.x + panelBox.width / 2)),
+    ).toBeLessThanOrEqual(BOX_TOLERANCE_PX);
     expect(await isInsideInertSubtree(host.locator(SPACING_TOGGLE_SELECTOR))).toBe(true);
 
     await page.keyboard.up("Space");
