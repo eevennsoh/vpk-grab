@@ -622,27 +622,29 @@ test.describe("Space marquee movement", () => {
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBefore);
   });
 
-  test("Space held before drawing does not move the fixed corner", async ({ reactGrab, page }) => {
+  test("Space held before drawing pauses instead of starting a marquee", async ({
+    reactGrab,
+    page,
+  }) => {
     await reactGrab.activate();
     await page.keyboard.down("Space");
     await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
     await page.mouse.down();
     await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
-    await page.keyboard.down("Space");
-    await page.mouse.move(
-      MARQUEE_END_PX.x + MARQUEE_RESIZE_PX.x,
-      MARQUEE_END_PX.y + MARQUEE_RESIZE_PX.y,
-      { steps: MARQUEE_MOVE_STEP_COUNT },
-    );
+    expect(await reactGrab.getDragBoxBounds()).toBeNull();
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    await page.mouse.move(MARQUEE_START_PX.x, MARQUEE_START_PX.y);
+    await page.mouse.down();
+    await page.mouse.move(MARQUEE_END_PX.x, MARQUEE_END_PX.y, { steps: MARQUEE_MOVE_STEP_COUNT });
     await expect
       .poll(() => reactGrab.getDragBoxBounds())
       .toMatchObject({
         x: MARQUEE_START_PX.x,
         y: MARQUEE_START_PX.y,
-        width: MARQUEE_END_PX.x - MARQUEE_START_PX.x + MARQUEE_RESIZE_PX.x,
-        height: MARQUEE_END_PX.y - MARQUEE_START_PX.y + MARQUEE_RESIZE_PX.y,
+        width: MARQUEE_END_PX.x - MARQUEE_START_PX.x,
+        height: MARQUEE_END_PX.y - MARQUEE_START_PX.y,
       });
-    await page.keyboard.up("Space");
     await page.keyboard.press("Escape");
     await page.mouse.up();
   });

@@ -18,6 +18,7 @@ interface ToolbarActionButtonProps {
   icon: JSX.Element;
   tooltip?: string;
   tooltipShortcut?: string;
+  tooltipHint?: string;
   tooltipVisible?: boolean;
   tooltipPosition?: "top" | "bottom" | "left" | "right";
 }
@@ -57,6 +58,7 @@ export const ToolbarActionButton: Component<ToolbarActionButtonProps> = (props) 
             position={props.tooltipPosition ?? "top"}
             textContent={tooltip()}
             shortcut={props.tooltipShortcut}
+            hint={props.tooltipHint}
           />
         )}
       </Show>

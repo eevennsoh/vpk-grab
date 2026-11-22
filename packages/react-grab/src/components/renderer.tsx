@@ -56,6 +56,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
         dragBounds={props.dragBounds}
         grabbedBoxes={props.grabbedBoxes}
         labelInstances={props.labelInstances}
+        isDimmed={props.isPaused}
       />
       <FrozenGlow visible={props.isFrozen ?? false} />
       <Show when={props.screenshotMarqueeBounds}>
@@ -82,6 +83,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             onTextDraftChange={inspect().onTextDraftChange}
             onTextDraftCommit={inspect().onTextDraftCommit}
             onTextDraftCancel={inspect().onTextDraftCancel}
+            isDimmed={Boolean(props.isPaused)}
           />
         )}
       </Show>
@@ -150,6 +152,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
                 })()}
                 shouldFocusPrompt={props.shouldFocusInstancePrompt}
                 isGrabActive={props.isActive}
+                isDimmed={props.isPaused}
                 onPromptFocusRelease={props.onInstancePromptFocusRelease}
                 onDismissPill={props.onDismissPill}
                 onRetry={() => props.onRetryInstance?.(instance().id)}
@@ -234,6 +237,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
       <Show when={props.toolbarVisible !== false}>
         <Toolbar
           isActive={props.isActive}
+          isPaused={props.isPaused}
           onToggle={props.onToggleActive}
           activeActionId={props.activeActionId}
           defaultActionId={props.defaultActionId}

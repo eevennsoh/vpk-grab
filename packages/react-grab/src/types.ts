@@ -504,6 +504,7 @@ export interface ReactGrabRendererProps {
   discardPrompt?: SelectionDiscardPrompt;
   toolbarVisible?: boolean;
   isActive?: boolean;
+  isPaused?: boolean;
   onToggleActive?: () => void;
   activeActionId?: string | null;
   enabled?: boolean;
@@ -686,6 +687,7 @@ export interface SelectionLabelProps {
   onSubmitPrompt?: (prompt: string) => void;
   shouldFocusPrompt?: boolean;
   isGrabActive?: boolean;
+  isDimmed?: boolean;
   onPromptFocusRelease?: () => void;
 }
 
@@ -965,4 +967,18 @@ export interface InspectRendererState {
   onTextDraftChange: (text: string) => void;
   onTextDraftCommit: (draftPosition: Position) => void;
   onTextDraftCancel: () => void;
+}
+
+export interface PauseChipAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PauseChipPlacement {
+  left: number;
+  top: number;
+  translate: string;
+  hiddenTransform: string;
 }

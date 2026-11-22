@@ -95,6 +95,15 @@
     transition: none !important;
     scroll-behavior: auto !important;
   }
+
+  /* A pause steps the toolbar back by opacity alone, with no scale or slide. */
+  [data-react-grab-toolbar-paused] {
+    scale: none !important;
+  }
+
+  [data-react-grab-pause-chip] {
+    transform: none !important;
+  }
 }
 
 :host *:focus {
@@ -244,4 +253,29 @@
   textarea[data-react-grab-input] {
     font-size: 16px;
   }
+}
+
+/* Overshoots a touch past full size on release, so the toolbar reads as
+   springing back to work. */
+@keyframes toolbar-resume-spring {
+  0% {
+    scale: var(--rg-toolbar-resume-from-scale, 1);
+  }
+  55% {
+    scale: 1.035;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+/* Paused, a tool that is on keeps a muted outline in place of its accent, so
+   it is clear what the release comes back to. */
+[data-react-grab-toolbar-paused] [data-react-grab-toolbar-action][aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 6px;
+  border: 1px solid var(--rg-text-secondary);
+  pointer-events: none;
 }

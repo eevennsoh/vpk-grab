@@ -9,6 +9,8 @@ import {
   LERP_CONVERGENCE_THRESHOLD_PX,
   MIN_DEVICE_PIXEL_RATIO,
   Z_INDEX_OVERLAY_CANVAS,
+  PAUSED_LAYER_TRANSITION,
+  PAUSED_PAGE_LAYER_OPACITY,
   OVERLAY_BORDER_COLOR_DRAG,
   OVERLAY_FILL_COLOR_DRAG,
   OPACITY_CONVERGENCE_THRESHOLD,
@@ -49,6 +51,7 @@ interface AnimatedBounds {
 }
 
 interface OverlayCanvasProps {
+  isDimmed?: boolean;
   selectionVisible?: boolean;
   selectionBounds?: OverlayBounds;
   selectionBoundsMultiple?: OverlayBounds[];
@@ -622,6 +625,8 @@ export const OverlayCanvas: Component<OverlayCanvasProps> = (props) => {
         left: "0",
         "pointer-events": "none",
         "z-index": String(Z_INDEX_OVERLAY_CANVAS),
+        opacity: props.isDimmed ? PAUSED_PAGE_LAYER_OPACITY : 1,
+        transition: PAUSED_LAYER_TRANSITION,
       }}
     />
   );

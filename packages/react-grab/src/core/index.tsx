@@ -82,6 +82,7 @@ import {
   MOVE_TOOL_KEY,
   SPACING_TOOL_KEY,
   SPECS_TOOL_KEY,
+  PAUSE_HOLD_KEY_CODE,
   AUTO_SCREENSHOT_TOOL_KEY,
   PROMPT_COPIED_STATUS_TEXT,
   PROMPT_COPIED_FEEDBACK_MS,
@@ -331,6 +332,9 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isActivated = createMemo(() => current().state === "active");
     const isToggleSession = () =>
       store.wasActivatedByToggle && pluginRegistry.store.options.activationMode !== "hold";
+    const [isPauseKeyHeld, setIsPauseKeyHeld] = createSignal(false);
+    const isPaused = createMemo(() => isPauseKeyHeld() && isActivated());
+    const isInterceptingPage = createMemo(() => isActivated() && !isPaused());
     const isFrozenPhase = createMemo(() => {
       const currentState = current();
       return currentState.state === "active" && currentState.phase === "frozen";
@@ -396,13 +400,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     createEffect(
-      on(isActivated, (activated, previousActivated) => {
-        if (activated && !previousActivated) {
+      on(isInterceptingPage, (intercepting, previousIntercepting) => {
+        if (intercepting && !previousIntercepting) {
           // Demo-safe: the collect/apply phases inside are gated on IS_DEMO at
           // the util level, so this never freezes the host page in demo builds.
           freezeGlobalInteractions(pointer().x, pointer().y);
           setHostBodyStyle("touchAction", "none");
-        } else if (!activated && previousActivated) {
+        } else if (!intercepting && previousIntercepting) {
           unfreezeGlobalInteractions();
           restoreHostBodyStyle("touchAction");
         }
@@ -495,6 +499,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const isSelectionHeldByPill = () => isActivated() && Boolean(copiedPill());
 
     const isElementDetectionBlocked = () =>
+      isPaused() ||
       !isEnabled() ||
       isSelectionHeldByPill() ||
       isPromptMode() ||
@@ -759,7 +764,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       },
     );
 
-    const isRendererActive = createMemo(() => isActivated() && !isCopying());
+    const isRendererActive = createMemo(() => isInterceptingPage() && !isCopying());
 
     const grabbedBoxTimeouts = new Map<string, number>();
 
@@ -849,6 +854,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         pillDismissPointerId = null;
         isPillDismissalShiftPress = false;
       }
+      if (isPaused()) return false;
       if (!copiedPill() || isEventFromOverlay(event, "data-react-grab-completion")) return false;
       const defaultActionId = currentToolbarState()?.defaultAction ?? DEFAULT_ACTION_ID;
       if (
@@ -1506,14 +1512,14 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     });
 
     createEffect(() => {
-      const elements = store.frozenElements;
+      const elements = isPaused() ? [] : store.frozenElements;
       const cleanup = freezeAnimations(elements);
       onCleanup(cleanup);
     });
 
     createEffect(
-      on(isActivated, (activated) => {
-        if (!activated) return;
+      on(isInterceptingPage, (intercepting) => {
+        if (!intercepting) return;
         if (!pluginRegistry.store.options.freezeReactUpdates) return;
         const unfreezeUpdates = freezeUpdates();
         onCleanup(unfreezeUpdates);
@@ -1988,9 +1994,12 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             inspect.annotationTool(),
             inspect.editCursor(),
             isScreenshotMode(),
+            isPaused(),
           ] as const,
-        ([activated, copying, promptMode, annotationTool, , screenshotMode]) => {
-          if (copying) {
+        ([activated, copying, promptMode, annotationTool, , screenshotMode, paused]) => {
+          if (paused) {
+            setCursorOverride(null);
+          } else if (copying) {
             setCursorOverride("progress");
           } else if (screenshotMode) {
             setCursorOverride(SCREENSHOT_TOOL_CURSOR);
@@ -2040,6 +2049,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       const previousFocused = store.previouslyFocusedElement;
       if (shouldPreservePillPromptFocus) preservedPillPromptFocusTarget = previousFocused;
       stopSpaceDragRepositioning();
+      setIsPauseKeyHeld(false);
       actions.deactivate();
       dismissToolbarMenu();
       stopShiftMultiSelecting();
@@ -2784,7 +2794,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
     const stopForwardingSameOriginFrameEvents = forwardSameOriginFrameEvents({
       shouldForwardInteraction: (event) =>
-        isActivated() ||
+        isInterceptingPage() ||
         isHoldingKeys() ||
         isDragging() ||
         isSelectionInteractionLocked() ||
@@ -2796,6 +2806,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       onInactiveFramePointerDown: ignoreRealInput(dismissCompletedLabelsOnPress),
       onFrameKeyDown: (event) => {
         if (IS_DEMO && event.isTrusted) return false;
+        if (isPaused()) return false;
         if (getToolCycleDirection(event) && isKeyboardEventTriggeredByInput(event)) return true;
         return dismissPopoverOnEscape(event) || dismissCompletedLabelsOnEscape(event);
       },
@@ -2829,6 +2840,67 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       capture: true,
     });
 
+    const isAnnotationGestureActive = () =>
+      inspect.draftStroke() !== null ||
+      inspect.marqueeRect() !== null ||
+      inspect.isTransforming() ||
+      inspect.isEditPressing();
+
+    // An empty pill prompt takes focus after every toggled copy, and a
+    // leading space is never a prompt, so Space pauses from there. A focused
+    // control in a pill, menu or panel keeps Space; the toolbar's buttons do
+    // not, since clicking one leaves focus there just before a pause.
+    const isPauseKeyOwnedByTarget = (event: KeyboardEvent) => {
+      if (isPillPromptEvent(event)) return isPageFieldHoldingText(event);
+      if (isEventFromOverlay(event, "data-react-grab-ignore-events"))
+        return !isEventFromOverlay(event, "data-react-grab-toolbar");
+      return isKeyboardEventTriggeredByInput(event);
+    };
+
+    const canStartPause = (event: KeyboardEvent) =>
+      !event.repeat &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      isActivated() &&
+      !isPromptMode() &&
+      !isDragging() &&
+      !isAnnotationGestureActive() &&
+      !isKeyboardEventComposing(event) &&
+      !isTargetKeyCombination(event, pluginRegistry.store.options) &&
+      !isPauseKeyOwnedByTarget(event);
+
+    const endPause = () => {
+      if (!isPauseKeyHeld()) return;
+      const pointerPosition = getPointerPosition();
+      if (pointerPosition) actions.setPointer({ x: pointerPosition.x, y: pointerPosition.y });
+      setIsPauseKeyHeld(false);
+      resumeHoverAtPointer();
+    };
+
+    const handlePauseHoldKey = (event: KeyboardEvent) => {
+      if (event.code !== PAUSE_HOLD_KEY_CODE) return;
+      if (event.type === "keyup") {
+        if (!isPauseKeyHeld()) return;
+        event.preventDefault();
+        endPause();
+        return;
+      }
+      if (!isPauseKeyHeld()) {
+        if (!canStartPause(event)) return;
+        setIsPauseKeyHeld(true);
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    eventListenerManager.addWindowListener("keydown", ignoreRealInput(handlePauseHoldKey), {
+      capture: true,
+    });
+    eventListenerManager.addWindowListener("keyup", ignoreRealInput(handlePauseHoldKey), {
+      capture: true,
+    });
+
     const blockEnterIfNeeded = (event: KeyboardEvent) => {
       if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return false;
       let originalKey: string;
@@ -2840,7 +2912,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
         return false;
       }
       const isEnterKey = originalKey === "Enter" || isEnterCode(event.code);
-      const isOverlayActive = isActivated() || isHoldingKeys() || isCopying();
+      const isOverlayActive = isInterceptingPage() || isHoldingKeys() || isCopying();
       const shouldBlockEnter =
         isEnterKey &&
         isOverlayActive &&
@@ -3237,6 +3309,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (isPaused()) {
+          if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
+            event.preventDefault();
+            deactivateRenderer();
+          }
+          return;
+        }
         if (dismissPopoverOnEscape(event)) return;
         // Escape calls off a resize or rotate mid-drag and keeps the session.
         if (event.key === "Escape" && inspect.isTransforming()) {
@@ -3602,7 +3681,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "pointermove",
       ignoreRealInput((event: PointerEvent) => {
-        if (!event.isPrimary) return;
+        if (isPaused() || !event.isPrimary) return;
         const isTouchPointer = event.pointerType === "touch";
         actions.setTouchMode(isTouchPointer);
         if (isAnnotating()) {
@@ -3665,7 +3744,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           event.stopImmediatePropagation();
           return;
         }
-        if (event.button !== 0) return;
+        if (isPaused() || event.button !== 0) return;
         if (!event.isPrimary) return;
         actions.setTouchMode(event.pointerType === "touch");
         if (!isDragging() && isEventFromOverlay(event, "data-react-grab-ignore-events")) return;
@@ -3751,6 +3830,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           event.stopImmediatePropagation();
           return;
         }
+        if (isPaused()) return;
         if (isAnnotating()) {
           // A stroke can end over the toolbar, so the release always finishes
           // it; a release that belongs to the toolbar is then left for the
@@ -3785,6 +3865,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "contextmenu",
       ignoreRealInput((event: MouseEvent) => {
+        if (isPaused()) return;
         if (isHoldingKeys()) {
           clearHoldTimer();
           actions.releaseHold();
@@ -3845,6 +3926,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     if (!IS_DEMO) {
       eventListenerManager.addDocumentListener("visibilitychange", () => {
         if (document.hidden) {
+          endPause();
           actions.clearGrabbedBoxes();
           const storeActivationTimestamp = store.activationTimestamp;
           if (
@@ -3862,6 +3944,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // the window loses focus) but do not deactivate if already active, since
       // the user may alt-tab back.
       eventListenerManager.addWindowListener("blur", () => {
+        endPause();
         cancelActiveDrag();
         if (isHoldingKeys()) {
           clearHoldTimer();
@@ -4176,7 +4259,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     );
 
     createEffect(() => {
-      if (inspectElement() !== null) return;
+      if (isPaused() || inspectElement() !== null) return;
       if (inspect.pinnedSpecsElement() !== null) inspect.unpinSpecs();
       if (inspect.measureAnchorElement() !== null) inspect.stopMeasuring();
     });
@@ -4895,7 +4978,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                     ? undefined
                     : (shiftSelectionLabelMouseX() ?? cursorPosition().x)
                 }
-                isFrozen={isFrozenPhase() || isActivated() || isToolbarSelectHovered()}
+                isFrozen={isInterceptingPage() || isToolbarSelectHovered()}
                 inputValue={store.inputText}
                 isPromptMode={isPromptMode()}
                 onCopyScreenshotInstance={(instanceId) => copyLabelScreenshot(instanceId, true)}
@@ -4926,6 +5009,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
                 }
                 toolbarVisible={pluginRegistry.store.theme.toolbar.enabled}
                 isActive={isActivated()}
+                isPaused={isPaused()}
                 onToggleActive={handleToggleActive}
                 activeActionId={toolbarActiveActionId()}
                 enabled={isEnabled()}

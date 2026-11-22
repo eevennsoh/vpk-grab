@@ -24,6 +24,7 @@ interface TooltipProps {
   position: "top" | "bottom" | "left" | "right";
   textContent: string;
   shortcut?: string;
+  hint?: string;
   anchorRightPx?: number;
   shouldStayInViewport?: boolean;
 }
@@ -78,6 +79,7 @@ export const Tooltip: Component<TooltipProps> = (props) => {
         () => props.anchorRightPx,
         () => props.textContent,
         () => props.shortcut,
+        () => props.hint,
       ],
       ([isVisible]) => {
         if (!props.shouldStayInViewport || !isVisible || !tooltipRef) return;
@@ -180,6 +182,15 @@ export const Tooltip: Component<TooltipProps> = (props) => {
                 )}
               </For>
             </kbd>
+          )}
+        </Show>
+        <Show when={props.hint}>
+          {(hint) => (
+            <span
+              data-react-grab-tooltip-hint
+              class="text-[var(--rg-text-secondary)]"
+              textContent={hint()}
+            />
           )}
         </Show>
       </div>
