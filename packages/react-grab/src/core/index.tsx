@@ -686,7 +686,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
     let keydownSpamTimerId: number | null = null;
     let isToggleShortcutPressed = false;
-    let didToggleShortcutRepeat = false;
     const activationHoldState = {
       timerId: null as number | null,
       startTimestamp: null as number | null,
@@ -3308,15 +3307,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
 
       if (isActivated()) {
-        // macOS sends no keyup for C while Cmd is held, so a toggled session
-        // can't time the tap; only C auto-repeating marks a deliberate hold.
+        // In a toggled session the shortcut only ever switches Grab off: a
+        // hold means nothing there, and a quick key repeat or a late modifier
+        // release must not turn a tap into one.
         if (isToggleSession()) {
-          if (event.repeat) {
-            didToggleShortcutRepeat = true;
-          } else {
-            isToggleShortcutPressed = true;
-            didToggleShortcutRepeat = false;
-          }
+          if (!event.repeat) isToggleShortcutPressed = true;
           return;
         }
         if (event.repeat) return;
@@ -3563,12 +3558,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
             if (tryHandleNavigationKey(event)) return;
           }
           if (isFromOverlay && tryHandleEnterCopy(event)) return;
-          // Focus left on a toolbar button must not stop the shortcut from
-          // switching a toggled session off.
+          // Focus left on a toolbar or pill button must not stop the shortcut
+          // from switching Grab on or off.
           if (
             isFromOverlay &&
             !isPromptMode() &&
-            isToggleSession() &&
             isTargetKeyCombination(event, pluginRegistry.store.options)
           ) {
             handleActivationKeys(event);
@@ -3635,7 +3629,6 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
 
         const isFromOverlayControl =
           isEventFromOverlay(event, "data-react-grab-ignore-events") && !isPillPromptEvent(event);
-        if (isFromOverlayControl && !isToggleShortcutPressed) return;
 
         const requiredModifiers = getModifiersFromActivationKey(
           pluginRegistry.store.options.activationKey,
@@ -3650,15 +3643,15 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
           ? parseActivationKey(pluginRegistry.store.options.activationKey)(event)
           : isCLikeKey(event.key, event.code);
         if (isOwnedByPillPrompt && !isReleasingActivationKey && !isReleasingModifier) return;
+        // Focus left on a toolbar or pill button keeps its other keys, but the
+        // shortcut's release still has to reach the session.
+        if (isFromOverlayControl && !isReleasingActivationKey && !isReleasingModifier) return;
 
         if (isToggleShortcutPressed && (isReleasingActivationKey || isReleasingModifier)) {
           isToggleShortcutPressed = false;
-          if (!didToggleShortcutRepeat) {
-            deactivateRenderer();
-            return;
-          }
+          deactivateRenderer();
+          return;
         }
-        if (isFromOverlayControl) return;
 
         if ((didJustCopy() || isCopyFeedbackCooldownActive) && !isToggleSession()) {
           if (isReleasingActivationKey || isReleasingModifier) {

@@ -490,18 +490,55 @@ for (const tapDurationMs of [180, 400]) {
   });
 }
 
-test("a held, auto-repeating shortcut leaves a toggled session on", async ({ reactGrab, page }) => {
+test("a tap that auto-repeats still switches a toggled session off", async ({
+  reactGrab,
+  page,
+}) => {
   await reactGrab.activateViaKeyboard();
   await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+  // A short key-repeat delay makes even a quick tap send repeats.
   await page.keyboard.down(reactGrab.modifierKey);
   await page.keyboard.down("c");
-  await page.waitForTimeout(500);
-  await page.keyboard.down("c");
+  for (let repeat = 0; repeat < 5; repeat++) {
+    await page.waitForTimeout(30);
+    await page.keyboard.down("c");
+  }
   await page.keyboard.up("c");
   await page.keyboard.up(reactGrab.modifierKey);
-  await page.waitForTimeout(200);
-  expect(await reactGrab.isOverlayVisible()).toBe(true);
+  await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
 });
+
+for (const control of [
+  { name: "the toolbar's collapse button", selector: "[data-react-grab-toolbar-collapse]" },
+  { name: "a toolbar tool", selector: '[data-react-grab-toolbar-action="annotate-pen"]' },
+]) {
+  test(`the shortcut switches Grab on and off with focus on ${control.name}`, async ({
+    reactGrab,
+    page,
+  }) => {
+    await expect.poll(() => reactGrab.isToolbarVisible(), { timeout: 5000 }).toBe(true);
+    await page.locator(control.selector).focus();
+    await expect(page.locator(control.selector)).toBeFocused();
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    for (let repeat = 0; repeat < 8; repeat++) {
+      await page.waitForTimeout(40);
+      await page.keyboard.down("c");
+    }
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(true);
+
+    await page.locator(control.selector).focus();
+    await page.keyboard.down(reactGrab.modifierKey);
+    await page.keyboard.down("c");
+    await page.waitForTimeout(80);
+    await page.keyboard.down("c");
+    await page.keyboard.up("c");
+    await page.keyboard.up(reactGrab.modifierKey);
+    await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+  });
+}
 
 test("a tap switches a toggled session off even when the modifier stays down for a while", async ({
   reactGrab,
