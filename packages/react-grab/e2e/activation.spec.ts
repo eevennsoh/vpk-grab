@@ -96,6 +96,81 @@ test.describe("Activation Mode Configuration", () => {
     expect(await reactGrab.isOverlayVisible()).toBe(false);
   });
 
+  test.describe("Escape closes one layer at a time", () => {
+    const openPageLayers = (page: import("@playwright/test").Page, withModalDialog = true) =>
+      page.evaluate((shouldOpenDialog) => {
+        if (shouldOpenDialog) {
+          const dialog = document.createElement("dialog");
+          dialog.innerHTML = `<input data-testid="dialog-input" />`;
+          document.body.append(dialog);
+          dialog.showModal();
+        }
+        document.documentElement.dataset.keydownMenu = "open";
+        document.documentElement.dataset.keyupMenu = "open";
+        document.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.key === "Escape") document.documentElement.dataset.keydownMenu = "closed";
+          },
+          { capture: true },
+        );
+        document.addEventListener("keyup", (event) => {
+          if (event.key === "Escape") document.documentElement.dataset.keyupMenu = "closed";
+        });
+      }, withModalDialog);
+
+    const expectPageLayers = async (
+      page: import("@playwright/test").Page,
+      expectedState: "open" | "closed",
+      withModalDialog = true,
+    ) => {
+      const html = page.locator("html");
+      await expect(html).toHaveAttribute("data-keydown-menu", expectedState);
+      await expect(html).toHaveAttribute("data-keyup-menu", expectedState);
+      if (!withModalDialog) return;
+      if (expectedState === "open") {
+        await expect(page.locator("dialog")).toHaveAttribute("open", "");
+      } else {
+        await expect(page.locator("dialog")).not.toHaveAttribute("open", "");
+      }
+    };
+
+    test("first Escape turns a toggled session off and leaves page UI open", async ({
+      reactGrab,
+    }) => {
+      await reactGrab.activateViaKeyboard();
+      await openPageLayers(reactGrab.page);
+
+      await reactGrab.pressEscape();
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+      await expectPageLayers(reactGrab.page, "open");
+
+      await reactGrab.pressEscape();
+      await expectPageLayers(reactGrab.page, "closed");
+    });
+
+    test("Escape from a page field turns Grab off before the page sees it", async ({
+      reactGrab,
+    }) => {
+      await openPageLayers(reactGrab.page);
+      await reactGrab.activateViaKeyboardFrom("[data-testid='dialog-input']");
+
+      await reactGrab.pressEscape();
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+      await expectPageLayers(reactGrab.page, "open");
+    });
+
+    test("Escape cancelling the prompt leaves page UI open", async ({ reactGrab }) => {
+      await reactGrab.registerCommentAction();
+      await reactGrab.enterPromptMode("li:first-child");
+      await openPageLayers(reactGrab.page, false);
+
+      await reactGrab.pressEscape();
+      await expect.poll(() => reactGrab.isPromptModeActive()).toBe(false);
+      await expectPageLayers(reactGrab.page, "open", false);
+    });
+  });
+
   test("should activate when focused on input element", async ({ reactGrab }) => {
     await reactGrab.activateViaKeyboardFrom("[data-testid='test-input']");
     expect(await reactGrab.isOverlayVisible()).toBe(true);

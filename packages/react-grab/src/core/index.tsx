@@ -3360,241 +3360,265 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       }
     };
 
-    eventListenerManager.addWindowListener(
-      "keydown",
-      ignoreRealInput((event: KeyboardEvent) => {
-        if (isPaused()) {
-          if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
-            event.preventDefault();
+    const consumeEscape = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (isPaused()) {
+        if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
+          event.preventDefault();
+          deactivateRenderer();
+        }
+        return;
+      }
+      if (dismissPopoverOnEscape(event)) return;
+      // Escape calls off a resize or rotate mid-drag and keeps the session.
+      if (event.key === "Escape" && inspect.isTransforming()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        inspect.cancelPointerGesture();
+        return;
+      }
+      if (
+        event.code === "Escape" &&
+        !isActivated() &&
+        !isHoldingKeys() &&
+        !isCopying() &&
+        !isPillPromptEvent(event)
+      ) {
+        dismissCompletedLabelsOnEscape(event);
+        return;
+      }
+      if (handlePillSwapCopyShortcut(event)) return;
+      if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
+      // A note being typed owns its keys outright: Enter and Escape end the
+      // note (not the session), and Cmd+C copies its text. So does a value
+      // being typed into the specs panel.
+      if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
+      if (isSpecsFieldEvent(event)) return;
+      if (dismissCompletedLabelsOnEscape(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.key === "Escape" && inspect.isSpecsPinLocked()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        inspect.unpinSpecs();
+        return;
+      }
+      const canHandleEditShortcut =
+        isActivated() && !isPromptMode() && !isCopying() && !isTextFieldKeyEvent(event);
+      const editHistoryDirection = canHandleEditShortcut ? getEditHistoryDirection(event) : null;
+      if (editHistoryDirection) {
+        const entry = editHistoryDirection === "undo" ? inspect.undo() : inspect.redo();
+        if (entry) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (entry.kind === "styles") actions.incrementViewportVersion();
+          return;
+        }
+      }
+      // Drawings stay on the page after Grab is switched off, so the shortcut
+      // that clears them works then too.
+      if (
+        !isPromptMode() &&
+        !isCopying() &&
+        !isTextFieldKeyEvent(event) &&
+        inspect.hasAnnotations() &&
+        isClearAnnotationsShortcut(event)
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        clearAnnotationsOrSelection();
+        return;
+      }
+      // Bare keys pick the toolbar's tools up and put them down, as in a
+      // design tool, so a frozen hover state never needs a trip to the
+      // toolbar. V only means something once there is a drawing to move,
+      // and Specs, Spacing and Screenshot only while Grab, which they serve,
+      // is in hand.
+      const isBareKeyPress =
+        !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+      if (canHandleEditShortcut && isBareKeyPress) {
+        const pressedKey = event.key.toLowerCase();
+        const runToolShortcut = (): boolean => {
+          switch (pressedKey) {
+            case SPECS_TOOL_KEY:
+              if (isAnnotating()) return false;
+              inspect.toggleSpecs();
+              return true;
+            case SPACING_TOOL_KEY:
+              if (isAnnotating()) return false;
+              inspect.toggleRedlines();
+              return true;
+            case AUTO_SCREENSHOT_TOOL_KEY:
+              if (isAnnotating()) return false;
+              inspect.toggleAutoScreenshot();
+              return true;
+            case MOVE_TOOL_KEY:
+              if (!inspect.hasAnnotations()) return false;
+              handleSelectAnnotationTool("edit");
+              return true;
+            default:
+              return false;
+          }
+        };
+        if (runToolShortcut()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+      }
+      if (
+        isAnnotating() &&
+        inspect.selectedAnnotationIds().length > 0 &&
+        (event.key === "Delete" || event.key === "Backspace")
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        inspect.removeSelectedAnnotations();
+        return;
+      }
+      const toolCycleDirection = getToolCycleDirection(event);
+      const isMenuItemChord =
+        toolCycleDirection && isEventFromOverlay(event, "data-react-grab-menu-item");
+      // Editable controls keep their native arrow/Tab keys (caret movement,
+      // focus traversal) and Enter. This one guard covers every navigation
+      // path in this handler, including the overlay branch, and precedes
+      // the active-mode preventDefault below.
+      // In a toggled session the tool chord only gives way to a page field
+      // that holds text, so a menu that focuses its empty search box on
+      // opening does not swallow it.
+      const isFieldKeyKept =
+        toolCycleDirection && isToggleSession() && !isPillPromptEvent(event)
+          ? isPageFieldHoldingText(event)
+          : isTextFieldKeyEvent(event);
+      if (
+        (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
+        !isMenuItemChord &&
+        isFieldKeyKept
+      )
+        return;
+
+      if (toolCycleDirection && (isActivated() || isCopying())) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (isMenuItemChord || isCopying() || isAnyPopoverOpen() || isPromptMode()) return;
+        if (!isToggleSession() || isDragging()) {
+          tryHandleNavigationKey(event);
+        } else if (!event.repeat) {
+          cycleSelectionTool(toolCycleDirection);
+        }
+        return;
+      }
+
+      blockEnterIfNeeded(event);
+
+      if (!isEnabled()) {
+        if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
+          setToolbarShakeCount((count) => count + 1);
+        }
+        return;
+      }
+
+      const isFromReactGrabInput = isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE);
+      if (
+        isPromptMode() &&
+        isTargetKeyCombination(event, pluginRegistry.store.options) &&
+        !event.repeat &&
+        !isFromReactGrabInput
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleInputCancel();
+        return;
+      }
+
+      if (event.key === "Escape" && isCopying()) {
+        consumeEscape(event);
+        deactivateRenderer();
+        return;
+      }
+
+      const isFromPillPrompt = isPillPromptEvent(event);
+      const isFromOverlay =
+        isEventFromOverlay(event, "data-react-grab-ignore-events") && !isFromPillPrompt;
+
+      if (isPromptMode() || isFromOverlay) {
+        if (isPromptMode() && !isFromReactGrabInput && tryHandleBareKeyShortcut(event)) return;
+
+        if (event.key === "Escape") {
+          if (isPromptMode()) {
+            consumeEscape(event);
+            // The textarea's own handler confirms the dismiss; it no longer
+            // sees this Escape, so confirm here.
+            if (isFromReactGrabInput) {
+              handleConfirmDismiss();
+            } else {
+              handleInputCancel();
+            }
+          } else if (store.wasActivatedByToggle) {
+            consumeEscape(event);
             deactivateRenderer();
           }
-          return;
         }
-        if (dismissPopoverOnEscape(event)) return;
-        // Escape calls off a resize or rotate mid-drag and keeps the session.
-        if (event.key === "Escape" && inspect.isTransforming()) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          inspect.cancelPointerGesture();
-          return;
+
+        if (isFromOverlay && ARROW_KEYS.has(event.key)) {
+          if (tryHandleNavigationKey(event)) return;
         }
+        if (isFromOverlay && tryHandleEnterCopy(event)) return;
+        // Focus left on a toolbar or pill button must not stop the shortcut
+        // from switching Grab on or off.
         if (
-          event.code === "Escape" &&
-          !isActivated() &&
-          !isHoldingKeys() &&
-          !isCopying() &&
-          !isPillPromptEvent(event)
-        ) {
-          dismissCompletedLabelsOnEscape(event);
-          return;
-        }
-        if (handlePillSwapCopyShortcut(event)) return;
-        if (isKeyOwnedByPillPrompt(event) || isKeyboardEventComposing(event)) return;
-        // A note being typed owns its keys outright: Enter and Escape end the
-        // note (not the session), and Cmd+C copies its text. So does a value
-        // being typed into the specs panel.
-        if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
-        if (isSpecsFieldEvent(event)) return;
-        if (dismissCompletedLabelsOnEscape(event)) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
-        if (event.key === "Escape" && inspect.isSpecsPinLocked()) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          inspect.unpinSpecs();
-          return;
-        }
-        const canHandleEditShortcut =
-          isActivated() && !isPromptMode() && !isCopying() && !isTextFieldKeyEvent(event);
-        const editHistoryDirection = canHandleEditShortcut ? getEditHistoryDirection(event) : null;
-        if (editHistoryDirection) {
-          const entry = editHistoryDirection === "undo" ? inspect.undo() : inspect.redo();
-          if (entry) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (entry.kind === "styles") actions.incrementViewportVersion();
-            return;
-          }
-        }
-        // Drawings stay on the page after Grab is switched off, so the shortcut
-        // that clears them works then too.
-        if (
+          isFromOverlay &&
           !isPromptMode() &&
-          !isCopying() &&
-          !isTextFieldKeyEvent(event) &&
-          inspect.hasAnnotations() &&
-          isClearAnnotationsShortcut(event)
+          isTargetKeyCombination(event, pluginRegistry.store.options)
         ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          clearAnnotationsOrSelection();
-          return;
-        }
-        // Bare keys pick the toolbar's tools up and put them down, as in a
-        // design tool, so a frozen hover state never needs a trip to the
-        // toolbar. V only means something once there is a drawing to move,
-        // and Specs, Spacing and Screenshot only while Grab, which they serve,
-        // is in hand.
-        const isBareKeyPress =
-          !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-        if (canHandleEditShortcut && isBareKeyPress) {
-          const pressedKey = event.key.toLowerCase();
-          const runToolShortcut = (): boolean => {
-            switch (pressedKey) {
-              case SPECS_TOOL_KEY:
-                if (isAnnotating()) return false;
-                inspect.toggleSpecs();
-                return true;
-              case SPACING_TOOL_KEY:
-                if (isAnnotating()) return false;
-                inspect.toggleRedlines();
-                return true;
-              case AUTO_SCREENSHOT_TOOL_KEY:
-                if (isAnnotating()) return false;
-                inspect.toggleAutoScreenshot();
-                return true;
-              case MOVE_TOOL_KEY:
-                if (!inspect.hasAnnotations()) return false;
-                handleSelectAnnotationTool("edit");
-                return true;
-              default:
-                return false;
-            }
-          };
-          if (runToolShortcut()) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-          }
-        }
-        if (
-          isAnnotating() &&
-          inspect.selectedAnnotationIds().length > 0 &&
-          (event.key === "Delete" || event.key === "Backspace")
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          inspect.removeSelectedAnnotations();
-          return;
-        }
-        const toolCycleDirection = getToolCycleDirection(event);
-        const isMenuItemChord =
-          toolCycleDirection && isEventFromOverlay(event, "data-react-grab-menu-item");
-        // Editable controls keep their native arrow/Tab keys (caret movement,
-        // focus traversal) and Enter. This one guard covers every navigation
-        // path in this handler, including the overlay branch, and precedes
-        // the active-mode preventDefault below.
-        // In a toggled session the tool chord only gives way to a page field
-        // that holds text, so a menu that focuses its empty search box on
-        // opening does not swallow it.
-        const isFieldKeyKept =
-          toolCycleDirection && isToggleSession() && !isPillPromptEvent(event)
-            ? isPageFieldHoldingText(event)
-            : isTextFieldKeyEvent(event);
-        if (
-          (resolveNavigationKey(event) || (isEnterCode(event.code) && !isCopying())) &&
-          !isMenuItemChord &&
-          isFieldKeyKept
-        )
-          return;
-
-        if (toolCycleDirection && (isActivated() || isCopying())) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          if (isMenuItemChord || isCopying() || isAnyPopoverOpen() || isPromptMode()) return;
-          if (!isToggleSession() || isDragging()) {
-            tryHandleNavigationKey(event);
-          } else if (!event.repeat) {
-            cycleSelectionTool(toolCycleDirection);
-          }
-          return;
+          handleActivationKeys(event);
         }
 
-        blockEnterIfNeeded(event);
+        return;
+      }
 
-        if (!isEnabled()) {
-          if (isTargetKeyCombination(event, pluginRegistry.store.options) && !event.repeat) {
-            setToolbarShakeCount((count) => count + 1);
-          }
-          return;
-        }
-
-        const isFromReactGrabInput = isEventFromOverlay(event, REACT_GRAB_INPUT_ATTRIBUTE);
-        if (
-          isPromptMode() &&
-          isTargetKeyCombination(event, pluginRegistry.store.options) &&
-          !event.repeat &&
-          !isFromReactGrabInput
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          handleInputCancel();
-          return;
-        }
-
-        if (event.key === "Escape" && isCopying()) {
+      if (event.key === "Escape") {
+        if (isHoldingKeys() || store.wasActivatedByToggle) {
+          consumeEscape(event);
           deactivateRenderer();
           return;
         }
+      }
 
-        const isFromPillPrompt = isPillPromptEvent(event);
-        const isFromOverlay =
-          isEventFromOverlay(event, "data-react-grab-ignore-events") && !isFromPillPrompt;
+      if (isActivated() && !MODIFIER_KEYS.includes(event.key) && !isFromPillPrompt) {
+        event.preventDefault();
+      }
 
-        if (isPromptMode() || isFromOverlay) {
-          if (isPromptMode() && !isFromReactGrabInput && tryHandleBareKeyShortcut(event)) return;
+      // After the window regains focus we briefly ignore activation keys to
+      // prevent accidental activation from the modifier keys used to alt-tab.
+      const didWindowJustRegainFocus =
+        Date.now() - lastWindowFocusTimestamp < WINDOW_REFOCUS_GRACE_PERIOD_MS;
 
-          if (event.key === "Escape") {
-            if (isPromptMode()) {
-              handleInputCancel();
-            } else if (store.wasActivatedByToggle) {
-              deactivateRenderer();
-            }
-          }
+      if (tryHandleNavigationKey(event)) return;
+      if (tryHandleOpenFileShortcut(event)) return;
+      if (tryHandleEnterCopy(event)) return;
+      if (tryHandleBareKeyShortcut(event)) return;
+      // Demo mode never activates from the global hotkey.
+      if (!didWindowJustRegainFocus && !IS_DEMO) {
+        handleActivationKeys(event);
+      }
+    };
 
-          if (isFromOverlay && ARROW_KEYS.has(event.key)) {
-            if (tryHandleNavigationKey(event)) return;
-          }
-          if (isFromOverlay && tryHandleEnterCopy(event)) return;
-          // Focus left on a toolbar or pill button must not stop the shortcut
-          // from switching Grab on or off.
-          if (
-            isFromOverlay &&
-            !isPromptMode() &&
-            isTargetKeyCombination(event, pluginRegistry.store.options)
-          ) {
-            handleActivationKeys(event);
-          }
+    // Each Escape closes one layer: once Grab takes an Escape keydown, its
+    // keyup is withheld too, since some page menus close on keyup.
+    let isEscapeKeyUpOwned = false;
 
-          return;
-        }
-
-        if (event.key === "Escape") {
-          if (isHoldingKeys() || store.wasActivatedByToggle) {
-            deactivateRenderer();
-            return;
-          }
-        }
-
-        if (isActivated() && !MODIFIER_KEYS.includes(event.key) && !isFromPillPrompt) {
-          event.preventDefault();
-        }
-
-        // After the window regains focus we briefly ignore activation keys to
-        // prevent accidental activation from the modifier keys used to alt-tab.
-        const didWindowJustRegainFocus =
-          Date.now() - lastWindowFocusTimestamp < WINDOW_REFOCUS_GRACE_PERIOD_MS;
-
-        if (tryHandleNavigationKey(event)) return;
-        if (tryHandleOpenFileShortcut(event)) return;
-        if (tryHandleEnterCopy(event)) return;
-        if (tryHandleBareKeyShortcut(event)) return;
-        // Demo mode never activates from the global hotkey.
-        if (!didWindowJustRegainFocus && !IS_DEMO) {
-          handleActivationKeys(event);
-        }
+    eventListenerManager.addWindowListener(
+      "keydown",
+      ignoreRealInput((event: KeyboardEvent) => {
+        handleWindowKeyDown(event);
+        if (event.code === "Escape") isEscapeKeyUpOwned = event.defaultPrevented;
       }),
       { capture: true },
     );
@@ -3602,6 +3626,11 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     eventListenerManager.addWindowListener(
       "keyup",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (event.code === "Escape" && isEscapeKeyUpOwned) {
+          isEscapeKeyUpOwned = false;
+          consumeEscape(event);
+          return;
+        }
         if (event.key === "Shift") lastShiftReleaseTimestampMs = performance.now();
         if (isEventFromOverlay(event, ANNOTATION_INPUT_ATTRIBUTE)) return;
         // A key the pill's prompt owns is still a release: it may end a hold
