@@ -27,23 +27,28 @@ import {
   Z_INDEX_OVERLAY_CANVAS,
   PAUSED_LAYER_TRANSITION,
   PAUSED_PAGE_LAYER_OPACITY,
+  TEXT_TOOL_CURSOR,
 } from "../../constants.js";
 import type {
   AnnotationFrame,
   AnnotationSelectionFrame,
   AnnotationStroke,
   AnnotationText,
+  AnnotationTextDraft,
   AnnotationTransformHandle,
   AnnotationTransformLabel,
   Position,
   Rect,
 } from "../../types.js";
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
+import { getAnnotationColorForKey } from "../../utils/get-annotation-color-for-key.js";
 import { getAnnotationStrokeFrame } from "../../utils/get-annotation-stroke-frame.js";
-import { getAnnotationTextLines } from "../../utils/get-annotation-text-lines.js";
+import { getAnnotationTextCenterOrigin } from "../../utils/get-annotation-text-center-origin.js";
+import { getAnnotationTextFrame } from "../../utils/get-annotation-text-frame.js";
 import { getResizeCursor } from "../../utils/get-resize-cursor.js";
 import { getRotateCursor } from "../../utils/get-rotate-cursor.js";
 import { createInkPath } from "../../utils/ink-path.js";
+import { isBareKeyPress } from "../../utils/is-bare-key-press.js";
 import { isKeyboardEventComposing } from "../../utils/is-keyboard-event-composing.js";
 import { measureAnnotationTextWidth } from "../../utils/measure-annotation-text-width.js";
 import { nativeRequestAnimationFrame } from "../../utils/native-raf.js";
@@ -52,9 +57,10 @@ interface AnnotationLayerProps {
   strokes: AnnotationStroke[];
   draftStroke: AnnotationStroke | null;
   texts: AnnotationText[];
-  textDraftPosition: Position | null;
+  textDraft: AnnotationTextDraft | null;
   annotationColor: string;
   isEditing: boolean;
+  isTextToolActive: boolean;
   editCursor: string;
   isTransforming: boolean;
   selectionFrame: AnnotationSelectionFrame | null;
@@ -65,9 +71,15 @@ interface AnnotationLayerProps {
   selectedAnnotationIds: string[];
   marqueeRect: Rect | null;
   onTextDraftChange: (text: string) => void;
-  onTextDraftCommit: (draftPosition: Position) => void;
+  onTextDraftCommit: (draft: AnnotationTextDraft) => void;
   onTextDraftCancel: () => void;
+  onSelectAnnotationColor: (color: string) => void;
   isPaused: boolean;
+}
+
+interface ItemOutlineProps {
+  frame: AnnotationFrame;
+  isHover?: boolean;
 }
 
 const TEXT_DRAFT_PADDING_X_PX = 4;
@@ -127,6 +139,21 @@ const getTextTransformStyle = (
   };
 };
 
+const ItemOutline: Component<ItemOutlineProps> = (props) => (
+  <rect
+    data-react-grab-annotation-item-outline={props.isHover ? undefined : ""}
+    data-react-grab-annotation-hover-outline={props.isHover ? "" : undefined}
+    transform={getFrameTransform(props.frame)}
+    x={-props.frame.width / 2 - ANNOTATION_ITEM_OUTLINE_PADDING_PX}
+    y={-props.frame.height / 2 - ANNOTATION_ITEM_OUTLINE_PADDING_PX}
+    width={props.frame.width + ANNOTATION_ITEM_OUTLINE_PADDING_PX * 2}
+    height={props.frame.height + ANNOTATION_ITEM_OUTLINE_PADDING_PX * 2}
+    fill="none"
+    stroke={INSPECT_ACCENT_COLOR}
+    stroke-width="1"
+  />
+);
+
 export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
   const [scrollOffset, setScrollOffset] = createSignal<Position>({
     x: window.scrollX,
@@ -164,6 +191,21 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
     props.selectedAnnotationFrames.length > 1 ? props.selectedAnnotationFrames : [],
   );
 
+  const [hoveredAnnotationId, setHoveredAnnotationId] = createSignal<string | null>(null);
+  const clearHoveredAnnotation = (annotationId: string) =>
+    setHoveredAnnotationId((previousId) => (previousId === annotationId ? null : previousId));
+  const hoverOutlineFrame = createMemo((): AnnotationFrame | null => {
+    const annotationId = hoveredAnnotationId();
+    if (!annotationId || !props.isEditing || props.isPaused) return null;
+    if (props.isTransforming || props.marqueeRect || isSelected(annotationId)) return null;
+    const stroke = props.strokes.find((innerStroke) => innerStroke.id === annotationId);
+    if (stroke) return getAnnotationStrokeFrame(stroke);
+    const annotationText = props.texts.find((innerText) => innerText.id === annotationId);
+    return annotationText
+      ? getAnnotationTextFrame(annotationText, measureAnnotationTextWidth(annotationText))
+      : null;
+  });
+
   // Annotations only take the pointer while they are being rearranged; the
   // rest of the time the page underneath has to stay reachable through them.
   // They sit in the shadow root, out of reach of the page's cursor override,
@@ -172,6 +214,18 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
     props.isEditing && !props.isPaused
       ? { "pointer-events": hitArea, cursor: props.editCursor }
       : { "pointer-events": "none" };
+
+  const textHitStyle = (annotationText: AnnotationText): JSX.CSSProperties => {
+    if (props.textDraft?.sourceText?.id === annotationText.id) return { visibility: "hidden" };
+    if (props.isTextToolActive && !props.isPaused) {
+      return {
+        "pointer-events": "auto",
+        cursor: TEXT_TOOL_CURSOR,
+        "outline-color": annotationText.color,
+      };
+    }
+    return editingStyle("auto");
+  };
 
   const handleStyle = (handleCursor: string): JSX.CSSProperties =>
     props.isPaused
@@ -229,6 +283,8 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                     stroke-linejoin="round"
                     transform={strokeTransform()}
                     style={editingStyle(stroke.isRectangle ? "stroke" : "all")}
+                    onPointerEnter={() => setHoveredAnnotationId(stroke.id)}
+                    onPointerLeave={() => clearHoveredAnnotation(stroke.id)}
                   />
                   <Show when={stroke.isRectangle}>
                     <path
@@ -240,6 +296,8 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                       stroke-width={ANNOTATION_HIT_WIDTH_PX}
                       stroke-linejoin="round"
                       style={editingStyle("stroke")}
+                      onPointerEnter={() => setHoveredAnnotationId(stroke.id)}
+                      onPointerLeave={() => clearHoveredAnnotation(stroke.id)}
                     />
                   </Show>
                 </>
@@ -288,12 +346,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             const previewText = () => props.getPreviewText(annotationText);
             let transformOrigin: string | undefined;
             const getTransformOrigin = () => {
-              if (transformOrigin === undefined) {
-                const baseWidth = measureAnnotationTextWidth(annotationText);
-                const baseHeight =
-                  getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX;
-                transformOrigin = `${baseWidth / 2}px ${baseHeight / 2}px`;
-              }
+              transformOrigin ??= getAnnotationTextCenterOrigin(annotationText, 0);
               return transformOrigin;
             };
             return (
@@ -302,9 +355,13 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                 data-react-grab-annotation-id={annotationText.id}
                 data-react-grab-annotation-selected={isSelected(annotationText.id) ? "" : undefined}
                 class="absolute whitespace-pre rounded-[3px]"
+                classList={{
+                  "hover:outline-[1.5px] hover:outline-dashed hover:outline-offset-2":
+                    props.isTextToolActive && !props.isPaused,
+                }}
                 style={{
                   ...textBaseStyle,
-                  ...editingStyle("auto"),
+                  ...textHitStyle(annotationText),
                   ...getTextTransformStyle(previewText(), getTransformOrigin),
                   left: `${previewText().x}px`,
                   top: textTop(previewText().y),
@@ -312,6 +369,8 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
                   "text-shadow": TEXT_HALO,
                 }}
                 textContent={annotationText.text}
+                onPointerEnter={() => setHoveredAnnotationId(annotationText.id)}
+                onPointerLeave={() => clearHoveredAnnotation(annotationText.id)}
               />
             );
           }}
@@ -329,21 +388,10 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
         }}
       >
         <g style={{ transform: pageTransform() }}>
-          <For each={itemOutlineFrames()}>
-            {(itemFrame) => (
-              <rect
-                data-react-grab-annotation-item-outline
-                transform={getFrameTransform(itemFrame)}
-                x={-itemFrame.width / 2 - ANNOTATION_ITEM_OUTLINE_PADDING_PX}
-                y={-itemFrame.height / 2 - ANNOTATION_ITEM_OUTLINE_PADDING_PX}
-                width={itemFrame.width + ANNOTATION_ITEM_OUTLINE_PADDING_PX * 2}
-                height={itemFrame.height + ANNOTATION_ITEM_OUTLINE_PADDING_PX * 2}
-                fill="none"
-                stroke={INSPECT_ACCENT_COLOR}
-                stroke-width="1"
-              />
-            )}
-          </For>
+          <For each={itemOutlineFrames()}>{(itemFrame) => <ItemOutline frame={itemFrame} />}</For>
+          <Show when={hoverOutlineFrame()}>
+            {(frame) => <ItemOutline frame={frame()} isHover />}
+          </Show>
           <Show when={props.selectionFrame}>
             {(frame) => (
               <g transform={getFrameTransform(frame())}>
@@ -421,69 +469,92 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
           </div>
         )}
       </Show>
-      <Show when={props.textDraftPosition} keyed>
-        {(draftPosition) => (
-          <div
-            class="fixed top-0 left-0 font-sans"
-            style={{ transform: pageTransform(), "z-index": String(Z_INDEX_OVERLAY) }}
-          >
-            <textarea
-              ref={(element) => {
-                // The ref fires before the input is attached, where focus()
-                // is a no-op, so focus waits a microtask: soon enough that the
-                // first key typed lands in the note. The frame after is a
-                // second chance for browsers that still move focus to the
-                // page on the press that placed the note.
-                const focusDraftInput = () => {
-                  if (element.isConnected && !element.matches(":focus")) {
-                    focusInOverlay(element, { preventScroll: true });
+      <Show when={props.textDraft} keyed>
+        {(draft) => {
+          const sourceText = draft.sourceText;
+          const draftColor = () => sourceText?.color ?? props.annotationColor;
+          const sourceTransformStyle = sourceText
+            ? getTextTransformStyle(sourceText, () =>
+                getAnnotationTextCenterOrigin(sourceText, TEXT_DRAFT_PADDING_X_PX),
+              )
+            : {};
+          return (
+            <div
+              class="fixed top-0 left-0 font-sans"
+              style={{ transform: pageTransform(), "z-index": String(Z_INDEX_OVERLAY) }}
+            >
+              <textarea
+                ref={(element) => {
+                  // The ref fires before the input is attached, where focus()
+                  // is a no-op, so focus waits a microtask: soon enough that the
+                  // first key typed lands in the note. The frame after is a
+                  // second chance for browsers that still move focus to the
+                  // page on the press that placed the note.
+                  const focusDraftInput = () => {
+                    if (element.isConnected && !element.matches(":focus")) {
+                      focusInOverlay(element, { preventScroll: true });
+                      if (sourceText) element.select();
+                    }
+                  };
+                  queueMicrotask(focusDraftInput);
+                  nativeRequestAnimationFrame(focusDraftInput);
+                }}
+                data-react-grab-ignore-events
+                data-react-grab-annotation-input
+                rows={1}
+                value={sourceText?.text ?? ""}
+                aria-label="Annotation text"
+                aria-keyshortcuts="Enter Shift+Enter Escape"
+                autocomplete="off"
+                spellcheck={false}
+                class="absolute block pointer-events-auto m-0 border-none rounded-[3px] font-sans resize-none overflow-hidden whitespace-pre"
+                style={{
+                  ...textBaseStyle,
+                  ...sourceTransformStyle,
+                  left: `${draft.x - TEXT_DRAFT_PADDING_X_PX}px`,
+                  top: textTop(draft.y),
+                  "min-height": `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
+                  padding: `0 ${TEXT_DRAFT_PADDING_X_PX}px`,
+                  "min-width": "80px",
+                  "field-sizing": "content",
+                  color: draftColor(),
+                  "background-color": INSPECT_ACCENT_CONTRAST_COLOR,
+                  outline: `1.5px solid ${draftColor()}`,
+                  "caret-color": draftColor(),
+                }}
+                onInput={(event) => props.onTextDraftChange(event.currentTarget.value)}
+                onBlur={() => props.onTextDraftCommit(draft)}
+                on:keydown={(event) => {
+                  // Kept inside the overlay: the page's own shortcuts must not
+                  // fire for keys typed into a note.
+                  event.stopPropagation();
+                  if (isKeyboardEventComposing(event)) return;
+                  // Until the first character is typed, a new note's number keys
+                  // still pick its color, as they do anywhere else under Text.
+                  const keyColor =
+                    !sourceText && event.currentTarget.value === "" && isBareKeyPress(event)
+                      ? getAnnotationColorForKey(event.key)
+                      : undefined;
+                  if (keyColor) {
+                    event.preventDefault();
+                    props.onSelectAnnotationColor(keyColor);
+                    return;
                   }
-                };
-                queueMicrotask(focusDraftInput);
-                nativeRequestAnimationFrame(focusDraftInput);
-              }}
-              data-react-grab-ignore-events
-              data-react-grab-annotation-input
-              rows={1}
-              aria-label="Annotation text"
-              aria-keyshortcuts="Enter Shift+Enter Escape"
-              autocomplete="off"
-              spellcheck={false}
-              class="absolute block pointer-events-auto m-0 border-none rounded-[3px] font-sans resize-none overflow-hidden whitespace-pre"
-              style={{
-                ...textBaseStyle,
-                left: `${draftPosition.x - TEXT_DRAFT_PADDING_X_PX}px`,
-                top: textTop(draftPosition.y),
-                "min-height": `${ANNOTATION_TEXT_LINE_HEIGHT_PX}px`,
-                padding: `0 ${TEXT_DRAFT_PADDING_X_PX}px`,
-                "min-width": "80px",
-                "field-sizing": "content",
-                color: props.annotationColor,
-                "background-color": INSPECT_ACCENT_CONTRAST_COLOR,
-                outline: `1.5px solid ${props.annotationColor}`,
-                "caret-color": props.annotationColor,
-              }}
-              onInput={(event) => props.onTextDraftChange(event.currentTarget.value)}
-              onBlur={() => props.onTextDraftCommit(draftPosition)}
-              on:keydown={(event) => {
-                // Kept inside the overlay: the page's own shortcuts must not
-                // fire for keys typed into a note.
-                event.stopPropagation();
-                if (isKeyboardEventComposing(event)) return;
-                // Shift+Enter falls through to the textarea and starts a new line.
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  props.onTextDraftCommit(draftPosition);
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  props.onTextDraftCancel();
-                }
-              }}
-              on:keyup={stopKeyPropagation}
-              on:keypress={stopKeyPropagation}
-            />
-          </div>
-        )}
+                  // Shift+Enter falls through to the textarea and starts a new line.
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    props.onTextDraftCommit(draft);
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    props.onTextDraftCancel();
+                  }
+                }}
+                on:keyup={stopKeyPropagation}
+                on:keypress={stopKeyPropagation}
+              />
+            </div>
+          );
+        }}
       </Show>
     </>
   );

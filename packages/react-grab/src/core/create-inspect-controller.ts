@@ -8,6 +8,7 @@ import {
   ANNOTATION_RESIZE_HANDLE_ATTRIBUTE,
   ANNOTATION_ROTATE_HANDLE_ATTRIBUTE,
   ANNOTATION_ROTATE_SNAP_DEG,
+  ANNOTATION_TEXT_DOUBLE_CLICK_MS,
   ANNOTATION_TRANSFORM_HANDLES,
   ANNOTATION_TRANSFORM_LABEL_OFFSET_PX,
   ANNOTATION_TRANSFORM_MIN_AXIS_EXTENT_PX,
@@ -24,6 +25,7 @@ import type {
   AnnotationSnapshot,
   AnnotationStroke,
   AnnotationText,
+  AnnotationTextDraft,
   AnnotationTool,
   AnnotationTransformHandle,
   AnnotationTransformKind,
@@ -83,6 +85,11 @@ interface ActiveMove {
   lastPoint: Position;
   startSnapshot: AnnotationSnapshot;
   didMove: boolean;
+}
+
+interface LastTextPress {
+  annotationId: string;
+  timeStamp: number;
 }
 
 interface TransformPointer {
@@ -242,7 +249,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
   });
   const [transformingIds, setTransformingIds] = createSignal<ReadonlySet<string> | null>(null);
   const [drawingPoints, setDrawingPoints] = createSignal<AnnotationPoint[]>([], { equals: false });
-  const [textDraftPosition, setTextDraftPosition] = createSignal<Position | null>(null);
+  const [textDraft, setTextDraft] = createSignal<AnnotationTextDraft | null>(null);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = createSignal<string[]>([]);
   const [marqueeRect, setMarqueeRect] = createSignal<Rect | null>(null);
   const [isEditPressing, setIsEditPressing] = createSignal(false);
@@ -261,6 +268,8 @@ export const createInspectController = (options: InspectControllerOptions) => {
   let activeMarquee: ActiveMarquee | null = null;
   let activeTransform: ActiveTransform | null = null;
   let textDraftValue = "";
+  let lastTextPress: LastTextPress | null = null;
+  let toolBeforeEdit: AnnotationTool = "grab";
 
   const draftStroke = createMemo(
     (): AnnotationStroke | null => {
@@ -668,48 +677,99 @@ export const createInspectController = (options: InspectControllerOptions) => {
 
   const discardTextDraft = () => {
     textDraftValue = "";
-    setTextDraftPosition(null);
+    setTextDraft(null);
   };
 
-  // `draftPosition` names the draft a late event belongs to: the blur of an
-  // input that was already replaced must not commit (and so empty) the draft
-  // that replaced it.
-  const commitTextDraft = (draftPosition?: Position) => {
-    const currentPosition = textDraftPosition();
-    if (!currentPosition) return;
-    if (draftPosition && draftPosition !== currentPosition) return;
+  const startTextDraft = (position: Position) => {
+    commitTextDraft();
+    setTextDraft({ ...position, sourceText: null });
+  };
+
+  // The note itself stays as it is until the edit is committed, so Escape
+  // simply leaves it untouched.
+  const startEditingText = (annotationText: AnnotationText) => {
+    commitTextDraft();
+    cancelPointerGesture();
+    lastTextPress = null;
+    setSelectedAnnotationIds([]);
+    textDraftValue = annotationText.text;
+    setTextDraft({ x: annotationText.x, y: annotationText.y, sourceText: annotationText });
+  };
+
+  const commitEditedText = (sourceText: AnnotationText, text: string) => {
+    if (text === sourceText.text) return;
+    const before = captureAnnotations();
+    setTexts((previousTexts) =>
+      text
+        ? previousTexts.map((annotationText) =>
+            annotationText.id === sourceText.id ? { ...annotationText, text } : annotationText,
+          )
+        : previousTexts.filter((annotationText) => annotationText.id !== sourceText.id),
+    );
+    recordAnnotationChange(before);
+    if (!text) putDownEditToolIfEmpty();
+    else if (annotationTool() === "edit") setSelectedAnnotationIds([sourceText.id]);
+  };
+
+  // `draft` names the draft a late event belongs to: the blur of an input
+  // that was already replaced must not commit (and so empty) the draft that
+  // replaced it.
+  const commitTextDraft = (draft?: AnnotationTextDraft) => {
+    const currentDraft = textDraft();
+    if (!currentDraft) return;
+    if (draft && draft !== currentDraft) return;
     const text = textDraftValue.trim();
-    if (text) {
-      const before = captureAnnotations();
-      setTexts((previousTexts) => [
-        ...previousTexts,
-        {
-          id: generateId("annotation-text"),
-          x: currentPosition.x,
-          y: currentPosition.y,
-          text,
-          color: annotationColor(),
-          rotation: 0,
-          scale: 1,
-        },
-      ]);
-      recordAnnotationChange(before);
-    }
     discardTextDraft();
+    if (currentDraft.sourceText) {
+      commitEditedText(currentDraft.sourceText, text);
+      return;
+    }
+    if (!text) return;
+    const before = captureAnnotations();
+    setTexts((previousTexts) => [
+      ...previousTexts,
+      {
+        id: generateId("annotation-text"),
+        x: currentDraft.x,
+        y: currentDraft.y,
+        text,
+        color: annotationColor(),
+        rotation: 0,
+        scale: 1,
+      },
+    ]);
+    recordAnnotationChange(before);
+  };
+
+  const findText = (annotationId: string | null): AnnotationText | undefined =>
+    annotationId === null
+      ? undefined
+      : texts().find((annotationText) => annotationText.id === annotationId);
+
+  const isSecondPressOnText = (event: PointerEvent, annotationId: string): boolean => {
+    const previousPress = lastTextPress;
+    lastTextPress = { annotationId, timeStamp: event.timeStamp };
+    return (
+      previousPress !== null &&
+      previousPress.annotationId === annotationId &&
+      event.timeStamp - previousPress.timeStamp <= ANNOTATION_TEXT_DOUBLE_CLICK_MS
+    );
   };
 
   const selectTool = (tool: AnnotationTool) => {
     cancelPointerGesture();
     commitTextDraft();
     setSelectedAnnotationIds([]);
+    if (tool === "edit" && annotationTool() !== "edit") toolBeforeEdit = annotationTool();
     setAnnotationTool(tool);
   };
 
   // The move tool has nothing left to act on once the last annotation is
-  // gone, and its button leaves the toolbar with it.
+  // gone, and its button leaves the toolbar with it, handing back whatever
+  // tool it was picked up from.
   const putDownEditToolIfEmpty = () => {
     if (annotationTool() !== "edit") return;
-    if (strokes().length === 0 && texts().length === 0) setAnnotationTool("grab");
+    if (strokes().length === 0 && texts().length === 0) setAnnotationTool(toolBeforeEdit);
   };
 
   const clearAnnotations = () => {
@@ -996,8 +1056,9 @@ export const createInspectController = (options: InspectControllerOptions) => {
         return;
       }
       case "text": {
-        commitTextDraft();
-        setTextDraftPosition(toPagePoint(event));
+        const pressedText = findText(getPressedAnnotationId(event));
+        if (pressedText) startEditingText(pressedText);
+        else startTextDraft(toPagePoint(event));
         return;
       }
       case "edit": {
@@ -1007,8 +1068,18 @@ export const createInspectController = (options: InspectControllerOptions) => {
           return;
         }
         const annotationId = getPressedAnnotationId(event);
-        if (annotationId) pressAnnotation(event, annotationId);
-        else startMarquee(event);
+        if (!annotationId) {
+          lastTextPress = null;
+          startMarquee(event);
+          return;
+        }
+        const pressedText = findText(annotationId);
+        if (pressedText && !event.shiftKey && isSecondPressOnText(event, annotationId)) {
+          startEditingText(pressedText);
+          return;
+        }
+        if (!pressedText) lastTextPress = null;
+        pressAnnotation(event, annotationId);
         return;
       }
       default: {
@@ -1124,7 +1195,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     draftStroke,
     annotationColor,
     selectAnnotationColor,
-    textDraftPosition,
+    textDraft,
     hasAnnotations,
     selectedAnnotationIds,
     marqueeRect,
@@ -1163,6 +1234,7 @@ export const createInspectController = (options: InspectControllerOptions) => {
     toggleRedlines,
     toggleAutoScreenshot,
     selectTool,
+    getToolBeforeEdit: () => toolBeforeEdit,
     clearAnnotations,
     removeSelectedAnnotations,
     cancelPointerGesture,

@@ -181,6 +181,8 @@ import { getScriptOptions } from "../utils/get-script-options.js";
 import { isEnterCode } from "../utils/is-enter-code.js";
 import { getToolCycleDirection } from "../utils/get-tool-cycle-direction.js";
 import { getEditHistoryDirection } from "../utils/get-edit-history-direction.js";
+import { getAnnotationColorForKey } from "../utils/get-annotation-color-for-key.js";
+import { isBareKeyPress } from "../utils/is-bare-key-press.js";
 import { isClearAnnotationsShortcut } from "../utils/is-clear-annotations-shortcut.js";
 import { isPillSwapCopyShortcut } from "../utils/is-pill-swap-copy-shortcut.js";
 import { getCycledSelectionTool } from "../utils/get-cycled-selection-tool.js";
@@ -2229,6 +2231,13 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     const handleSelectAnnotationTool = (tool: AnnotationTool) => {
       if (!isEnabled() || isCopying()) return;
       if (inspect.annotationTool() === tool) {
+        // Putting Move down goes back to the drawing tool it was picked up
+        // from, so moving a drawing never costs the tool in hand.
+        const toolBeforeEdit = inspect.getToolBeforeEdit();
+        if (tool === "edit" && toolBeforeEdit !== "grab") {
+          inspect.selectTool(toolBeforeEdit);
+          return;
+        }
         // Putting the tool down leaves things as they were found: back to an
         // inactive page if picking it up was what activated React Grab,
         // otherwise back to selecting elements.
@@ -3439,12 +3448,19 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       // design tool, so a frozen hover state never needs a trip to the
       // toolbar. V only means something once there is a drawing to move,
       // and Specs, Spacing and Screenshot only while Grab, which they serve,
-      // is in hand.
-      const isBareKeyPress =
-        !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-      if (canHandleEditShortcut && isBareKeyPress) {
+      // is in hand. Under Pen, Rectangle and Text the number keys pick the
+      // color instead.
+      if (canHandleEditShortcut && isBareKeyPress(event)) {
         const pressedKey = event.key.toLowerCase();
         const runToolShortcut = (): boolean => {
+          const keyColor =
+            isAnnotating() && inspect.annotationTool() !== "edit"
+              ? getAnnotationColorForKey(pressedKey)
+              : undefined;
+          if (keyColor) {
+            inspect.selectAnnotationColor(keyColor);
+            return true;
+          }
           switch (pressedKey) {
             case SPECS_TOOL_KEY:
               if (isAnnotating()) return false;
@@ -4417,7 +4433,7 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
       draftStroke: inspect.draftStroke,
       annotationColor: inspect.annotationColor,
       texts: inspect.texts,
-      textDraftPosition: inspect.textDraftPosition,
+      textDraft: inspect.textDraft,
       hasAnnotations: inspect.hasAnnotations,
       selectedAnnotationIds: inspect.selectedAnnotationIds,
       annotationMarqueeRect: inspect.marqueeRect,
