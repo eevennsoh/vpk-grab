@@ -43,8 +43,8 @@ import type {
 import { focusInOverlay } from "../../utils/focus-in-overlay.js";
 import { getAnnotationColorForKey } from "../../utils/get-annotation-color-for-key.js";
 import { getAnnotationStrokeFrame } from "../../utils/get-annotation-stroke-frame.js";
+import { getAnnotationTextCenterOrigin } from "../../utils/get-annotation-text-center-origin.js";
 import { getAnnotationTextFrame } from "../../utils/get-annotation-text-frame.js";
-import { getAnnotationTextLines } from "../../utils/get-annotation-text-lines.js";
 import { getResizeCursor } from "../../utils/get-resize-cursor.js";
 import { getRotateCursor } from "../../utils/get-rotate-cursor.js";
 import { createInkPath } from "../../utils/ink-path.js";
@@ -139,12 +139,6 @@ const getTextTransformStyle = (
   };
 };
 
-const getTextCenterOrigin = (annotationText: AnnotationText, offsetX: number): string => {
-  const baseWidth = measureAnnotationTextWidth(annotationText);
-  const baseHeight = getAnnotationTextLines(annotationText).length * ANNOTATION_TEXT_LINE_HEIGHT_PX;
-  return `${offsetX + baseWidth / 2}px ${baseHeight / 2}px`;
-};
-
 const ItemOutline: Component<ItemOutlineProps> = (props) => (
   <rect
     data-react-grab-annotation-item-outline={props.isHover ? undefined : ""}
@@ -197,7 +191,6 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
     props.selectedAnnotationFrames.length > 1 ? props.selectedAnnotationFrames : [],
   );
 
-  // Under Move, whatever a press would pick up is outlined before the press.
   const [hoveredAnnotationId, setHoveredAnnotationId] = createSignal<string | null>(null);
   const clearHoveredAnnotation = (annotationId: string) =>
     setHoveredAnnotationId((previousId) => (previousId === annotationId ? null : previousId));
@@ -353,7 +346,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
             const previewText = () => props.getPreviewText(annotationText);
             let transformOrigin: string | undefined;
             const getTransformOrigin = () => {
-              transformOrigin ??= getTextCenterOrigin(annotationText, 0);
+              transformOrigin ??= getAnnotationTextCenterOrigin(annotationText, 0);
               return transformOrigin;
             };
             return (
@@ -482,7 +475,7 @@ export const AnnotationLayer: Component<AnnotationLayerProps> = (props) => {
           const draftColor = () => sourceText?.color ?? props.annotationColor;
           const sourceTransformStyle = sourceText
             ? getTextTransformStyle(sourceText, () =>
-                getTextCenterOrigin(sourceText, TEXT_DRAFT_PADDING_X_PX),
+                getAnnotationTextCenterOrigin(sourceText, TEXT_DRAFT_PADDING_X_PX),
               )
             : {};
           return (
