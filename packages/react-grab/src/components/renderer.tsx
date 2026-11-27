@@ -68,9 +68,10 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             strokes={inspect().strokes()}
             draftStroke={inspect().draftStroke()}
             texts={inspect().texts()}
-            textDraftPosition={inspect().textDraftPosition()}
+            textDraft={inspect().textDraft()}
             annotationColor={inspect().annotationColor()}
             isEditing={inspect().annotationTool() === "edit"}
+            isTextToolActive={inspect().annotationTool() === "text"}
             editCursor={inspect().annotationEditCursor()}
             isTransforming={inspect().isTransformingAnnotations()}
             selectionFrame={inspect().annotationSelectionFrame()}
@@ -83,6 +84,7 @@ export const ReactGrabRenderer: Component<ReactGrabRendererProps> = (props) => {
             onTextDraftChange={inspect().onTextDraftChange}
             onTextDraftCommit={inspect().onTextDraftCommit}
             onTextDraftCancel={inspect().onTextDraftCancel}
+            onSelectAnnotationColor={inspect().onSelectAnnotationColor}
             isPaused={Boolean(props.isPaused)}
           />
         )}

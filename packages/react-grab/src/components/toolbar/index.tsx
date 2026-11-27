@@ -9,6 +9,7 @@ import {
   type Component,
 } from "solid-js";
 import type { AnnotationTool, Position, SelectionTool } from "../../types.js";
+import { getAnnotationColorKey } from "../../utils/get-annotation-color-key.js";
 import { getSelectionToolShortcut } from "../../utils/get-selection-tool-shortcut.js";
 import { cn } from "../../utils/cn.js";
 import { loadToolbarState, saveToolbarState, type SnapEdge, type ToolbarState } from "./state.js";
@@ -1135,7 +1136,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               >
                 <span aria-hidden="true" class={separatorClass()} />
                 <For each={ANNOTATION_COLOR_OPTIONS}>
-                  {(colorOption) => {
+                  {(colorOption, optionIndex) => {
                     const actionId = `${ANNOTATION_COLOR_ACTION_ID_PREFIX}${colorOption.label.toLowerCase()}`;
                     const isSelected = () => props.annotationColor === colorOption.value;
                     return (
@@ -1166,6 +1167,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                         tooltipVisible={isActionHovered(actionId)}
                         tooltipPosition={tooltipPosition()}
                         tooltip={colorOption.label}
+                        tooltipShortcut={getAnnotationColorKey(optionIndex())}
                       />
                     );
                   }}

@@ -745,6 +745,10 @@ export interface AnnotationText extends Position {
   scale: number;
 }
 
+export interface AnnotationTextDraft extends Position {
+  sourceText: AnnotationText | null;
+}
+
 export interface AnnotationFrame {
   centerX: number;
   centerY: number;
@@ -935,7 +939,7 @@ export interface InspectRendererState {
   draftStroke: Accessor<AnnotationStroke | null>;
   annotationColor: Accessor<string>;
   texts: Accessor<AnnotationText[]>;
-  textDraftPosition: Accessor<Position | null>;
+  textDraft: Accessor<AnnotationTextDraft | null>;
   hasAnnotations: Accessor<boolean>;
   selectedAnnotationIds: Accessor<string[]>;
   annotationMarqueeRect: Accessor<Rect | null>;
@@ -965,6 +969,6 @@ export interface InspectRendererState {
   onSelectAnnotationColor: (color: string) => void;
   onClearAnnotations: () => void;
   onTextDraftChange: (text: string) => void;
-  onTextDraftCommit: (draftPosition: Position) => void;
+  onTextDraftCommit: (draft: AnnotationTextDraft) => void;
   onTextDraftCancel: () => void;
 }

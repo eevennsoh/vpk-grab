@@ -503,6 +503,7 @@ export const ANNOTATION_ID_ATTRIBUTE = "data-react-grab-annotation-id";
 export const ANNOTATION_HIT_WIDTH_PX = 14;
 export const ANNOTATION_SELECTION_PADDING_PX = 6;
 export const ANNOTATION_MARQUEE_MIN_DRAG_PX = 3;
+export const ANNOTATION_TEXT_DOUBLE_CLICK_MS = 500;
 export const ANNOTATION_RESIZE_HANDLE_ATTRIBUTE = "data-react-grab-annotation-resize-handle";
 export const ANNOTATION_ROTATE_HANDLE_ATTRIBUTE = "data-react-grab-annotation-rotate-handle";
 export const ANNOTATION_TRANSFORM_HANDLES: readonly AnnotationTransformHandle[] = [

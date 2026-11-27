@@ -1197,7 +1197,7 @@ test.describe("Transformed annotations in a screenshot", () => {
     await rotateBy(page, resizedCenter, rectangleFrameTopRight(), 30, true);
     expect(await getRotationDeg(page)).toBeCloseTo(30, 6);
     const onScreen = await getClientRect(page, RECTANGLE_SELECTOR);
-    await page.keyboard.press("v");
+    await toolbarAction(page, "copy").click();
     await expect(page.locator(RESIZE_HANDLE_SELECTOR)).toHaveCount(0);
 
     await page.keyboard.down("Shift");
@@ -1239,7 +1239,7 @@ test.describe("Transformed annotations in a screenshot", () => {
   // What shows on screen and what the screenshot draws, both read as the
   // annotation colour's pixels inside the captured area.
   const expectScreenshotMatchesScreen = async (page: Page) => {
-    await page.keyboard.press("v");
+    await toolbarAction(page, "copy").click();
     await expect(page.locator(RESIZE_HANDLE_SELECTOR)).toHaveCount(0);
     const screenImage = await page.screenshot({ clip: { ...captureRegion, ...captureSize } });
     const onScreen = await findInkBounds(page, screenImage.toString("base64"), captureSize.width);

@@ -109,6 +109,9 @@ test.describe("Annotations", () => {
     await expect.poll(readPageCursor).toContain("12 12, grab");
 
     await toolbarAction(page, "annotate-edit").click();
+    await expect.poll(readPageCursor).toContain("12 12, text");
+
+    await toolbarAction(page, "copy").click();
     await expect.poll(readPageCursor).toContain("7 7, pointer");
   });
 
@@ -181,10 +184,15 @@ test.describe("Annotations", () => {
 
     await toolbarAction(page, "annotate-clear").click();
     await expect(toolbarAction(page, "annotate-edit")).toHaveAttribute("aria-pressed", "false");
+    await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(ANNOTATION_ACTIONS_SELECTOR)).not.toHaveAttribute("data-revealed");
   });
 
-  test("annotations let the pointer through unless the move tool is active", async ({ page }) => {
+  test("annotations let the pointer through except notes under Text and everything under Move", async ({
+    page,
+  }) => {
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCSS("pointer-events", "auto");
+    await toolbarAction(page, "annotate-pen").click();
     await expect(page.locator(STROKE_SELECTOR)).toHaveCSS("pointer-events", "none");
     await expect(page.locator(TEXT_SELECTOR)).toHaveCSS("pointer-events", "none");
     await toolbarAction(page, "annotate-edit").click();
@@ -238,6 +246,103 @@ test.describe("Annotations", () => {
     const noteAfter = await getBox(page, TEXT_SELECTOR);
     expect(noteAfter.x - noteBefore.x).toBeCloseTo(DRAG_DELTA.x, 0);
     expect(noteAfter.y - noteBefore.y).toBeCloseTo(DRAG_DELTA.y, 0);
+  });
+
+  test("double-clicking a note with Move reopens it for editing", async ({ reactGrab, page }) => {
+    await toolbarAction(page, "annotate-edit").click();
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.dblclick(note.x + 10, note.y + note.height / 2);
+
+    const input = page.locator("[data-react-grab-annotation-input]");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue("Tighten this gap");
+    await page.keyboard.type("Widen this gap");
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(1);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Widen this gap");
+    await expect(page.locator(`${TEXT_SELECTOR}${SELECTED_SELECTOR}`)).toHaveCount(1);
+
+    await page.keyboard.press(`${reactGrab.modifierKey}+z`);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+  });
+
+  test("number keys pick the color under Text until the new note has text", async ({ page }) => {
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.keyboard.press("2");
+    await expect(toolbarAction(page, "annotation-color-orange")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.mouse.click(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    const input = page.locator("[data-react-grab-annotation-input]");
+    await expect(input).toBeFocused();
+    await page.keyboard.press("1");
+    await expect(input).toHaveValue("");
+    await expect(input).toHaveCSS("color", DEFAULT_ANNOTATION_COLOR_RGB);
+    await page.keyboard.type("Step 2");
+    await expect(input).toHaveValue("Step 2");
+    await expect(toolbarAction(page, "annotation-color-red")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("Move outlines what the pointer is over until it is selected", async ({ page }) => {
+    const hoverOutline = page.locator("[data-react-grab-annotation-hover-outline]");
+    await page.mouse.move(LINE_START.x + 100, LINE_START.y);
+    await expect(hoverOutline).toHaveCount(0);
+
+    await toolbarAction(page, "annotate-edit").click();
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await page.mouse.move(LINE_START.x + 100, LINE_START.y);
+    await expect(hoverOutline).toHaveCount(1);
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect(hoverOutline).toHaveCount(0);
+
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.move(note.x + 10, note.y + note.height / 2);
+    await expect(hoverOutline).toHaveCount(1);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(hoverOutline).toHaveCount(0);
+  });
+
+  test("a note under Text shows an outline on hover", async ({ page }) => {
+    const note = page.locator(TEXT_SELECTOR);
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await expect(note).toHaveCSS("outline-style", "none");
+    await note.hover();
+    await expect(note).toHaveCSS("outline-style", "dashed");
+    await expect(note).toHaveCSS("outline-color", DEFAULT_ANNOTATION_COLOR_RGB);
+    await toolbarAction(page, "annotate-edit").click();
+    await note.hover();
+    await expect(note).toHaveCSS("outline-style", "none");
+  });
+
+  test("clicking a note with Text edits it, and Escape leaves it as it was", async ({ page }) => {
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.click(note.x + 10, note.y + note.height / 2);
+
+    const input = page.locator("[data-react-grab-annotation-input]");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue("Tighten this gap");
+    await page.keyboard.type("Something else");
+    await page.keyboard.press("Escape");
+
+    await expect(input).toHaveCount(0);
+    await expect(page.locator(TEXT_SELECTOR)).toHaveText("Tighten this gap");
+  });
+
+  test("emptying a reopened note removes it", async ({ page }) => {
+    const note = await getBox(page, TEXT_SELECTOR);
+    await page.mouse.click(note.x + 10, note.y + note.height / 2);
+    await expect(page.locator("[data-react-grab-annotation-input]")).toBeFocused();
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator(TEXT_SELECTOR)).toHaveCount(0);
   });
 
   for (const deleteKey of ["Delete", "Backspace"]) {
@@ -573,6 +678,26 @@ test.describe("Annotations", () => {
 
     await page.keyboard.press("v");
     await expect(moveTool).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("putting Move down hands back the drawing tool it was picked up from", async ({ page }) => {
+    const moveTool = toolbarAction(page, "annotate-edit");
+    await page.mouse.move(EMPTY_POSITION.x, EMPTY_POSITION.y);
+    await toolbarAction(page, "annotate-rectangle").click();
+
+    await page.keyboard.press("v");
+    await expect(moveTool).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("v");
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
+
+    await moveTool.click();
+    await moveTool.click();
+    await expect(toolbarAction(page, "annotate-rectangle")).toHaveAttribute("aria-pressed", "true");
+
+    await toolbarAction(page, "copy").click();
+    await page.keyboard.press("v");
+    await page.keyboard.press("v");
+    await expect(toolbarAction(page, "copy")).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -1631,6 +1756,22 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await expect(rectangle.locator("path")).toHaveAttribute("d", CROP_7_5_ICON_PATHS.filled);
   });
 
+  test("number keys pick the rectangle's color and the swatch tooltips show them", async ({
+    page,
+  }) => {
+    await toolbarAction(page, "annotate-rectangle").click();
+    await page.keyboard.press("4");
+    await expect(toolbarAction(page, "annotation-color-green")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(toolbarAction(page, "inspect-redlines")).toHaveAttribute("aria-pressed", "false");
+    await toolbarAction(page, "annotation-color-black").hover();
+    await expect(page.locator(TOOLTIP_SHORTCUT_SELECTOR)).toHaveText("5");
+    await dragRectangle(page, false);
+    await expect(page.locator(RECTANGLE_SELECTOR)).toHaveAttribute("stroke", "#22c55e");
+  });
+
   for (const isReversed of [false, true]) {
     test(`rectangle follows the drag and color, reversed=${isReversed}`, async ({ page }) => {
       await toolbarAction(page, "annotate-rectangle").click();
@@ -1909,8 +2050,8 @@ test.describe("Rectangle and drawing shortcuts", () => {
     await page.mouse.click(NOTE_POSITION.x, NOTE_POSITION.y);
     const input = page.locator("[data-react-grab-annotation-input]");
     await expect(input).toBeFocused();
-    await page.keyboard.type("123");
-    await expect(input).toHaveValue("123");
+    await page.keyboard.type("Gap 123");
+    await expect(input).toHaveValue("Gap 123");
     await expect(toolbarAction(page, "annotate-text")).toHaveAttribute("aria-pressed", "true");
   });
 
