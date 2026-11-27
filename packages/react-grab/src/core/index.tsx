@@ -3611,12 +3611,17 @@ export const init = (rawOptions?: Options): ReactGrabAPI => {
     };
 
     // Each Escape closes one layer: once Grab takes an Escape keydown, its
-    // keyup is withheld too, since some page menus close on keyup.
+    // auto-repeats and keyup are withheld too, since some page menus close on
+    // keyup.
     let isEscapeKeyUpOwned = false;
 
     eventListenerManager.addWindowListener(
       "keydown",
       ignoreRealInput((event: KeyboardEvent) => {
+        if (event.code === "Escape" && event.repeat && isEscapeKeyUpOwned) {
+          consumeEscape(event);
+          return;
+        }
         handleWindowKeyDown(event);
         if (event.code === "Escape") isEscapeKeyUpOwned = event.defaultPrevented;
       }),

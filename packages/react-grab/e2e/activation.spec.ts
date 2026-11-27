@@ -149,6 +149,17 @@ test.describe("Activation Mode Configuration", () => {
       await expectPageLayers(reactGrab.page, "closed");
     });
 
+    test("holding Escape until it repeats still leaves page UI open", async ({ reactGrab }) => {
+      await reactGrab.activateViaKeyboard();
+      await openPageLayers(reactGrab.page);
+
+      await reactGrab.page.keyboard.down("Escape");
+      await reactGrab.page.keyboard.down("Escape");
+      await reactGrab.page.keyboard.up("Escape");
+      await expect.poll(() => reactGrab.isOverlayVisible()).toBe(false);
+      await expectPageLayers(reactGrab.page, "open");
+    });
+
     test("Escape from a page field turns Grab off before the page sees it", async ({
       reactGrab,
     }) => {
